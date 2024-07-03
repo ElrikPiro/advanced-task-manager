@@ -1,2 +1,4 @@
 data.json
-*/__pycache__/*
+__pycache__
+backend/src/Interfaces/__pycache__/
+invalid.json

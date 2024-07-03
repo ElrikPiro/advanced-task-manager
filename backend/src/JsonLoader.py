@@ -1,4 +1,4 @@
-from .Interfaces import IJsonLoader
+from .Interfaces.IJsonLoader import IJsonLoader
 import json
 
 class JsonLoader(IJsonLoader):
@@ -13,7 +13,7 @@ class JsonLoader(IJsonLoader):
                 return data
         except FileNotFoundError:
             print(f"File '{self.file_path}' not found.")
-            return None
+            raise FileNotFoundError
         except json.JSONDecodeError:
             print(f"Error decoding JSON in file '{self.file_path}'.")
-            return None
+            raise ValueError
