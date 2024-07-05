@@ -8,8 +8,7 @@ class ObsidianDataviewTaskJsonProvider(ITaskJsonProvider):
         self.filename = "tareas.json"
         self.JsonLoader = jsonLoader
 
-    def getJson(self) -> str:
+    def getJson(self) -> dict:
         appdata = os.getenv('APPDATA')
         jsonPath = appdata + "/obsidian/" + self.filename
-        #calls the load_json method from the JsonLoader class
         return self.JsonLoader.load_json(jsonPath)
