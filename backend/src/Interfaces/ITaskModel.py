@@ -76,4 +76,8 @@ class ITaskModel(ABC):
     def setStatus(self, status: str):
         pass
 
+    @abstractmethod
+    def calculateRemainingTime(self) -> int:
+        pass
+
     

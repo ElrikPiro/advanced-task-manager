@@ -1,3 +1,5 @@
+import datetime
+
 from .Interfaces.ITaskModel import ITaskModel
 
 class ObsidianTaskModel(ITaskModel):
@@ -72,3 +74,11 @@ class ObsidianTaskModel(ITaskModel):
 
     def setLine(self, line: int):
         self._line = line
+
+    def calculateRemainingTime(self) -> int:
+        dueDate = self.getDue()
+
+        currentDate = datetime.datetime.now().timestamp() * 1000
+        d = (dueDate - currentDate) / (datetime.timedelta(days=1).total_seconds() * 1000)
+        d = max(0, d)
+        return d

@@ -1,13 +1,9 @@
 import unittest
-from datetime import datetime, timedelta
-from src.SlackHeuristic import SlackHeuristic
+from src.RemainingEffortHeuristic import RemainingEffortHeuristic
 from src.Interfaces.ITaskModel import ITaskModel
 from unittest import TestCase, mock
-from datetime import datetime, timedelta
-from src.SlackHeuristic import SlackHeuristic
-from src.Interfaces.ITaskModel import ITaskModel
 
-class SlackHeuristicTests(TestCase):
+class RemainingEffortHeuristicTests(TestCase):
 
     def test_sort(self):
         # Create mock tasks
@@ -17,7 +13,7 @@ class SlackHeuristicTests(TestCase):
         tasks = [task1, task2, task3]
 
         # Create instance of SlackHeuristic
-        heuristic = SlackHeuristic(5)
+        heuristic = RemainingEffortHeuristic(5, 1)
 
         # Mock the evaluate method
         heuristic.evaluate = mock.Mock(side_effect=[10, 5, 8])
@@ -37,13 +33,13 @@ class SlackHeuristicTests(TestCase):
         task.calculateRemainingTime.return_value = 2
 
         # Create instance of SlackHeuristic
-        heuristic = SlackHeuristic(1)
+        heuristic = RemainingEffortHeuristic(1, 1)
 
         # Call the evaluate method
         result = round(heuristic.evaluate(task), 2)
 
         # Assert the expected result
-        self.assertEqual(result, 1)
+        self.assertEqual(result, 0)
 
 if __name__ == '__main__':
     unittest.main()
