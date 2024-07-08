@@ -13,6 +13,9 @@ class ObsidianTaskProvider(ITaskProvider):
         taskListJson : dict = self.TaskJsonProvider.getJson()
         taskList : List[ITaskModel] = []
         for task in taskListJson:
-            obsidianTask = ObsidianTaskModel(task["taskText"], task["track"], task["starts"], task["due"], task["severity"], task["total_cost"], task["effort_invested"], task["status"], task["file"], task["line"])
-            taskList.append(obsidianTask)
+            try:
+                obsidianTask = ObsidianTaskModel(task["taskText"], task["track"], task["starts"], task["due"], task["severity"], task["total_cost"], task["effort_invested"], task["status"], task["file"], task["line"])
+                taskList.append(obsidianTask)
+            except:
+                pass
         return taskList

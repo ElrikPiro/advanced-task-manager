@@ -21,4 +21,8 @@ class SlackHeuristic(IHeuristic):
         r = task.getTotalCost() - task.getInvestedEffort()
         d = task.calculateRemainingTime()
 
-        return round((p * w * s * r) / (p * d - r), 2)
+        try:
+            h = (p * w * s * r) / (p * d - r)
+            return round(h, 2)
+        except ZeroDivisionError:
+            return 100

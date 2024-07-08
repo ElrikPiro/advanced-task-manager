@@ -1,19 +1,20 @@
 import datetime
+from math import ceil
 
 from .Interfaces.ITaskModel import ITaskModel
 
 class ObsidianTaskModel(ITaskModel):
     def __init__(self, description: str, context: str, start: int, due: int, severity: float, totalCost: float, investedEffort: float, status: str, file: str, line: int):
-        self._description = description
-        self._context = context
-        self._start = start
-        self._due = due
-        self._severity = severity
-        self._totalCost = totalCost
-        self._investedEffort = investedEffort
-        self._status = status
-        self._file = file
-        self._line = line
+        self._description : str = description
+        self._context : str = context
+        self._start : int = int(start)
+        self._due : int = int(due)
+        self._severity : int = int(severity)
+        self._totalCost : float = float(totalCost)
+        self._investedEffort : float = float(investedEffort)
+        self._status : str = status
+        self._file : str = file
+        self._line : int = int(line)
 
     def getDescription(self) -> str:
         return self._description
@@ -81,4 +82,5 @@ class ObsidianTaskModel(ITaskModel):
         currentDate = datetime.datetime.now().timestamp() * 1000
         d = (dueDate - currentDate) / (datetime.timedelta(days=1).total_seconds() * 1000)
         d = max(0, d)
+        d = ceil(d)
         return d
