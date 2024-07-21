@@ -23,3 +23,12 @@ if __name__ == '__main__':
     service = TelegramReportingService(bot, taskProvider, chatId)
     service.listenForEvents()
     pass
+
+# TODO: Roadmap
+## 1. Create a command to show current task information
+## 2. Add a list of heuristics to the TelegramReportingService so we can order the tasks based on different criteria
+## 3. Create a IFilter interface to filter tasks based on different criteria
+## 4. Create a FilterActiveTasks class that implements IFilter to filter only active tasks
+## 5. Add a list of filters to the TelegramReportingService so we can filter the tasks based on different criteria
+## 6. Create commands for both heuristics and filter selection at the telegram bot
+## 7. Create a Heuristic and a Filter that implements the current strategy at GTD
