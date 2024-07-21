@@ -2,3 +2,4 @@ data.json
 __pycache__
 backend/src/Interfaces/__pycache__/
 invalid.json
+backend/environment.txt

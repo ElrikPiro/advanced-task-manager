@@ -80,4 +80,8 @@ class ITaskModel(ABC):
     def calculateRemainingTime(self) -> int:
         pass
 
+    @abstractmethod
+    def __eq__(self, other):
+        pass
+
     

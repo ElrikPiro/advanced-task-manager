@@ -84,3 +84,6 @@ class ObsidianTaskModel(ITaskModel):
         d = max(0, d)
         d = ceil(d)
         return d
+    
+    def __eq__(self, other : ITaskModel):
+        return self.getDescription() == other.getDescription() and self.getContext() == other.getContext() and self.getStart() == other.getStart() and self.getDue() == other.getDue() and self.getSeverity() == other.getSeverity() and self.getTotalCost() == other.getTotalCost() and self.getInvestedEffort() == other.getInvestedEffort() and self.getStatus() == other.getStatus() and self.getFile() == other.getFile() and self.getLine() == other.getLine()
