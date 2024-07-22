@@ -4,7 +4,7 @@ from math import ceil
 from .Interfaces.ITaskModel import ITaskModel
 
 class ObsidianTaskModel(ITaskModel):
-    def __init__(self, description: str, context: str, start: int, due: int, severity: float, totalCost: float, investedEffort: float, status: str, file: str, line: int):
+    def __init__(self, description: str, context: str, start: int, due: int, severity: float, totalCost: float, investedEffort: float, status: str, file: str, line: int, calm : str):
         self._description : str = description
         self._context : str = context
         self._start : int = int(start)
@@ -15,6 +15,7 @@ class ObsidianTaskModel(ITaskModel):
         self._status : str = status
         self._file : str = file
         self._line : int = int(line)
+        self._calm : bool = True if calm.capitalize() == "TRUE" else False
 
     def getDescription(self) -> str:
         slash = "/"
@@ -47,6 +48,9 @@ class ObsidianTaskModel(ITaskModel):
     
     def getLine(self) -> int:
         return self._line
+    
+    def getCalm(self) -> bool:
+        return self._calm
 
     def setDescription(self, description: str):
         self._description = description

@@ -1,5 +1,3 @@
-import datetime
-
 from .Interfaces.IFilter import IFilter
 from .Interfaces.ITaskModel import ITaskModel
 

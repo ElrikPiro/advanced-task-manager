@@ -45,6 +45,10 @@ class ITaskModel(ABC):
         pass
 
     @abstractmethod
+    def getCalm(self) -> bool:
+        pass
+
+    @abstractmethod
     def setDescription(self, description: str):
         pass
 
