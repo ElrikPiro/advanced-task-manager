@@ -6,11 +6,12 @@ from .Interfaces.IHeuristic import IHeuristic
 from .Interfaces.IReportingService import IReportingService
 from .Interfaces.ITaskProvider import ITaskProvider
 from .Interfaces.ITaskModel import ITaskModel
+from .Interfaces.IFilter import IFilter
 import telegram
 
 class TelegramReportingService(IReportingService):
 
-    def __init__(self, bot : telegram.Bot , taskProvider : ITaskProvider, heuristics : List[Tuple[str, IHeuristic]], chatId: int = 0):
+    def __init__(self, bot : telegram.Bot , taskProvider : ITaskProvider, heuristics : List[Tuple[str, IHeuristic]], filters : List[Tuple[str, IFilter]], chatId: int = 0):
         self.run = True
         self.bot = bot
         self.chatId = chatId
@@ -21,6 +22,9 @@ class TelegramReportingService(IReportingService):
         
         self._heuristicList = heuristics
         self._selectedHeuristicIndex = 0
+
+        self._filterList = filters
+        self._selectedFilterIndex = 0
 
         self._lastTaskList = self.taskProvider.getTaskList()
         pass
@@ -48,6 +52,10 @@ class TelegramReportingService(IReportingService):
             heuristic : IHeuristic = self._heuristicList[self._selectedHeuristicIndex][1]
             sortedTaskList : List[Tuple[ITaskModel, float]] = heuristic.sort(newTaskList)
             newTaskList = [task for task, _ in sortedTaskList]
+
+        if len(self._filterList) > 0:
+            filter : IFilter = self._filterList[self._selectedFilterIndex][1]
+            newTaskList = filter.filter(newTaskList)
 
         if not self.compare(newTaskList, self._lastTaskList):
             self._lastTaskList = newTaskList

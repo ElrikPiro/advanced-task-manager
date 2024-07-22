@@ -16,6 +16,9 @@ class ObsidianTaskProvider(ITaskProvider):
             try:
                 obsidianTask = ObsidianTaskModel(task["taskText"], task["track"], task["starts"], task["due"], task["severity"], task["total_cost"], task["effort_invested"], task["status"], task["file"], task["line"])
                 taskList.append(obsidianTask)
-            except:
-                pass
+            except Exception as e:
+                # print error cause and skip task
+                print(f"Error creating task from json: "+ task["taskText"] + f" : {repr(e)}")
+                print(f"skipping...")
+                continue
         return taskList

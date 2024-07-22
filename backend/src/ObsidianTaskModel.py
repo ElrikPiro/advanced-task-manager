@@ -9,7 +9,7 @@ class ObsidianTaskModel(ITaskModel):
         self._context : str = context
         self._start : int = int(start)
         self._due : int = int(due)
-        self._severity : int = int(severity)
+        self._severity : float = float(severity)
         self._totalCost : float = float(totalCost)
         self._investedEffort : float = float(investedEffort)
         self._status : str = status

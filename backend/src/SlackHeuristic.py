@@ -23,6 +23,6 @@ class SlackHeuristic(IHeuristic):
 
         try:
             h = (p * w * s * r) / (p * d - r)
-            return round(h, 2)
+            return round(h, 2) if h > 0 else 100
         except ZeroDivisionError:
             return 100

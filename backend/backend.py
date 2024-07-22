@@ -2,6 +2,7 @@ from os import getenv
 
 import telegram
 
+from src.ActiveTaskFilter import ActiveTaskFilter
 from src.TelegramReportingService import TelegramReportingService
 from src.ObsidianTaskProvider import ObsidianTaskProvider
 from src.ObsidianDataviewTaskJsonProvider import ObsidianDataviewTaskJsonProvider
@@ -30,11 +31,15 @@ if __name__ == '__main__':
         ("Remaining Effort(10)", RemainingEffortHeuristic(2.0, 10.0)),
     ]
 
-    service = TelegramReportingService(bot, taskProvider, heuristicList, chatId)
+    ## filters
+    filterList = [
+        ("Active task filter", ActiveTaskFilter())
+    ]
+
+    service = TelegramReportingService(bot, taskProvider, heuristicList, filterList, chatId)
     service.listenForEvents()
     pass
 
 # TODO: Roadmap
-## 5. Add a list of filters to the TelegramReportingService so we can filter the tasks based on different criteria
 ## 6. Create commands for both heuristics and filter selection at the telegram bot
 ## 7. Create a Heuristic and a Filter that implements the current strategy at GTD
