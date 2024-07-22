@@ -15,6 +15,7 @@ if __name__ == '__main__':
     ## telegram bot
     token = getenv("TELEGRAM_BOT_TOKEN")
     bot : telegram.Bot = telegram.Bot(token)
+    chatId = getenv("TELEGRAM_CHAT_ID")
 
     ## task provider
     jsonLoader = JsonLoader()
@@ -29,7 +30,6 @@ if __name__ == '__main__':
         ("Remaining Effort(10)", RemainingEffortHeuristic(2.0, 10.0)),
     ]
 
-    chatId = getenv("TELEGRAM_CHAT_ID")
     service = TelegramReportingService(bot, taskProvider, heuristicList, chatId)
     service.listenForEvents()
     pass
