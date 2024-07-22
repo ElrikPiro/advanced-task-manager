@@ -17,7 +17,9 @@ class ObsidianTaskModel(ITaskModel):
         self._line : int = int(line)
 
     def getDescription(self) -> str:
-        return self._description
+        slash = "/"
+        dot = "."
+        return f"{self._description} @ {self._file.split(slash).pop().split(dot)[0]}:{self._line}"
 
     def getContext(self) -> str:
         return self._context
