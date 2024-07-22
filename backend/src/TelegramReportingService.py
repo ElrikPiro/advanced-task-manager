@@ -1,14 +1,16 @@
 import asyncio
 import datetime
 
-from typing import Tuple
+from typing import Tuple, List
+from .Interfaces.IHeuristic import IHeuristic
 from .Interfaces.IReportingService import IReportingService
 from .Interfaces.ITaskProvider import ITaskProvider
+from .Interfaces.ITaskModel import ITaskModel
 import telegram
 
 class TelegramReportingService(IReportingService):
 
-    def __init__(self, bot : telegram.Bot , taskProvider : ITaskProvider, chatId: int = 0):
+    def __init__(self, bot : telegram.Bot , taskProvider : ITaskProvider, heuristics : List[Tuple[str, IHeuristic]], chatId: int = 0):
         self.run = True
         self.bot = bot
         self.chatId = chatId
@@ -16,6 +18,9 @@ class TelegramReportingService(IReportingService):
         self._taskListPage = 0
         self._tasksPerPage = 5
         self._lastOffset = None
+        
+        self._heuristicList = heuristics
+        self._selectedHeuristicIndex = 0
 
         self._lastTaskList = self.taskProvider.getTaskList()
         pass
@@ -36,8 +41,14 @@ class TelegramReportingService(IReportingService):
                 return False
         return True
 
-    def wasListUpdated(self):
-        newTaskList = self.taskProvider.getTaskList()
+    def listUpdated(self):
+        newTaskList : List[ITaskModel] = self.taskProvider.getTaskList()
+
+        if len(self._heuristicList) > 0:
+            heuristic : IHeuristic = self._heuristicList[self._selectedHeuristicIndex][1]
+            sortedTaskList : List[Tuple[ITaskModel, float]] = heuristic.sort(newTaskList)
+            newTaskList = [task for task, _ in sortedTaskList]
+
         if not self.compare(newTaskList, self._lastTaskList):
             self._lastTaskList = newTaskList
             return True
@@ -46,11 +57,11 @@ class TelegramReportingService(IReportingService):
     async def runEventLoop(self):
         # Reads every message received by the bot
         coroutine = self.bot.getUpdates(limit=1, timeout=10, allowed_updates=['message'], offset=self._lastOffset)
-        wasListUpdated = self.wasListUpdated()
+        wasListUpdated = self.listUpdated()
 
         if wasListUpdated and self.chatId != 0:
             # Send the updated list
-            await self.bot.sendMessage(chat_id=self.chatId, text="Task list updated")
+            await self.bot.sendMessage(chat_id=self.chatId, text="Task /list updated")
             pass
 
         result : Tuple[telegram.Update] = await coroutine
@@ -106,10 +117,16 @@ class TelegramReportingService(IReportingService):
         task = self._lastTaskList[taskId]
         taskDescription = task.getDescription()
         taskContext = task.getContext()
+        taskSeverity = task.getSeverity()
         taskStartDate = datetime.datetime.fromtimestamp(task.getStart() / 1e3).strftime("%Y-%m-%d %H:%M:%S")
-        taskDueDate = datetime.datetime.fromtimestamp(task.getDue() / 1e3).strftime("%Y-%m-%d %H:%M:%S")
+        taskDueDate = datetime.datetime.fromtimestamp(task.getDue() / 1e3).strftime("%Y-%m-%d")
         taskRemainingCost = max(task.getTotalCost() - task.getInvestedEffort(), 0)
         
-        taskInformation = f"Task: {taskDescription}\nContext: {taskContext}\nStart Date: {taskStartDate}\nDue Date: {taskDueDate}\nRemaining Cost: {taskRemainingCost}"
+        taskInformation = f"Task: {taskDescription}\nContext: {taskContext}\nStart Date: {taskStartDate}\nDue Date: {taskDueDate}\nRemaining Cost: {taskRemainingCost}\nSeverity: {taskSeverity}"
+        for i, heuristic in enumerate(self._heuristicList):
+            heuristicName, heuristicInstance = heuristic
+            taskInformation += f"\n{heuristicName} : " + str(heuristicInstance.evaluate(task))
+        
+
         taskInformation += "\n\n/list - Return to list"
         await self.bot.sendMessage(chat_id=self.chatId, text=taskInformation)
