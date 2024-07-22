@@ -73,8 +73,6 @@ class TelegramReportingService(IReportingService):
         if messageText == "/list":
             self._taskListPage = 0
             await self.sendTaskList()
-        elif messageText == "/exit":
-            self.run = False
         elif messageText == "/next":
             self._taskListPage += 1
             await self.sendTaskList()
@@ -83,7 +81,10 @@ class TelegramReportingService(IReportingService):
             await self.sendTaskList()
         else:
             await self.sendHelp()
-        await message.delete()
+        try:
+            await message.delete()
+        except:
+            pass
         pass
 
     async def sendTaskList(self):
