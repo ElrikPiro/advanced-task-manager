@@ -87,6 +87,8 @@ class TelegramReportingService(IReportingService):
     async def sendHelp(self):
         helpMessage = "Commands:"
         helpMessage += "\n\t/list - List all tasks"
+        helpMessage += "\n\t/heuristic - List heuristic options"
+        helpMessage += "\n\t/filter - List filter options"
         await self.bot.sendMessage(chat_id=self.chatId, text=helpMessage)
 
     async def processMessage(self, message: telegram.Message):
@@ -103,6 +105,22 @@ class TelegramReportingService(IReportingService):
         elif messageText.startswith("/task_"):
             taskId = self._taskListPage * self._tasksPerPage + int(messageText.split("_")[1]) - 1
             await self.sendTaskInformation(taskId)
+        elif messageText == "/heuristic":
+            heuristicList = "\n".join([f"/heuristic_{i+1} : {heuristic[0]}" for i, heuristic in enumerate(self._heuristicList)])
+            heuristicList += "\n\n/filter - List filter options"
+            await self.bot.sendMessage(chat_id=self.chatId, text=heuristicList)
+        elif messageText.startswith("/heuristic_"):
+            self._selectedHeuristicIndex = int(messageText.split("_")[1]) - 1
+            self.listUpdated()
+            await self.sendTaskList()
+        elif messageText == "/filter":
+            filterList = "\n".join([f"/filter_{i+1} : {filter[0]}" for i, filter in enumerate(self._filterList)])
+            filterList += "\n\n/heuristic - List heuristic options"
+            await self.bot.sendMessage(chat_id=self.chatId, text=filterList)
+        elif messageText.startswith("/filter_"):
+            self._selectedFilterIndex = int(messageText.split("_")[1]) - 1
+            self.listUpdated()
+            await self.sendTaskList()
         else:
             await self.sendHelp()
         try:

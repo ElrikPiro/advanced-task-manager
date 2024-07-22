@@ -9,6 +9,7 @@ from src.ObsidianDataviewTaskJsonProvider import ObsidianDataviewTaskJsonProvide
 from src.JsonLoader import JsonLoader
 from src.SlackHeuristic import SlackHeuristic
 from src.RemainingEffortHeuristic import RemainingEffortHeuristic
+from src.ContextPrefixTaskFilter import ContextPrefixTaskFilter
 
 if __name__ == '__main__':
 
@@ -35,8 +36,15 @@ if __name__ == '__main__':
     ]
 
     ## filters
+    activeFilter = ActiveTaskFilter()
+
     filterList = [
-        ("Active task filter", ActiveTaskFilter())
+        ("Active task filter", activeFilter),
+        ("Bullet journal filter", ContextPrefixTaskFilter(activeFilter, "bujo")),
+        ("Indoor task filter", ContextPrefixTaskFilter(activeFilter, "indoor_")),
+        ("Device-specific tasks filter", ContextPrefixTaskFilter(activeFilter, "aux_device_")),
+        ("Computer task filter", ContextPrefixTaskFilter(activeFilter, "workstation")),
+        ("Outdoor task filter", ContextPrefixTaskFilter(activeFilter, "outdoor_")),
     ]
 
     service = TelegramReportingService(bot, taskProvider, heuristicList, filterList, chatId)
@@ -44,6 +52,6 @@ if __name__ == '__main__':
     pass
 
 # TODO: Roadmap
-## 6. Create commands for both heuristics and filter selection at the telegram bot
 ## 7. Create a Heuristic and a Filter that implements the current strategy at GTD
 ## 8. Pomodoros per day autoupdate
+## 9. Fix out of bounds page list
