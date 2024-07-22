@@ -13,6 +13,9 @@ from src.RemainingEffortHeuristic import RemainingEffortHeuristic
 if __name__ == '__main__':
 
     # IoC
+    ## constants
+    pomodorosPerDay = 2.0
+
     ## telegram bot
     token = getenv("TELEGRAM_BOT_TOKEN")
     bot : telegram.Bot = telegram.Bot(token)
@@ -26,9 +29,9 @@ if __name__ == '__main__':
     ## heuristics
     heuristicList = [
         ("Slack Heuristic", SlackHeuristic(2.0)), 
-        ("Remaining Effort(1)", RemainingEffortHeuristic(2.0, 1.0)),
-        ("Remaining Effort(5)", RemainingEffortHeuristic(2.0, 5.0)),
-        ("Remaining Effort(10)", RemainingEffortHeuristic(2.0, 10.0)),
+        ("Remaining Effort(1)", RemainingEffortHeuristic(pomodorosPerDay, 1.0)),
+        ("Remaining Effort(5)", RemainingEffortHeuristic(pomodorosPerDay, 5.0)),
+        ("Remaining Effort(10)", RemainingEffortHeuristic(pomodorosPerDay, 10.0)),
     ]
 
     ## filters
@@ -43,3 +46,4 @@ if __name__ == '__main__':
 # TODO: Roadmap
 ## 6. Create commands for both heuristics and filter selection at the telegram bot
 ## 7. Create a Heuristic and a Filter that implements the current strategy at GTD
+## 8. Pomodoros per day autoupdate
