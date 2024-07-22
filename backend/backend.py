@@ -25,7 +25,6 @@ if __name__ == '__main__':
     pass
 
 # TODO: Roadmap
-## 1. Create a command to show current task information
 ## 2. Add a list of heuristics to the TelegramReportingService so we can order the tasks based on different criteria
 ## 3. Create a IFilter interface to filter tasks based on different criteria
 ## 4. Create a FilterActiveTasks class that implements IFilter to filter only active tasks

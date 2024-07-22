@@ -1,4 +1,5 @@
 import asyncio
+import datetime
 
 from typing import Tuple
 from .Interfaces.IReportingService import IReportingService
@@ -65,7 +66,8 @@ class TelegramReportingService(IReportingService):
             await self.processMessage(message)
 
     async def sendHelp(self):
-        helpMessage = "Commands:\n/list - List all tasks\n/next - Next page\n/previous - Previous page\n/exit - Exit"
+        helpMessage = "Commands:"
+        helpMessage += "\n\t/list - List all tasks"
         await self.bot.sendMessage(chat_id=self.chatId, text=helpMessage)
 
     async def processMessage(self, message: telegram.Message):
@@ -79,6 +81,9 @@ class TelegramReportingService(IReportingService):
         elif messageText == "/previous":
             self._taskListPage -= 1
             await self.sendTaskList()
+        elif messageText.startswith("/task_"):
+            taskId = self._taskListPage * self._tasksPerPage + int(messageText.split("_")[1]) - 1
+            await self.sendTaskInformation(taskId)
         else:
             await self.sendHelp()
         try:
@@ -89,9 +94,22 @@ class TelegramReportingService(IReportingService):
 
     async def sendTaskList(self):
         subTaskList = self._lastTaskList[self._taskListPage * self._tasksPerPage : (self._taskListPage + 1) * self._tasksPerPage]
-        subTaskListDescriptions = [(f"{i+1}. {task.getDescription()}") for i, task in enumerate(subTaskList)]
+        subTaskListDescriptions = [(f"/task_{i+1} : {task.getDescription()}") for i, task in enumerate(subTaskList)]
 
         taskListString = "\n".join(subTaskListDescriptions)
-        taskListString += "\n\nPage " + str(self._taskListPage + 1) + " of " + str(len(self._lastTaskList) // self._tasksPerPage + 1)
+        taskListString += "\n\nPage " + str(self._taskListPage + 1) + " of " + str(len(self._lastTaskList) // self._tasksPerPage + 1) + "\n"
+        taskListString += "/next - Next page\n/previous - Previous page"
         await self.bot.sendMessage(chat_id=self.chatId, text=taskListString)
         pass
+
+    async def sendTaskInformation(self, taskId: int):
+        task = self._lastTaskList[taskId]
+        taskDescription = task.getDescription()
+        taskContext = task.getContext()
+        taskStartDate = datetime.datetime.fromtimestamp(task.getStart() / 1e3).strftime("%Y-%m-%d %H:%M:%S")
+        taskDueDate = datetime.datetime.fromtimestamp(task.getDue() / 1e3).strftime("%Y-%m-%d %H:%M:%S")
+        taskRemainingCost = max(task.getTotalCost() - task.getInvestedEffort(), 0)
+        
+        taskInformation = f"Task: {taskDescription}\nContext: {taskContext}\nStart Date: {taskStartDate}\nDue Date: {taskDueDate}\nRemaining Cost: {taskRemainingCost}"
+        taskInformation += "\n\n/list - Return to list"
+        await self.bot.sendMessage(chat_id=self.chatId, text=taskInformation)
