@@ -128,7 +128,7 @@ class TelegramReportingService(IReportingService):
         taskSeverity = task.getSeverity()
         taskStartDate = datetime.datetime.fromtimestamp(task.getStart() / 1e3).strftime("%Y-%m-%d %H:%M:%S")
         taskDueDate = datetime.datetime.fromtimestamp(task.getDue() / 1e3).strftime("%Y-%m-%d")
-        taskRemainingCost = max(task.getTotalCost() - task.getInvestedEffort(), 0)
+        taskRemainingCost = max(task.getTotalCost(), 0)
         
         taskInformation = f"Task: {taskDescription}\nContext: {taskContext}\nStart Date: {taskStartDate}\nDue Date: {taskDueDate}\nRemaining Cost: {taskRemainingCost}\nSeverity: {taskSeverity}"
         for i, heuristic in enumerate(self._heuristicList):

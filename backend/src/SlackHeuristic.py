@@ -18,7 +18,7 @@ class SlackHeuristic(IHeuristic):
         p = self.pomodorosPerDay
         w = 1
         s = task.getSeverity()
-        r = task.getTotalCost() - task.getInvestedEffort()
+        r = task.getTotalCost()
         d = task.calculateRemainingTime()
 
         try:
