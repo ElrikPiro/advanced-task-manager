@@ -17,7 +17,7 @@ if __name__ == '__main__':
 
     # IoC
     ## constants
-    pomodorosPerDay = 2.49
+    pomodorosPerDay = 2.6
 
     ## telegram bot
     token = getenv("TELEGRAM_BOT_TOKEN")
@@ -31,7 +31,8 @@ if __name__ == '__main__':
 
     ## heuristics
     heuristicList = [
-        ("Slack Heuristic", SlackHeuristic(pomodorosPerDay)), 
+        ("Slack Heuristic", SlackHeuristic(pomodorosPerDay)),
+        ("Tomorrow Slack Heuristic", TomorrowSlackHeuristic(pomodorosPerDay)),
         ("Remaining Effort(1)", RemainingEffortHeuristic(pomodorosPerDay, 1.0)),
         ("Remaining Effort(5)", RemainingEffortHeuristic(pomodorosPerDay, 5.0)),
         ("Remaining Effort(10)", RemainingEffortHeuristic(pomodorosPerDay, 10.0)),

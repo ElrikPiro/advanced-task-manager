@@ -19,7 +19,7 @@ class TomorrowSlackHeuristic(IHeuristic):
         w = 1
         s = task.getSeverity()
         r = task.getTotalCost()
-        d = min(task.calculateRemainingTime() - 1, 0.5)
+        d = task.calculateRemainingTime() - 1
 
         try:
             h = (p * w * s * r) / (p * d - r)

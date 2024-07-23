@@ -69,7 +69,11 @@ class TelegramReportingService(IReportingService):
 
         if wasListUpdated and self.chatId != 0:
             # Send the updated list
-            await self.bot.sendMessage(chat_id=self.chatId, text="Task /list updated")
+            nextTask = ""
+            if len(self._lastTaskList) != 0:
+                nextTask = f"\n\n/task_1 : {self._lastTaskList[0].getDescription()}"
+            self._taskListPage = 0
+            await self.bot.sendMessage(chat_id=self.chatId, text="Task /list updated" + nextTask)
             pass
 
         result : Tuple[telegram.Update] = await coroutine
@@ -136,6 +140,8 @@ class TelegramReportingService(IReportingService):
         taskListString = "\n".join(subTaskListDescriptions)
         taskListString += "\n\nPage " + str(self._taskListPage + 1) + " of " + str(len(self._lastTaskList) // self._tasksPerPage + 1) + "\n"
         taskListString += "/next - Next page\n/previous - Previous page"
+        taskListString += "\n\nselected /heuristic : " + self._heuristicList[self._selectedHeuristicIndex][0]
+        taskListString += "\nselected /filter : " + self._filterList[self._selectedFilterIndex][0]
         await self.bot.sendMessage(chat_id=self.chatId, text=taskListString)
         pass
 

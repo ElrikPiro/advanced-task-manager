@@ -15,7 +15,7 @@ class ObsidianTaskModel(ITaskModel):
         self._status : str = status
         self._file : str = file
         self._line : int = int(line)
-        self._calm : bool = True if calm.capitalize() == "TRUE" else False
+        self._calm : bool = True if calm.upper().startswith("TRUE") else False
 
     def getDescription(self) -> str:
         slash = "/"
