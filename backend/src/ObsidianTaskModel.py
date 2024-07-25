@@ -57,50 +57,28 @@ class ObsidianTaskModel(ITaskModel):
         self._description = description
 
     def setContext(self, context: str):
-        fileArray = self.getWholeFileAsLineArray()
-        fileArray[self._line] = self.setAttribute(fileArray[self._line], "track", context)
-        self.saveChanges(fileArray)
+        self._context = context
 
     def setStart(self, start: int):
-        # format timestamp to YYYY-MM-DDTHH:MM
-        context = datetime.datetime.fromtimestamp(start / 1e3).strftime("%Y-%m-%dT%H:%M")
-
-        fileArray = self.getWholeFileAsLineArray()
-        fileArray[self._line] = self.setAttribute(fileArray[self._line], "starts", context)
-        self.saveChanges(fileArray)
+        self._start = start
 
     def setDue(self, due: int):
-        # format timestamp to YYYY-MM-DDTHH:MM
-        context = datetime.datetime.fromtimestamp(due / 1e3).strftime("%Y-%m-%dT%H:%M")
-
-        fileArray = self.getWholeFileAsLineArray()
-        fileArray[self._line] = self.setAttribute(fileArray[self._line], "due", context)
-        self.saveChanges(fileArray)
+        self._due = due
 
     def setSeverity(self, severity: float):
-        fileArray = self.getWholeFileAsLineArray()
-        fileArray[self._line] = self.setAttribute(fileArray[self._line], "severity", severity)
-        self.saveChanges(fileArray)
+        self._severity = severity
 
     def setTotalCost(self, totalCost: float):
-        fileArray = self.getWholeFileAsLineArray()
-        fileArray[self._line] = self.setAttribute(fileArray[self._line], "remaining_cost", totalCost)
-        self.saveChanges(fileArray)
+        self._totalCost = totalCost
 
     def setInvestedEffort(self, investedEffort: float):
-        fileArray = self.getWholeFileAsLineArray()
-        fileArray[self._line] = self.setAttribute(fileArray[self._line], "invested", investedEffort)
-        self.saveChanges(fileArray)
+        self._investedEffort = investedEffort
 
     def setStatus(self, status: str):
-        fileArray = self.getWholeFileAsLineArray()
-        fileArray[self._line] = fileArray[self._line].replace(f"- [{self._status}]", f"- [{status}]")
-        self.saveChanges(fileArray)
+        self._status = status
 
     def setCalm(self, calm: bool):
-        fileArray = self.getWholeFileAsLineArray()
-        fileArray[self._line] = self.setAttribute(fileArray[self._line], "calm", "true" if calm else "false")
-        self.saveChanges(fileArray)
+        self._calm = calm
 
     def setFile(self, file: str):
         self._file = file
@@ -119,19 +97,3 @@ class ObsidianTaskModel(ITaskModel):
     
     def __eq__(self, other : ITaskModel):
         return self.getDescription() == other.getDescription() and self.getContext() == other.getContext() and self.getStart() == other.getStart() and self.getDue() == other.getDue() and self.getSeverity() == other.getSeverity() and self.getTotalCost() == other.getTotalCost() and self.getInvestedEffort() == other.getInvestedEffort() and self.getStatus() == other.getStatus() and self.getFile() == other.getFile() and self.getLine() == other.getLine()
-    
-    def getWholeFileAsLineArray(self) -> list[str]:
-        with open(self._vaultPath + "/" + self._file, "r") as f:
-            return f.readlines()
-        
-    def saveChanges(self, newLineArray : list[str]):
-        with open(self._vaultPath + "/" + self._file, "w") as f:
-            f.writelines(newLineArray)
-
-    def setAttribute(self, line : str, attribute: str, value: str):
-        # must find in the line a pattern like "[attribute:: old_value]" and replace it with "[attribute:: value]" if it doesn't exist, append it at the end of the line
-        if f"[{attribute}::" in line:
-            line = line.replace(f"[{attribute}::", f"[{attribute}:: {value}], [old_{attribute}::")
-        else:
-            line = line.replace("\n", f", [{attribute}:: {value}]\n")
-        return line

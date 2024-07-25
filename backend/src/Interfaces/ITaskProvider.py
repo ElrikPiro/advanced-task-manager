@@ -12,3 +12,7 @@ class ITaskProvider(ABC):
     @abstractmethod
     def getTaskListAttribute(self, string: str) -> str:
         pass
+
+    @abstractmethod
+    def saveTask(self, task: ITaskModel):
+        pass

@@ -151,6 +151,7 @@ class TelegramReportingService(IReportingService):
             if self._selectedTaskIndex is not None:
                 task = self._lastTaskList[self._selectedTaskIndex]
                 task.setStatus("x")
+                self.taskProvider.saveTask(task)
                 await self.sendTaskList()
             else:
                 await self.bot.sendMessage(chat_id=self.chatId, text="no task selected.")
@@ -161,7 +162,8 @@ class TelegramReportingService(IReportingService):
                 if len(params) < 2:
                     params[0] = "help"
                     params[1] = "me"
-                await self.processSetParam(task, params[0], params[1])
+                await self.processSetParam(task, params[0], " ".join(params[1:]) if len(params) > 2 else params[1])
+                self.taskProvider.saveTask(task)
             else:
                 await self.bot.sendMessage(chat_id=self.chatId, text="no task selected.")
         else:
@@ -174,7 +176,7 @@ class TelegramReportingService(IReportingService):
 
     async def processSetParam(self, task: ITaskModel, param: str, value: str):
         if param == "description":
-            #task.setDescription(value)
+            task.setDescription(value)
             pass
         elif param == "context":
             task.setContext(value)
@@ -197,7 +199,6 @@ class TelegramReportingService(IReportingService):
         else:
             errorMessage = f"Invalid parameter {param}\nvalid parameters would be: description, context, start, due, severity, total_cost, effort_invested, calm"
             await self.bot.sendMessage(chat_id=self.chatId, text=errorMessage)
-
         pass
 
     async def sendTaskList(self):
