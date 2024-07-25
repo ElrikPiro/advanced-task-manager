@@ -4,7 +4,7 @@ from math import ceil
 from .Interfaces.ITaskModel import ITaskModel
 
 class ObsidianTaskModel(ITaskModel):
-    def __init__(self, description: str, context: str, start: int, due: int, severity: float, totalCost: float, investedEffort: float, status: str, file: str, line: int, calm : str):
+    def __init__(self, description: str, context: str, start: int, due: int, severity: float, totalCost: float, investedEffort: float, status: str, file: str, line: int, calm : str, vaultPath: str):
         self._description : str = description
         self._context : str = context
         self._start : int = int(start)
@@ -16,6 +16,7 @@ class ObsidianTaskModel(ITaskModel):
         self._file : str = file
         self._line : int = int(line)
         self._calm : bool = True if calm.upper().startswith("TRUE") else False
+        self._vaultPath : str = vaultPath
 
     def getDescription(self) -> str:
         slash = "/"
@@ -74,7 +75,9 @@ class ObsidianTaskModel(ITaskModel):
         self._investedEffort = investedEffort
 
     def setStatus(self, status: str):
-        self._status = status
+        fileArray = self.getWholeFileAsLineArray()
+        fileArray[self._line] = fileArray[self._line].replace(f"- [{self._status}]", f"- [{status}]")
+        self.saveChanges(fileArray)
 
     def setFile(self, file: str):
         self._file = file
@@ -93,3 +96,11 @@ class ObsidianTaskModel(ITaskModel):
     
     def __eq__(self, other : ITaskModel):
         return self.getDescription() == other.getDescription() and self.getContext() == other.getContext() and self.getStart() == other.getStart() and self.getDue() == other.getDue() and self.getSeverity() == other.getSeverity() and self.getTotalCost() == other.getTotalCost() and self.getInvestedEffort() == other.getInvestedEffort() and self.getStatus() == other.getStatus() and self.getFile() == other.getFile() and self.getLine() == other.getLine()
+    
+    def getWholeFileAsLineArray(self) -> list[str]:
+        with open(self._vaultPath + "/" + self._file, "r") as f:
+            return f.readlines()
+        
+    def saveChanges(self, newLineArray : list[str]):
+        with open(self._vaultPath + "/" + self._file, "w") as f:
+            f.writelines(newLineArray)

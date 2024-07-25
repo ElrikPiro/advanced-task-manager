@@ -17,15 +17,18 @@ if __name__ == '__main__':
 
     # IoC
 
-    ## telegram bot
+    ## environment variables
     token = getenv("TELEGRAM_BOT_TOKEN")
-    bot : telegram.Bot = telegram.Bot(token)
     chatId = getenv("TELEGRAM_CHAT_ID")
+    vaultPath = getenv("OBSIDIAN_VAULT_PATH")
+
+    ## telegram bot
+    bot : telegram.Bot = telegram.Bot(token)
 
     ## task provider
     jsonLoader = JsonLoader()
     taskJsonProvider = ObsidianDataviewTaskJsonProvider(jsonLoader)
-    taskProvider = ObsidianTaskProvider(taskJsonProvider)
+    taskProvider = ObsidianTaskProvider(taskJsonProvider, vaultPath)
 
     ## heuristics
     heuristicList = [
@@ -69,4 +72,4 @@ if __name__ == '__main__':
     pass
 
 # TODO: Roadmap
-## 9. Fix out of bounds page list
+## 10. Set

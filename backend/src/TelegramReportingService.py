@@ -19,6 +19,7 @@ class TelegramReportingService(IReportingService):
         self.taskProvider = taskProvider
         self._taskListPage = 0
         self._tasksPerPage = 5
+        self._selectedTaskIndex = None
         self._lastOffset = None
         
         self._heuristicList = heuristics
@@ -128,6 +129,7 @@ class TelegramReportingService(IReportingService):
             await self.sendTaskList()
         elif messageText.startswith("/task_"):
             taskId = self._taskListPage * self._tasksPerPage + int(messageText.split("_")[1]) - 1
+            self._selectedTaskIndex = taskId
             await self.sendTaskInformation(taskId)
         elif messageText == "/heuristic":
             heuristicList = "\n".join([f"/heuristic_{i+1} : {heuristic[0]}" for i, heuristic in enumerate(self._heuristicList)])
@@ -145,6 +147,13 @@ class TelegramReportingService(IReportingService):
             self._selectedFilterIndex = int(messageText.split("_")[1]) - 1
             self.listUpdated()
             await self.sendTaskList()
+        elif messageText == "/done":
+            if self._selectedTaskIndex is not None:
+                task = self._lastTaskList[self._selectedTaskIndex]
+                task.setStatus("x")
+                await self.sendTaskList()
+            else:
+                await self.bot.sendMessage(chat_id=self.chatId, text="no task selected.")
         else:
             await self.sendHelp()
         try:
@@ -154,6 +163,8 @@ class TelegramReportingService(IReportingService):
         pass
 
     async def sendTaskList(self):
+        self._selectedTaskIndex = None
+
         subTaskList = self._lastTaskList[self._taskListPage * self._tasksPerPage : (self._taskListPage + 1) * self._tasksPerPage]
         subTaskListDescriptions = [(f"/task_{i+1} : {task.getDescription()}") for i, task in enumerate(subTaskList)]
 
@@ -181,5 +192,5 @@ class TelegramReportingService(IReportingService):
         
 
         taskInformation += "\n\n/list - Return to list"
-        # taskInformation += "\n/done - Mark task as done"
+        taskInformation += "\n/done - Mark task as done"
         await self.bot.sendMessage(chat_id=self.chatId, text=taskInformation)
