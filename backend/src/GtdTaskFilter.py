@@ -27,8 +27,8 @@ class GtdTaskFilter(IFilter):
         # get all task with heuristic value above threshold
         for heuristic, threshold in self.orderedHeuristics:
             retval = self._filterByHeuristic(heuristic, threshold, activeTasks)
-            retval = self._filterOrderedCategories(retval)
             retval = self._filterCalmTasks(retval)
+            retval = self._filterOrderedCategories(retval)
             if len(retval) > 0:
                 return retval
             

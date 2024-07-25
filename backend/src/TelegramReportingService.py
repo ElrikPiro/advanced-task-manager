@@ -1,6 +1,7 @@
 import asyncio
 import datetime
 
+from time import sleep as sleepSync
 from typing import Tuple, List
 from .Interfaces.IHeuristic import IHeuristic
 from .Interfaces.IReportingService import IReportingService
@@ -27,15 +28,34 @@ class TelegramReportingService(IReportingService):
         self._selectedFilterIndex = 0
 
         self._lastTaskList = self.taskProvider.getTaskList()
+        
+        self._lastError = "Event loop initialized"
         pass
 
     def listenForEvents(self):
-        asyncio.run(self._listenForEvents())
+        while self.run:
+            try:
+                asyncio.run(self._listenForEvents())
+            except Exception as e:
+                self._lastError = f"Error: {repr(e)}"
+                print(self._lastError)
+                sleepSync(10)
+            
 
     async def _listenForEvents(self):
         await self.bot.initialize()
+        await self.bot.sendMessage(chat_id=self.chatId, text=self._lastError)
         while self.run:
-            await self.runEventLoop()
+            try:
+                await self.runEventLoop()
+            except Exception as e:
+                try:
+                    await self.bot.shutdown()
+                except Exception as e:
+                    print(f"Fatal error: {repr(e)} shutting down.")
+                    self.run = False
+                finally:
+                    raise e
 
     def compare(self, list1, list2):
         if len(list1) != len(list2):
@@ -161,4 +181,5 @@ class TelegramReportingService(IReportingService):
         
 
         taskInformation += "\n\n/list - Return to list"
+        # taskInformation += "\n/done - Mark task as done"
         await self.bot.sendMessage(chat_id=self.chatId, text=taskInformation)

@@ -10,7 +10,8 @@ class ObsidianTaskProvider(ITaskProvider):
         pass
 
     def getTaskList(self) -> List[ITaskModel]:
-        taskListJson : dict = self.TaskJsonProvider.getJson()
+        obsidianJson : dict = self.TaskJsonProvider.getJson()
+        taskListJson : dict = obsidianJson# obsidianJson["tasks"]
         taskList : List[ITaskModel] = []
         for task in taskListJson:
             try:

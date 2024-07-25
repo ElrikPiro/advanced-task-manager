@@ -20,7 +20,7 @@ class ObsidianTaskModel(ITaskModel):
     def getDescription(self) -> str:
         slash = "/"
         dot = "."
-        return f"{self._description} @ {self._file.split(slash).pop().split(dot)[0]}:{self._line}"
+        return f"{self._description} @ '{self._file.split(slash).pop().split(dot)[0]}:{self._line}'"
 
     def getContext(self) -> str:
         return self._context
