@@ -154,12 +154,50 @@ class TelegramReportingService(IReportingService):
                 await self.sendTaskList()
             else:
                 await self.bot.sendMessage(chat_id=self.chatId, text="no task selected.")
+        elif messageText.startswith("/set"):
+            if self._selectedTaskIndex is not None:
+                task = self._lastTaskList[self._selectedTaskIndex]
+                params = messageText.split(" ")[1:]
+                if len(params) < 2:
+                    params[0] = "help"
+                    params[1] = "me"
+                await self.processSetParam(task, params[0], params[1])
+            else:
+                await self.bot.sendMessage(chat_id=self.chatId, text="no task selected.")
         else:
             await self.sendHelp()
         try:
             await message.delete()
         except:
             pass
+        pass
+
+    async def processSetParam(self, task: ITaskModel, param: str, value: str):
+        if param == "description":
+            #task.setDescription(value)
+            pass
+        elif param == "context":
+            task.setContext(value)
+        elif param == "start":
+            start_datetime = datetime.datetime.strptime(value, '%Y-%m-%dT%H:%M')
+            start_timestamp = int(start_datetime.timestamp() * 1000)
+            task.setStart(int(start_timestamp))
+        elif param == "due":
+            due_datetime = datetime.datetime.strptime(value, '%Y-%m-%d')
+            due_timestamp = int(due_datetime.timestamp() * 1000)
+            task.setDue(int(due_timestamp))
+        elif param == "severity":
+            task.setSeverity(float(value))
+        elif param == "total_cost":
+            task.setTotalCost(float(value))
+        elif param == "effort_invested":
+            task.setInvestedEffort(float(value))
+        elif param == "calm":
+            task.setCalm(value.upper().startswith("TRUE"))
+        else:
+            errorMessage = f"Invalid parameter {param}\nvalid parameters would be: description, context, start, due, severity, total_cost, effort_invested, calm"
+            await self.bot.sendMessage(chat_id=self.chatId, text=errorMessage)
+
         pass
 
     async def sendTaskList(self):
@@ -193,4 +231,6 @@ class TelegramReportingService(IReportingService):
 
         taskInformation += "\n\n/list - Return to list"
         taskInformation += "\n/done - Mark task as done"
+        taskInformation += "\n/set [param] [value] - Set task parameter"
+        taskInformation += "\n\tparameters: description, context, start, due, severity, total_cost, effort_invested, calm"
         await self.bot.sendMessage(chat_id=self.chatId, text=taskInformation)

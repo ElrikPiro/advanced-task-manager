@@ -81,6 +81,10 @@ class ITaskModel(ABC):
         pass
 
     @abstractmethod
+    def setCalm(self, calm: bool):
+        pass
+
+    @abstractmethod
     def calculateRemainingTime(self) -> int:
         pass
 
