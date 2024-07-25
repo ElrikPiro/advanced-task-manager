@@ -43,15 +43,18 @@ class ObsidianTaskProvider(ITaskProvider):
 
         taskLine = f"- [{status}] {description} [track:: {context}], [starts:: {start}], [due:: {due}], [severity:: {severity}], [remaining_cost:: {totalCost}], [invested:: {investedEffort}], [calm:: {calm}]\n"
         
-        file = None
-        lineNumber = None
-        if not isinstance(task, ObsidianTaskModel):
+        file = ""
+        lineNumber = -1
+        if not isinstance(task, ObsidianTaskModel) or task.getFile() == "" or task.getLine() == -1:
             file = "ObsidianTaskProvider.md"
             # if file doesnt exist in vault path, create it
-            if not os.path.exists(self.vaultPath + "/" + file):
-                with open(self.vaultPath + file, "w") as file:
-                    file.write("# Task list\n\n")
-                    file.write(taskLine)
+            if not os.path.exists(self.vaultPath + "\\" + file):
+                with open(self.vaultPath + file, "w+") as f:
+                    f.write("# Task list\n\n")
+                    f.write(taskLine)
+            else:
+                with open(self.vaultPath + "\\" + file, "a") as f:
+                    f.write(taskLine)
         else:
             ObsidianTask : ObsidianTaskModel = task
             file = ObsidianTask.getFile()
@@ -63,3 +66,15 @@ class ObsidianTaskProvider(ITaskProvider):
             fileLines[lineNumber] = lineOfInterest.split("- [")[0] + taskLine
             with open(self.vaultPath + "/" + file, "w") as f:
                 f.writelines(fileLines)
+
+    def createDefaultTask(self, description: str):
+        starts = int(datetime.datetime.now().timestamp() * 1e3)
+        due = int(datetime.datetime.today().timestamp() * 1e3)
+        severity = 1.0
+        invested = 0.0
+        status = " "
+        calm = "false"
+
+        task = ObsidianTaskModel(description, "workstation", starts, due, 1, severity, invested, status, "", -1, calm, vaultPath=self.vaultPath)
+        self.saveTask(task)
+        pass

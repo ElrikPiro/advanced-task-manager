@@ -16,3 +16,7 @@ class ITaskProvider(ABC):
     @abstractmethod
     def saveTask(self, task: ITaskModel):
         pass
+
+    @abstractmethod
+    def createDefaultTask(self, description: str):
+        pass

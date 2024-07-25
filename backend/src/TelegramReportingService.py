@@ -114,6 +114,7 @@ class TelegramReportingService(IReportingService):
         helpMessage += "\n\t/list - List all tasks"
         helpMessage += "\n\t/heuristic - List heuristic options"
         helpMessage += "\n\t/filter - List filter options"
+        helpMessage += "\n\t/new [description] - Create a new default task"
         await self.bot.sendMessage(chat_id=self.chatId, text=helpMessage)
 
     async def processMessage(self, message: telegram.Message):
@@ -166,13 +167,14 @@ class TelegramReportingService(IReportingService):
                 self.taskProvider.saveTask(task)
             else:
                 await self.bot.sendMessage(chat_id=self.chatId, text="no task selected.")
+        elif messageText.startswith("/new"):
+            params = messageText.split(" ")[1:]
+            if len(params) > 0:
+                self.taskProvider.createDefaultTask(" ".join(params))
+            else:
+                await self.bot.sendMessage(chat_id=self.chatId, text="no description provided.")
         else:
             await self.sendHelp()
-        try:
-            await message.delete()
-        except:
-            pass
-        pass
 
     async def processSetParam(self, task: ITaskModel, param: str, value: str):
         if param == "description":
