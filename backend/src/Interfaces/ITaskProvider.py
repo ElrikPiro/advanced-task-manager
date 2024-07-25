@@ -8,3 +8,7 @@ class ITaskProvider(ABC):
     @abstractmethod
     def getTaskList(self) -> List[ITaskModel]:
         pass
+
+    @abstractmethod
+    def getTaskListAttribute(self, string: str) -> str:
+        pass

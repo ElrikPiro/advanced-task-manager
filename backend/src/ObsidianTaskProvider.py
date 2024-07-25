@@ -11,7 +11,7 @@ class ObsidianTaskProvider(ITaskProvider):
 
     def getTaskList(self) -> List[ITaskModel]:
         obsidianJson : dict = self.TaskJsonProvider.getJson()
-        taskListJson : dict = obsidianJson# obsidianJson["tasks"]
+        taskListJson : dict = obsidianJson["tasks"]
         taskList : List[ITaskModel] = []
         for task in taskListJson:
             try:
@@ -23,3 +23,6 @@ class ObsidianTaskProvider(ITaskProvider):
                 print(f"skipping...")
                 continue
         return taskList
+    
+    def getTaskListAttribute(self, string: str) -> str:
+        return self.TaskJsonProvider.getJson()[string]

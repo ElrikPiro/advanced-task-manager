@@ -16,8 +16,6 @@ from src.GtdTaskFilter import GtdTaskFilter
 if __name__ == '__main__':
 
     # IoC
-    ## constants
-    pomodorosPerDay = 2.11
 
     ## telegram bot
     token = getenv("TELEGRAM_BOT_TOKEN")
@@ -31,21 +29,21 @@ if __name__ == '__main__':
 
     ## heuristics
     heuristicList = [
-        ("Remaining Effort(1)", RemainingEffortHeuristic(pomodorosPerDay, 1.0)),
-        ("Remaining Effort(5)", RemainingEffortHeuristic(pomodorosPerDay, 5.0)),
-        ("Remaining Effort(10)", RemainingEffortHeuristic(pomodorosPerDay, 10.0)),
-        ("Slack Heuristic", SlackHeuristic(pomodorosPerDay)),
-        ("Tomorrow Slack Heuristic", TomorrowSlackHeuristic(pomodorosPerDay)),
+        ("Remaining Effort(1)", RemainingEffortHeuristic(taskProvider, 1.0)),
+        ("Remaining Effort(5)", RemainingEffortHeuristic(taskProvider, 5.0)),
+        ("Remaining Effort(10)", RemainingEffortHeuristic(taskProvider, 10.0)),
+        ("Slack Heuristic", SlackHeuristic(taskProvider)),
+        ("Tomorrow Slack Heuristic", TomorrowSlackHeuristic(taskProvider)),
     ]
 
     ## filters
     activeFilter = ActiveTaskFilter()
     orderedHeuristics = [
-        (TomorrowSlackHeuristic(pomodorosPerDay), 100.0),
-        (SlackHeuristic(pomodorosPerDay), 10.0),
-        (SlackHeuristic(pomodorosPerDay), 5.0),
+        (TomorrowSlackHeuristic(taskProvider), 100.0),
+        (SlackHeuristic(taskProvider), 10.0),
+        (SlackHeuristic(taskProvider), 5.0),
     ]
-    defaultHeuristic = (SlackHeuristic(pomodorosPerDay), 1.0)
+    defaultHeuristic = (SlackHeuristic(taskProvider), 1.0)
     
     orderedCategories = [
         ("Bullet journal filter", ContextPrefixTaskFilter(activeFilter, "bujo")),
@@ -71,5 +69,4 @@ if __name__ == '__main__':
     pass
 
 # TODO: Roadmap
-## 8. Pomodoros per day autoupdate
 ## 9. Fix out of bounds page list
