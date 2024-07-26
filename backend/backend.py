@@ -12,6 +12,7 @@ from src.TomorrowSlackHeuristic import TomorrowSlackHeuristic
 from src.RemainingEffortHeuristic import RemainingEffortHeuristic
 from src.ContextPrefixTaskFilter import ContextPrefixTaskFilter
 from src.GtdTaskFilter import GtdTaskFilter
+from src.ActiveTaskFilter import InactiveTaskFilter
 
 if __name__ == '__main__':
 
@@ -60,6 +61,7 @@ if __name__ == '__main__':
     filterList = [
         ("GTD filter", gtdFilter),
         ("All active task filter", activeFilter),
+        ("All inactive task filter", InactiveTaskFilter()),
         ("Bullet journal filter", ContextPrefixTaskFilter(activeFilter, "bujo")),
         ("Indoor task filter", ContextPrefixTaskFilter(activeFilter, "indoor_")),
         ("Device-specific tasks filter", ContextPrefixTaskFilter(activeFilter, "aux_device_")),
@@ -73,3 +75,4 @@ if __name__ == '__main__':
 
 # TODO: Roadmap
 ## 10. Eliminar tomorrow slack heuristic y en su lugar crear la heuristica de DaysToThresholdHeuristic
+## 11.  a�adir get task extended info que extraiga las lineas del fichero posteriores a la l�nea de la tarea

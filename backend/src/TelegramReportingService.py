@@ -197,7 +197,8 @@ class TelegramReportingService(IReportingService):
         elif param == "total_cost":
             task.setTotalCost(float(value))
         elif param == "effort_invested":
-            task.setInvestedEffort(float(value))
+            newInvestedEffort = task.getInvestedEffort() + float(value)
+            task.setInvestedEffort(float(newInvestedEffort))
         elif param == "calm":
             task.setCalm(value.upper().startswith("TRUE"))
         else:
@@ -226,8 +227,9 @@ class TelegramReportingService(IReportingService):
         taskStartDate = datetime.datetime.fromtimestamp(task.getStart() / 1e3).strftime("%Y-%m-%d %H:%M:%S")
         taskDueDate = datetime.datetime.fromtimestamp(task.getDue() / 1e3).strftime("%Y-%m-%d")
         taskRemainingCost = max(task.getTotalCost(), 0)
+        taskEffortInvested = max(task.getInvestedEffort(), 0)
         
-        taskInformation = f"Task: {taskDescription}\nContext: {taskContext}\nStart Date: {taskStartDate}\nDue Date: {taskDueDate}\nRemaining Cost: {taskRemainingCost}\nSeverity: {taskSeverity}"
+        taskInformation = f"Task: {taskDescription}\nContext: {taskContext}\nStart Date: {taskStartDate}\nDue Date: {taskDueDate}\nRemaining Cost: {taskRemainingCost}/{taskRemainingCost+taskEffortInvested}\nSeverity: {taskSeverity}"
         for i, heuristic in enumerate(self._heuristicList):
             heuristicName, heuristicInstance = heuristic
             taskInformation += f"\n{heuristicName} : " + str(heuristicInstance.evaluate(task))

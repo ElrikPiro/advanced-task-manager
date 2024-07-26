@@ -41,7 +41,7 @@ class ObsidianTaskProvider(ITaskProvider):
         status = task.getStatus()
         calm = "true" if task.getCalm() else "false"
 
-        taskLine = f"- [{status}] {description} [track:: {context}], [starts:: {start}], [due:: {due}], [severity:: {severity}], [remaining_cost:: {totalCost}], [invested:: {investedEffort}], [calm:: {calm}]\n"
+        taskLine = f"- [{status}] {description} [track:: {context}], [starts:: {start}], [due:: {due}], [severity:: {severity}], [remaining_cost:: {totalCost+investedEffort}], [invested:: {investedEffort}], [calm:: {calm}]\n"
         
         file = ""
         lineNumber = -1
