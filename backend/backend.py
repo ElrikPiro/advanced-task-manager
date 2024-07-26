@@ -72,4 +72,4 @@ if __name__ == '__main__':
     pass
 
 # TODO: Roadmap
-## 10. Set
+## 10. Eliminar tomorrow slack heuristic y en su lugar crear la heuristica de DaysToThresholdHeuristic

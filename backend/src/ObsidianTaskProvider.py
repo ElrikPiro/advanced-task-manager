@@ -22,8 +22,8 @@ class ObsidianTaskProvider(ITaskProvider):
                 taskList.append(obsidianTask)
             except Exception as e:
                 # print error cause and skip task
-                print(f"Error creating task from json: "+ task["taskText"] + f" : {repr(e)}")
-                print(f"skipping...")
+                # print(f"Error creating task from json: "+ task["taskText"] + f" : {repr(e)}")
+                # print(f"skipping...")
                 continue
         return taskList
     
@@ -49,22 +49,34 @@ class ObsidianTaskProvider(ITaskProvider):
             file = "ObsidianTaskProvider.md"
             # if file doesnt exist in vault path, create it
             if not os.path.exists(self.vaultPath + "\\" + file):
-                with open(self.vaultPath + file, "w+") as f:
+                with open(self.vaultPath + file, "w+", encoding='utf-8') as f:
                     f.write("# Task list\n\n")
                     f.write(taskLine)
             else:
-                with open(self.vaultPath + "\\" + file, "a") as f:
+                # clean completed tasks
+                lines = []
+                with open(self.vaultPath + "\\" + file, "r", encoding='utf-8') as f:
+                    lines = f.readlines()
+
+                numLines = 1
+                with open(self.vaultPath + "\\" + file, "w", encoding='utf-8') as f:
+                    for line in lines:
+                        if line.find("- [x]") == -1:
+                            f.write(line)
+                            numLines += 1
                     f.write(taskLine)
+                task.setFile(file)
+                task.setLine(numLines - 1)
         else:
             ObsidianTask : ObsidianTaskModel = task
             file = ObsidianTask.getFile()
             lineNumber = ObsidianTask.getLine()
             fileLines = []
-            with open(self.vaultPath + "/" + file, "r") as f:
+            with open(self.vaultPath + "/" + file, "r", encoding='utf-8') as f:
                 fileLines = f.readlines()
             lineOfInterest = fileLines[lineNumber]
             fileLines[lineNumber] = lineOfInterest.split("- [")[0] + taskLine
-            with open(self.vaultPath + "/" + file, "w") as f:
+            with open(self.vaultPath + "/" + file, "w", encoding='utf-8') as f:
                 f.writelines(fileLines)
 
     def createDefaultTask(self, description: str):
@@ -77,4 +89,4 @@ class ObsidianTaskProvider(ITaskProvider):
 
         task = ObsidianTaskModel(description, "workstation", starts, due, 1, severity, invested, status, "", -1, calm, vaultPath=self.vaultPath)
         self.saveTask(task)
-        pass
+        return task

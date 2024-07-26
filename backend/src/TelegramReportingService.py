@@ -19,7 +19,7 @@ class TelegramReportingService(IReportingService):
         self.taskProvider = taskProvider
         self._taskListPage = 0
         self._tasksPerPage = 5
-        self._selectedTaskIndex = None
+        self._selectedTask = None
         self._lastOffset = None
         
         self._heuristicList = heuristics
@@ -130,8 +130,8 @@ class TelegramReportingService(IReportingService):
             await self.sendTaskList()
         elif messageText.startswith("/task_"):
             taskId = self._taskListPage * self._tasksPerPage + int(messageText.split("_")[1]) - 1
-            self._selectedTaskIndex = taskId
-            await self.sendTaskInformation(taskId)
+            self._selectedTask = self._lastTaskList[taskId]
+            await self.sendTaskInformation(self._selectedTask)
         elif messageText == "/heuristic":
             heuristicList = "\n".join([f"/heuristic_{i+1} : {heuristic[0]}" for i, heuristic in enumerate(self._heuristicList)])
             heuristicList += "\n\n/filter - List filter options"
@@ -149,28 +149,30 @@ class TelegramReportingService(IReportingService):
             self.listUpdated()
             await self.sendTaskList()
         elif messageText == "/done":
-            if self._selectedTaskIndex is not None:
-                task = self._lastTaskList[self._selectedTaskIndex]
+            if self._selectedTask is not None:
+                task = self._selectedTask
                 task.setStatus("x")
                 self.taskProvider.saveTask(task)
                 await self.sendTaskList()
             else:
                 await self.bot.sendMessage(chat_id=self.chatId, text="no task selected.")
         elif messageText.startswith("/set"):
-            if self._selectedTaskIndex is not None:
-                task = self._lastTaskList[self._selectedTaskIndex]
+            if self._selectedTask is not None:
+                task = self._selectedTask
                 params = messageText.split(" ")[1:]
                 if len(params) < 2:
                     params[0] = "help"
                     params[1] = "me"
                 await self.processSetParam(task, params[0], " ".join(params[1:]) if len(params) > 2 else params[1])
                 self.taskProvider.saveTask(task)
+                await self.sendTaskInformation(task)
             else:
                 await self.bot.sendMessage(chat_id=self.chatId, text="no task selected.")
         elif messageText.startswith("/new"):
             params = messageText.split(" ")[1:]
             if len(params) > 0:
-                self.taskProvider.createDefaultTask(" ".join(params))
+                self._selectedTask = self.taskProvider.createDefaultTask(" ".join(params))
+                await self.sendTaskInformation(self._selectedTask)
             else:
                 await self.bot.sendMessage(chat_id=self.chatId, text="no description provided.")
         else:
@@ -204,7 +206,7 @@ class TelegramReportingService(IReportingService):
         pass
 
     async def sendTaskList(self):
-        self._selectedTaskIndex = None
+        self._selectedTask = None
 
         subTaskList = self._lastTaskList[self._taskListPage * self._tasksPerPage : (self._taskListPage + 1) * self._tasksPerPage]
         subTaskListDescriptions = [(f"/task_{i+1} : {task.getDescription()}") for i, task in enumerate(subTaskList)]
@@ -217,8 +219,7 @@ class TelegramReportingService(IReportingService):
         await self.bot.sendMessage(chat_id=self.chatId, text=taskListString)
         pass
 
-    async def sendTaskInformation(self, taskId: int):
-        task = self._lastTaskList[taskId]
+    async def sendTaskInformation(self, task: ITaskModel):
         taskDescription = task.getDescription()
         taskContext = task.getContext()
         taskSeverity = task.getSeverity()
