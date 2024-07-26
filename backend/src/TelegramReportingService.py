@@ -234,9 +234,10 @@ class TelegramReportingService(IReportingService):
             heuristicName, heuristicInstance = heuristic
             taskInformation += f"\n{heuristicName} : " + str(heuristicInstance.evaluate(task))
         
+        taskInformation += f"\n\n```\n{self.taskProvider.getTaskMetadata(task)}\n```"
 
         taskInformation += "\n\n/list - Return to list"
         taskInformation += "\n/done - Mark task as done"
         taskInformation += "\n/set [param] [value] - Set task parameter"
-        taskInformation += "\n\tparameters: description, context, start, due, severity, total_cost, effort_invested, calm"
-        await self.bot.sendMessage(chat_id=self.chatId, text=taskInformation)
+        taskInformation += "\n\tparameters: description, context, start, due, severity, total\\_cost, effort\\_invested, calm"
+        await self.bot.sendMessage(chat_id=self.chatId, text=taskInformation, parse_mode="Markdown")

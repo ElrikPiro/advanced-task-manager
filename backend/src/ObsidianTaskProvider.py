@@ -90,3 +90,16 @@ class ObsidianTaskProvider(ITaskProvider):
         task = ObsidianTaskModel(description, "workstation", starts, due, 1, severity, invested, status, "", -1, calm, vaultPath=self.vaultPath)
         self.saveTask(task)
         return task
+    
+    def getTaskMetadata(self, task: ITaskModel) -> str:
+        file = task.getFile()
+        line = task.getLine()
+        fileLines = []
+        with open(self.vaultPath + "/" + file, "r", encoding='utf-8') as f:
+            fileLines = f.readlines()
+
+        metadata = []
+        for i in range(max(line-1, 0), min(line+5,len(fileLines)-1)):
+            metadata.append(fileLines[i])
+        
+        return "".join(metadata)

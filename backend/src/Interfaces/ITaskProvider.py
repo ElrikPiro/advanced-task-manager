@@ -20,3 +20,7 @@ class ITaskProvider(ABC):
     @abstractmethod
     def createDefaultTask(self, description: str) -> ITaskModel:
         pass
+
+    @abstractmethod
+    def getTaskMetadata(self, task: ITaskModel) -> str:
+        pass
