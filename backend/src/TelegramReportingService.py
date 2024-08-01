@@ -198,7 +198,9 @@ class TelegramReportingService(IReportingService):
             task.setTotalCost(float(value))
         elif param == "effort_invested":
             newInvestedEffort = task.getInvestedEffort() + float(value)
+            newTotalCost = task.getTotalCost() - float(value)
             task.setInvestedEffort(float(newInvestedEffort))
+            task.setTotalCost(float(newTotalCost))
         elif param == "calm":
             task.setCalm(value.upper().startswith("TRUE"))
         else:

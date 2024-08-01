@@ -78,4 +78,8 @@ if __name__ == '__main__':
     pass
 
 # TODO: Roadmap
-## 11.  a�adir get task extended info que extraiga las lineas del fichero posteriores a la l�nea de la tarea
+## Fix behavior of invested effort set command
+## Make the task provider create a thread to update the json and add to the interface an event raise for the telegram service to update the task list
+## 1. Implement dependency container
+## 2. Wrap the telegram bot in a wrapper class
+## 3. Refactor TelegramReportingService to separate concerns
