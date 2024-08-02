@@ -78,8 +78,8 @@ if __name__ == '__main__':
     pass
 
 # TODO: Roadmap
-## Fix behavior of invested effort set command
-## Make the task provider create a thread to update the json and add to the interface an event raise for the telegram service to update the task list
-## 1. Implement dependency container
-## 2. Wrap the telegram bot in a wrapper class
-## 3. Refactor TelegramReportingService to separate concerns
+## 1. Make the task provider create a thread to update the json and add to the interface an event raise for the telegram service to update the task list
+## 2. Dockerize the application
+## 3. Implement dependency container
+## 4. Wrap the telegram bot in a wrapper class
+## 5. Refactor TelegramReportingService to separate concerns
