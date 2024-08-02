@@ -7,3 +7,7 @@ class IFilter(ABC):
     @abstractmethod
     def filter(self, tasks: List[ITaskModel]) -> List[ITaskModel]:
         pass
+
+    @abstractmethod
+    def getDescription(self) -> str:
+        pass

@@ -19,3 +19,6 @@ class ContextPrefixTaskFilter(IFilter):
                 continue
 
         return retval
+    
+    def getDescription(self) -> str:
+        return "Tasks with context starting with " + self.prefix

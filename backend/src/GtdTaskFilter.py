@@ -12,6 +12,9 @@ class GtdTaskFilter(IFilter):
         self.orderedCategories = orderedCategories
         self.orderedHeuristics = orderedHeuristics
         self.defaultHeuristic = defaultHeuristic
+        self.baseDescription = "GTD Task Filter"
+        self.description = self.baseDescription
+        self.category = "all"
         pass
 
     def filter(self, tasks : list[ITaskModel]) -> list:
@@ -22,21 +25,35 @@ class GtdTaskFilter(IFilter):
         retval = self._filterOrderedCategories(retval)
 
         if len(retval) > 0:
+            self.description = f"{self.baseDescription} \n    - Urgent tasks ({self.category})"
             return retval
         
-        # get all task with heuristic value above threshold
+        # get all task with heuristic value above threshold and NOT calm
         for heuristic, threshold in self.orderedHeuristics:
             retval = self._filterByHeuristic(heuristic, threshold, activeTasks)
             retval = self._filterCalmTasks(retval)
             retval = self._filterOrderedCategories(retval)
             if len(retval) > 0:
+                self.description = f"{self.baseDescription} \n    - {heuristic.__class__.__name__} >= {threshold} ({self.category}, calm excl.)"
+                return retval
+            
+        # get all task with heuristic value above threshold and calm
+        for heuristic, threshold in self.orderedHeuristics:
+            retval = self._filterByHeuristic(heuristic, threshold, activeTasks)
+            retval = self._filterCalmTasks(retval, False)
+            if len(retval) > 0:
+                self.description = f"{self.baseDescription} \n    - {heuristic.__class__.__name__} >= {threshold} (calm only)"
                 return retval
             
         # get default working model
         heuristic, threshold = self.defaultHeuristic
         retval = self._filterByHeuristic(heuristic, threshold, activeTasks)
         
+        self.description = f"{self.baseDescription} \n    - {heuristic.__class__.__name__} >= {threshold} (default)"
         return retval
+    
+    def getDescription(self) -> str:
+        return self.description
         
     
     def _filterUrgents(self, tasks : list[ITaskModel]) -> list:
@@ -53,6 +70,7 @@ class GtdTaskFilter(IFilter):
             if len(filteredTasks) == 0:
                 continue
             else:
+                self.category = description
                 break
         return filteredTasks
     
@@ -63,9 +81,9 @@ class GtdTaskFilter(IFilter):
                 retval.append(task)
         return retval
     
-    def _filterCalmTasks(self, tasks : list[ITaskModel]) -> list:
+    def _filterCalmTasks(self, tasks : list[ITaskModel], notCalm : bool = True) -> list:
         retval = []
         for task in tasks:
-            if not task.getCalm():
+            if task.getCalm() ^ notCalm:
                 retval.append(task)
         return retval

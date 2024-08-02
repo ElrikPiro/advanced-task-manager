@@ -218,7 +218,7 @@ class TelegramReportingService(IReportingService):
         taskListString += "\n\nPage " + str(self._taskListPage + 1) + " of " + str(len(self._lastTaskList) // self._tasksPerPage + 1) + "\n"
         taskListString += "/next - Next page\n/previous - Previous page"
         taskListString += "\n\nselected /heuristic : " + self._heuristicList[self._selectedHeuristicIndex][0]
-        taskListString += "\nselected /filter : " + self._filterList[self._selectedFilterIndex][0]
+        taskListString += "\nselected /filter : " + self._filterList[self._selectedFilterIndex][1].getDescription()
         await self.bot.sendMessage(chat_id=self.chatId, text=taskListString)
         pass
 
