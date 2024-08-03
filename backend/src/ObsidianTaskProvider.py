@@ -30,7 +30,7 @@ class ObsidianTaskProvider(ITaskProvider):
                 self.lastTaskList = newTaskList
                 for callback in self.onTaskListUpdatedCallbacks:
                     callback()
-            threading.Event().wait(60)
+            threading.Event().wait(10)
         pass
 
     def _getTaskList(self) -> List[ITaskModel]:
