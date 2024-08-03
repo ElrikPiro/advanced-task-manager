@@ -24,3 +24,11 @@ class ITaskProvider(ABC):
     @abstractmethod
     def getTaskMetadata(self, task: ITaskModel) -> str:
         pass
+
+    @abstractmethod
+    def registerTaskListUpdatedCallback(self, callback):
+        pass
+
+    @abstractmethod
+    def compare(self, listA : list[ITaskModel], listB : list[ITaskModel]) -> bool:
+        pass

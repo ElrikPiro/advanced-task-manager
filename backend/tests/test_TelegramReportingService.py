@@ -15,7 +15,7 @@ class TelegramReportingServiceTests(unittest.TestCase):
         self.reportingService._lastTaskList = ['Task 1']
         
         # Act
-        result = self.reportingService.listUpdated()
+        result = self.reportingService.pullListUpdates()
         
         # Assert
         self.assertTrue(result)
@@ -26,7 +26,7 @@ class TelegramReportingServiceTests(unittest.TestCase):
         self.reportingService._lastTaskList = ['Task 1', 'Task 2']
         
         # Act
-        result = self.reportingService.listUpdated()
+        result = self.reportingService.pullListUpdates()
         
         # Assert
         self.assertFalse(result)

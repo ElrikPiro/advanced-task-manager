@@ -1,5 +1,6 @@
 import datetime
 import os
+import threading
 from .Interfaces.ITaskProvider import ITaskProvider
 from .Interfaces.ITaskModel import ITaskModel
 from .Interfaces.ITaskJsonProvider import ITaskJsonProvider
@@ -10,9 +11,29 @@ class ObsidianTaskProvider(ITaskProvider):
     def __init__(self, taskJsonProvider: ITaskJsonProvider, vaultPath: str):
         self.TaskJsonProvider = taskJsonProvider
         self.vaultPath = vaultPath
+        self.service = threading.Thread(target=self._serviceThread)
+        self.service.start()
+        self.serviceRunning = True
+        self.lastTaskList : List[ITaskModel] = []
+        self.onTaskListUpdatedCallbacks : list[callable] = []
         pass
 
-    def getTaskList(self) -> List[ITaskModel]:
+    def __del__(self):
+        self.serviceRunning = False
+        self.service.join()
+        pass
+
+    def _serviceThread(self):
+        while self.serviceRunning:
+            newTaskList = self._getTaskList()
+            if not self.compare(self.lastTaskList, newTaskList):
+                self.lastTaskList = newTaskList
+                for callback in self.onTaskListUpdatedCallbacks:
+                    callback()
+            threading.Event().wait(60)
+        pass
+
+    def _getTaskList(self) -> List[ITaskModel]:
         obsidianJson : dict = self.TaskJsonProvider.getJson()
         taskListJson : dict = obsidianJson["tasks"]
         taskList : List[ITaskModel] = []
@@ -26,6 +47,9 @@ class ObsidianTaskProvider(ITaskProvider):
                 # print(f"skipping...")
                 continue
         return taskList
+
+    def getTaskList(self) -> List[ITaskModel]:
+        return self.lastTaskList
     
     def getTaskListAttribute(self, string: str) -> str:
         return self.TaskJsonProvider.getJson()[string]
@@ -103,3 +127,14 @@ class ObsidianTaskProvider(ITaskProvider):
             metadata.append(fileLines[i])
         
         return "".join(metadata)
+    
+    def registerTaskListUpdatedCallback(self, callback):
+        self.onTaskListUpdatedCallbacks.append(callback)
+
+    def compare(self, list1, list2):
+        if len(list1) != len(list2):
+            return False
+        for i in range(len(list1)):
+            if list1[i] != list2[i]:
+                return False
+        return True

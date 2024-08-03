@@ -28,12 +28,18 @@ class TelegramReportingService(IReportingService):
         self._filterList = filters
         self._selectedFilterIndex = 0
 
+        self._updateFlag = False
         self._lastTaskList = self.taskProvider.getTaskList()
+        self._lastRawList = self.taskProvider.getTaskList()
         
         self._lastError = "Event loop initialized"
         pass
 
+    def onTaskListUpdated(self):
+        self._updateFlag = True
+
     def listenForEvents(self):
+        self.taskProvider.registerTaskListUpdatedCallback(self.onTaskListUpdated)
         while self.run:
             try:
                 asyncio.run(self._listenForEvents())
@@ -58,27 +64,27 @@ class TelegramReportingService(IReportingService):
                 finally:
                     raise e
 
-    def compare(self, list1, list2):
-        if len(list1) != len(list2):
+    def pullListUpdates(self):
+        if not self._updateFlag:
             return False
-        for i in range(len(list1)):
-            if list1[i] != list2[i]:
-                return False
-        return True
+        else:
+            self._updateFlag = False
+            self._lastRawList : List[ITaskModel] = self.taskProvider.getTaskList()
+            return True
+    
+    def doFilter(self):
+        newTaskList : List[ITaskModel] = self._lastRawList
 
-    def listUpdated(self):
-        newTaskList : List[ITaskModel] = self.taskProvider.getTaskList()
+        if len(self._filterList) > 0:
+            filter : IFilter = self._filterList[self._selectedFilterIndex][1]
+            newTaskList = filter.filter(newTaskList)
 
         if len(self._heuristicList) > 0:
             heuristic : IHeuristic = self._heuristicList[self._selectedHeuristicIndex][1]
             sortedTaskList : List[Tuple[ITaskModel, float]] = heuristic.sort(newTaskList)
             newTaskList = [task for task, _ in sortedTaskList]
 
-        if len(self._filterList) > 0:
-            filter : IFilter = self._filterList[self._selectedFilterIndex][1]
-            newTaskList = filter.filter(newTaskList)
-
-        if not self.compare(newTaskList, self._lastTaskList):
+        if not self.taskProvider.compare(newTaskList, self._lastTaskList):
             self._lastTaskList = newTaskList
             return True
         return False
@@ -86,9 +92,9 @@ class TelegramReportingService(IReportingService):
     async def runEventLoop(self):
         # Reads every message received by the bot
         coroutine = self.bot.getUpdates(limit=1, timeout=10, allowed_updates=['message'], offset=self._lastOffset)
-        wasListUpdated = self.listUpdated()
+        self.pullListUpdates()
 
-        if wasListUpdated and self.chatId != 0:
+        if self.chatId != 0 and self.doFilter():
             # Send the updated list
             nextTask = ""
             if len(self._lastTaskList) != 0:
@@ -138,7 +144,7 @@ class TelegramReportingService(IReportingService):
             await self.bot.sendMessage(chat_id=self.chatId, text=heuristicList)
         elif messageText.startswith("/heuristic_"):
             self._selectedHeuristicIndex = int(messageText.split("_")[1]) - 1
-            self.listUpdated()
+            self.doFilter()
             await self.sendTaskList()
         elif messageText == "/filter":
             filterList = "\n".join([f"/filter_{i+1} : {filter[0]}" for i, filter in enumerate(self._filterList)])
@@ -146,14 +152,14 @@ class TelegramReportingService(IReportingService):
             await self.bot.sendMessage(chat_id=self.chatId, text=filterList)
         elif messageText.startswith("/filter_"):
             self._selectedFilterIndex = int(messageText.split("_")[1]) - 1
-            self.listUpdated()
+            self.doFilter()
             await self.sendTaskList()
         elif messageText == "/done":
             if self._selectedTask is not None:
                 task = self._selectedTask
                 task.setStatus("x")
                 self.taskProvider.saveTask(task)
-                self.listUpdated()
+                self.doFilter()
                 await self.sendTaskList()
             else:
                 await self.bot.sendMessage(chat_id=self.chatId, text="no task selected.")
