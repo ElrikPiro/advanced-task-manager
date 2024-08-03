@@ -153,6 +153,7 @@ class TelegramReportingService(IReportingService):
                 task = self._selectedTask
                 task.setStatus("x")
                 self.taskProvider.saveTask(task)
+                self.listUpdated()
                 await self.sendTaskList()
             else:
                 await self.bot.sendMessage(chat_id=self.chatId, text="no task selected.")
