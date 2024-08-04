@@ -14,6 +14,7 @@ class ObsidianTaskProvider(ITaskProvider):
         self.service = threading.Thread(target=self._serviceThread)
         self.service.start()
         self.serviceRunning = True
+        self.lastJson : dict = {}
         self.lastTaskList : List[ITaskModel] = []
         self.onTaskListUpdatedCallbacks : list[callable] = []
         pass
@@ -35,6 +36,10 @@ class ObsidianTaskProvider(ITaskProvider):
 
     def _getTaskList(self) -> List[ITaskModel]:
         obsidianJson : dict = self.TaskJsonProvider.getJson()
+        if obsidianJson == self.lastJson:
+            return self.lastTaskList
+        else:
+            self.lastJson = obsidianJson
         taskListJson : dict = obsidianJson["tasks"]
         taskList : List[ITaskModel] = []
         for task in taskListJson:
@@ -106,10 +111,13 @@ class ObsidianTaskProvider(ITaskProvider):
     def createDefaultTask(self, description: str):
         starts = int(datetime.datetime.now().timestamp() * 1e3)
         due = int(datetime.datetime.today().timestamp() * 1e3)
+        starts = starts - starts % 60000
+        due = due - due % 60000
+        
         severity = 1.0
         invested = 0.0
         status = " "
-        calm = "false"
+        calm = "False"
 
         task = ObsidianTaskModel(description, "workstation", starts, due, 1, severity, invested, status, "", -1, calm, vaultPath=self.vaultPath)
         self.saveTask(task)

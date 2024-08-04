@@ -179,6 +179,8 @@ class TelegramReportingService(IReportingService):
             params = messageText.split(" ")[1:]
             if len(params) > 0:
                 self._selectedTask = self.taskProvider.createDefaultTask(" ".join(params))
+                self._lastRawList.append(self._selectedTask)
+                self.doFilter()
                 await self.sendTaskInformation(self._selectedTask)
             else:
                 await self.bot.sendMessage(chat_id=self.chatId, text="no description provided.")
