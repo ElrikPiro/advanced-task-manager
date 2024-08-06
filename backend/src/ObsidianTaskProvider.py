@@ -131,7 +131,7 @@ class ObsidianTaskProvider(ITaskProvider):
             fileLines = f.readlines()
 
         metadata = []
-        for i in range(max(line-1, 0), min(line+5,len(fileLines)-1)):
+        for i in range(max(line, 0), min(line+5,len(fileLines))):
             metadata.append(fileLines[i])
         
         return "".join(metadata)
