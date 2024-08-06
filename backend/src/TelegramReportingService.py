@@ -1,6 +1,7 @@
 import asyncio
 import datetime
 
+import threading
 from time import sleep as sleepSync
 from typing import Tuple, List
 from .Interfaces.IHeuristic import IHeuristic
@@ -33,10 +34,13 @@ class TelegramReportingService(IReportingService):
         self._lastRawList = self.taskProvider.getTaskList()
         
         self._lastError = "Event loop initialized"
+        self._lock = threading.Lock()
         pass
 
     def onTaskListUpdated(self):
-        self._updateFlag = True
+        with self._lock:
+            self._updateFlag = True
+            self.pullListUpdates()
 
     def listenForEvents(self):
         self.taskProvider.registerTaskListUpdatedCallback(self.onTaskListUpdated)
@@ -70,6 +74,13 @@ class TelegramReportingService(IReportingService):
         else:
             self._updateFlag = False
             self._lastRawList : List[ITaskModel] = self.taskProvider.getTaskList()
+            if self._selectedTask is not None:
+                lastSelectedTask = self._selectedTask
+                self._selectedTask = None
+                for task in self._lastRawList:
+                    if task.getDescription() == lastSelectedTask.getDescription():
+                        self._selectedTask = task
+                        break
             return True
     
     def doFilter(self):
@@ -92,28 +103,28 @@ class TelegramReportingService(IReportingService):
     async def runEventLoop(self):
         # Reads every message received by the bot
         coroutine = self.bot.getUpdates(limit=1, timeout=10, allowed_updates=['message'], offset=self._lastOffset)
-        self.pullListUpdates()
 
-        if self.chatId != 0 and self.doFilter():
-            # Send the updated list
-            nextTask = ""
-            if len(self._lastTaskList) != 0:
-                nextTask = f"\n\n/task_1 : {self._lastTaskList[0].getDescription()}"
-            self._taskListPage = 0
-            await self.bot.sendMessage(chat_id=self.chatId, text="Task /list updated" + nextTask)
-            pass
+        with self._lock:
+            if self.chatId != 0 and self.doFilter():
+                # Send the updated list
+                nextTask = ""
+                if len(self._lastTaskList) != 0:
+                    nextTask = f"\n\n/task_1 : {self._lastTaskList[0].getDescription()}"
+                self._taskListPage = 0
+                await self.bot.sendMessage(chat_id=self.chatId, text="Task /list updated" + nextTask)
+                pass
 
-        result : Tuple[telegram.Update] = await coroutine
-        if len(result) == 0:
-            return
-        
-        self._lastOffset = result[0].update_id + 1
-        message : telegram.Message = result[0].message
+            result : Tuple[telegram.Update] = await coroutine
+            if len(result) == 0:
+                return
+            
+            self._lastOffset = result[0].update_id + 1
+            message : telegram.Message = result[0].message
 
-        if self.chatId == 0:
-            self.chatId = message.chat.id
-        elif message.chat.id == int(self.chatId):
-            await self.processMessage(message)
+            if self.chatId == 0:
+                self.chatId = message.chat.id
+            elif message.chat.id == int(self.chatId):
+                await self.processMessage(message)
 
     async def sendHelp(self):
         helpMessage = "Commands:"
