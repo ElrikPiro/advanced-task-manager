@@ -116,7 +116,7 @@ class TelegramReportingService(IReportingService):
             await self.checkFilteredListChanges()
 
         # Reads every message received by the bot
-        result : Tuple[telegram.Update] = await self.bot.getUpdates(limit=1, timeout=1, allowed_updates=['message'], offset=self._lastOffset)
+        result : List[telegram.Update] = await self.bot.getUpdates(limit=1, timeout=1, allowed_updates=['message'], offset=self._lastOffset)
             
         with self._lock:
             if len(result) == 0:
