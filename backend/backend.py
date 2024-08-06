@@ -2,6 +2,7 @@ from os import getenv
 
 import telegram
 
+from src.HeuristicScheduling import HeuristicScheduling
 from src.ActiveTaskFilter import ActiveTaskFilter
 from src.TelegramReportingService import TelegramReportingService
 from src.ObsidianTaskProvider import ObsidianTaskProvider
@@ -73,7 +74,9 @@ if __name__ == '__main__':
         ("Outdoor task filter", ContextPrefixTaskFilter(activeFilter, "outdoor_")),
     ]
 
-    service = TelegramReportingService(bot, taskProvider, heuristicList, filterList, chatId)
+    scheduling = HeuristicScheduling(taskProvider)
+
+    service = TelegramReportingService(bot, taskProvider, scheduling, heuristicList, filterList, chatId)
     service.listenForEvents()
     pass
 

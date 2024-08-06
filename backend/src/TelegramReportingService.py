@@ -9,15 +9,17 @@ from .Interfaces.IReportingService import IReportingService
 from .Interfaces.ITaskProvider import ITaskProvider
 from .Interfaces.ITaskModel import ITaskModel
 from .Interfaces.IFilter import IFilter
+from .Interfaces.IScheduling import IScheduling
 import telegram
 
 class TelegramReportingService(IReportingService):
 
-    def __init__(self, bot : telegram.Bot , taskProvider : ITaskProvider, heuristics : List[Tuple[str, IHeuristic]], filters : List[Tuple[str, IFilter]], chatId: int = 0):
+    def __init__(self, bot : telegram.Bot , taskProvider : ITaskProvider, scheduling : IScheduling, heuristics : List[Tuple[str, IHeuristic]], filters : List[Tuple[str, IFilter]], chatId: int = 0):
         self.run = True
         self.bot = bot
         self.chatId = chatId
         self.taskProvider = taskProvider
+        self.scheduling = scheduling
         self._taskListPage = 0
         self._tasksPerPage = 5
         self._selectedTask = None
@@ -136,6 +138,7 @@ class TelegramReportingService(IReportingService):
         helpMessage += "\n\t/heuristic - List heuristic options"
         helpMessage += "\n\t/filter - List filter options"
         helpMessage += "\n\t/new [description] - Create a new default task"
+        helpMessage += "\n\t/schedule [expected work per day (optional)] - Reeschedules the selected task"
         await self.bot.sendMessage(chat_id=self.chatId, text=helpMessage)
 
     async def processMessage(self, message: telegram.Message):
@@ -199,6 +202,14 @@ class TelegramReportingService(IReportingService):
                 await self.sendTaskInformation(self._selectedTask)
             else:
                 await self.bot.sendMessage(chat_id=self.chatId, text="no description provided.")
+        elif messageText.startswith("/schedule"):
+            params = messageText.split(" ")[1:]
+            if self._selectedTask is not None:
+                self.scheduling.schedule(self._selectedTask, params.pop() if len(params) > 0 else "")
+                self.taskProvider.saveTask(self._selectedTask)
+                await self.sendTaskInformation(self._selectedTask)
+            else:
+                await self.bot.sendMessage(chat_id=self.chatId, text="no task provided.")
         else:
             await self.sendHelp()
 
