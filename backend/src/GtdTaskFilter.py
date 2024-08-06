@@ -34,7 +34,7 @@ class GtdTaskFilter(IFilter):
             retval = self._filterCalmTasks(retval)
             retval = self._filterOrderedCategories(retval)
             if len(retval) > 0:
-                self.description = f"{self.baseDescription} \n    - {heuristic.__class__.__name__} >= {threshold} ({self.category}, calm excl.)"
+                self.description = f"{self.baseDescription} \n    - {heuristic.__class__.__name__} >= {threshold} ({self.category})"
                 return retval
             
         # get all task with heuristic value above threshold and calm
@@ -42,7 +42,7 @@ class GtdTaskFilter(IFilter):
             retval = self._filterByHeuristic(heuristic, threshold, activeTasks)
             retval = self._filterCalmTasks(retval, False)
             if len(retval) > 0:
-                self.description = f"{self.baseDescription} \n    - {heuristic.__class__.__name__} >= {threshold} (calm only)"
+                self.description = f"{self.baseDescription} \n    - {heuristic.__class__.__name__} >= {threshold} (CALM)"
                 return retval
             
         # get default working model
