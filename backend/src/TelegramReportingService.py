@@ -100,21 +100,25 @@ class TelegramReportingService(IReportingService):
             return True
         return False
 
+    async def checkFilteredListChanges(self):
+        if self.chatId != 0 and self.doFilter():
+            # Send the updated list
+            nextTask = ""
+            if len(self._lastTaskList) != 0:
+                nextTask = f"\n\n/task_1 : {self._lastTaskList[0].getDescription()}"
+            self._taskListPage = 0
+            await self.bot.sendMessage(chat_id=self.chatId, text="Task /list updated" + nextTask)
+            pass
+
     async def runEventLoop(self):
-        # Reads every message received by the bot
-        coroutine = self.bot.getUpdates(limit=1, timeout=10, allowed_updates=['message'], offset=self._lastOffset)
 
         with self._lock:
-            if self.chatId != 0 and self.doFilter():
-                # Send the updated list
-                nextTask = ""
-                if len(self._lastTaskList) != 0:
-                    nextTask = f"\n\n/task_1 : {self._lastTaskList[0].getDescription()}"
-                self._taskListPage = 0
-                await self.bot.sendMessage(chat_id=self.chatId, text="Task /list updated" + nextTask)
-                pass
+            await self.checkFilteredListChanges()
 
-            result : Tuple[telegram.Update] = await coroutine
+        # Reads every message received by the bot
+        result : Tuple[telegram.Update] = await self.bot.getUpdates(limit=1, timeout=1, allowed_updates=['message'], offset=self._lastOffset)
+            
+        with self._lock:
             if len(result) == 0:
                 return
             
