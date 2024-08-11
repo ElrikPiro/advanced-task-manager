@@ -78,7 +78,6 @@ class TelegramReportingService(IReportingService):
             self._lastRawList : List[ITaskModel] = self.taskProvider.getTaskList()
             if self._selectedTask is not None:
                 lastSelectedTask = self._selectedTask
-                self._selectedTask = None
                 for task in self._lastRawList:
                     if task.getDescription() == lastSelectedTask.getDescription():
                         self._selectedTask = task
