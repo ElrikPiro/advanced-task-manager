@@ -12,3 +12,6 @@ class ObsidianDataviewTaskJsonProvider(ITaskJsonProvider):
         appdata = os.getenv('APPDATA')
         jsonPath = appdata + "/obsidian/" + self.filename
         return self.JsonLoader.load_json(jsonPath)
+    
+    def saveJson(self, json: dict):
+        pass
