@@ -78,10 +78,3 @@ if __name__ == '__main__':
 
     service = TelegramReportingService(bot, taskProvider, scheduling, heuristicList, filterList, chatId)
     service.listenForEvents()
-    pass
-
-# TODO: Roadmap
-## 1. Dockerize the application
-## 2. Implement dependency container
-## 3. Wrap the telegram bot in a wrapper class
-## 4. Refactor TelegramReportingService to separate concerns
