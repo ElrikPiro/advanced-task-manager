@@ -212,6 +212,17 @@ class TelegramReportingService(IReportingService):
         else:
             await self.sendHelp()
 
+    def processRelativeTimeSet(self, current: int, value: str):
+        sign = 1 if value.startswith("+") else -1
+        modifier = 1000
+        if value.endswith("d"):
+            modifier *= 24 * 60 * 60
+        elif value.endswith("h"):
+            modifier *= 60 * 60
+        elif value.endswith("m"):
+            modifier *= 60
+        return current + sign * int(value[1:-1]) * modifier
+
     async def processSetParam(self, task: ITaskModel, param: str, value: str):
         if param == "description":
             task.setDescription(value)
@@ -219,13 +230,21 @@ class TelegramReportingService(IReportingService):
         elif param == "context":
             task.setContext(value)
         elif param == "start":
-            start_datetime = datetime.datetime.strptime(value, '%Y-%m-%dT%H:%M')
-            start_timestamp = int(start_datetime.timestamp() * 1000)
-            task.setStart(int(start_timestamp))
+            if value.startswith("+") or value.startswith("-"):
+                start_timestamp = self.processRelativeTimeSet(task.getStart(), value)
+                task.setStart(int(start_timestamp))
+            else:
+                start_datetime = datetime.datetime.strptime(value, '%Y-%m-%dT%H:%M')
+                start_timestamp = int(start_datetime.timestamp() * 1000)
+                task.setStart(int(start_timestamp))
         elif param == "due":
-            due_datetime = datetime.datetime.strptime(value, '%Y-%m-%d')
-            due_timestamp = int(due_datetime.timestamp() * 1000)
-            task.setDue(int(due_timestamp))
+            if value.startswith("+") or value.startswith("-"):
+                due_timestamp = self.processRelativeTimeSet(task.getDue(), value)
+                task.setDue(int(due_timestamp))
+            else:
+                due_datetime = datetime.datetime.strptime(value, '%Y-%m-%d')
+                due_timestamp = int(due_datetime.timestamp() * 1000)
+                task.setDue(int(due_timestamp))
         elif param == "severity":
             task.setSeverity(float(value))
         elif param == "total_cost":

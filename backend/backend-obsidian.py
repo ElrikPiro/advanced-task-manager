@@ -85,3 +85,4 @@ if __name__ == '__main__':
 ## 2. Implement dependency container
 ## 3. Wrap the telegram bot in a wrapper class
 ## 4. Refactor TelegramReportingService to separate concerns
+## 5. Crear un sistema de maquina de estados para el servicio de telegram, ejemplos: "Escuchando ordenes, creando tarea, (...)"
