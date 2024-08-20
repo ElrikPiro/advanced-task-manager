@@ -4,7 +4,7 @@ from math import ceil
 from .Interfaces.ITaskModel import ITaskModel
 
 class TaskModel(ITaskModel):
-    def __init__(self, index: int, description: str, context: str, start: int, due: int, severity: float, totalCost: float, investedEffort: float, status: str, calm : str):
+    def __init__(self, description: str, context: str, start: int, due: int, severity: float, totalCost: float, investedEffort: float, status: str, calm : str, index : int):
         self._description : str = description
         self._context : str = context
         self._start : int = int(start)
@@ -80,4 +80,4 @@ class TaskModel(ITaskModel):
         return d + 0.5
     
     def __eq__(self, other : ITaskModel):
-        return self.getDescription() == other.getDescription() and self.getContext() == other.getContext() and self.getStart() == other.getStart() and self.getDue() == other.getDue() and self.getSeverity() == other.getSeverity() and self.getTotalCost() == other.getTotalCost() and self.getInvestedEffort() == other.getInvestedEffort() and self.getStatus() == other.getStatus() and self.getCalm() == other.getCalm()
+        return self._index == other._index

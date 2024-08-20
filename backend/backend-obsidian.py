@@ -78,7 +78,6 @@ if __name__ == '__main__':
 
     service = TelegramReportingService(bot, taskProvider, scheduling, heuristicList, filterList, chatId)
     service.listenForEvents()
-    pass
 
 # TODO: Roadmap
 ## 1. Dockerize the application

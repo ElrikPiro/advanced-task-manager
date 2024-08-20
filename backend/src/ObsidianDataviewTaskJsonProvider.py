@@ -4,14 +4,15 @@ from .Interfaces.IJsonLoader import IJsonLoader
 
 class ObsidianDataviewTaskJsonProvider(ITaskJsonProvider):
 
-    def __init__(self, jsonLoader : IJsonLoader):
+    def __init__(self, json_loader : IJsonLoader):
         self.filename = "tareas.json"
-        self.JsonLoader = jsonLoader
+        self.JsonLoader = json_loader
 
     def getJson(self) -> dict:
         appdata = os.getenv('APPDATA')
-        jsonPath = appdata + "/obsidian/" + self.filename
-        return self.JsonLoader.load_json(jsonPath)
+        json_path = appdata + "/obsidian/" + self.filename
+        return self.JsonLoader.load_json(json_path)
     
     def saveJson(self, json: dict):
+        #do nothing
         pass
