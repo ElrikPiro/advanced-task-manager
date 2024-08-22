@@ -213,15 +213,26 @@ class TelegramReportingService(IReportingService):
             await self.sendHelp()
 
     def processRelativeTimeSet(self, current: int, value: str):
-        sign = 1 if value.startswith("+") else -1
-        modifier = 1000
-        if value.endswith("d"):
-            modifier *= 24 * 60 * 60
-        elif value.endswith("h"):
-            modifier *= 60 * 60
-        elif value.endswith("m"):
-            modifier *= 60
-        return current + sign * int(value[1:-1]) * modifier
+        if value == "now":
+            return int(datetime.datetime.now().timestamp() * 1000)
+        elif value == "today":
+            today = datetime.datetime.now()
+            today = today.replace(hour=0, minute=0, second=0, microsecond=0)
+            return int(today.timestamp() * 1000)
+        elif value == "tomorrow":
+            tomorrow = datetime.datetime.now() + datetime.timedelta(days=1)
+            tomorrow = tomorrow.replace(hour=0, minute=0, second=0, microsecond=0)
+            return int(tomorrow.timestamp() * 1000)
+        else:
+            sign = 1 if value.startswith("+") else -1
+            modifier = 1000
+            if value.endswith("d"):
+                modifier *= 24 * 60 * 60
+            elif value.endswith("h"):
+                modifier *= 60 * 60
+            elif value.endswith("m"):
+                modifier *= 60
+            return current + sign * int(value[1:-1]) * modifier
 
     async def processSetParam(self, task: ITaskModel, param: str, value: str):
         if param == "description":
@@ -230,7 +241,7 @@ class TelegramReportingService(IReportingService):
         elif param == "context":
             task.setContext(value)
         elif param == "start":
-            if value.startswith("+") or value.startswith("-"):
+            if value.startswith("+") or value.startswith("-") or value == "now" or value == "today" or value == "tomorrow":
                 start_timestamp = self.processRelativeTimeSet(task.getStart(), value)
                 task.setStart(int(start_timestamp))
             else:
@@ -238,7 +249,7 @@ class TelegramReportingService(IReportingService):
                 start_timestamp = int(start_datetime.timestamp() * 1000)
                 task.setStart(int(start_timestamp))
         elif param == "due":
-            if value.startswith("+") or value.startswith("-"):
+            if value.startswith("+") or value.startswith("-") or value == "today" or value == "tomorrow":
                 due_timestamp = self.processRelativeTimeSet(task.getDue(), value)
                 task.setDue(int(due_timestamp))
             else:
