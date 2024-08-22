@@ -24,6 +24,7 @@ class TelegramReportingService(IReportingService):
         self._tasksPerPage = 5
         self._selectedTask = None
         self._lastOffset = None
+        self._ignoreNextUpdate = False
         
         self._heuristicList = heuristics
         self._selectedHeuristicIndex = 0
@@ -42,7 +43,10 @@ class TelegramReportingService(IReportingService):
     def onTaskListUpdated(self):
         with self._lock:
             self._updateFlag = True
-            self.pullListUpdates()
+            if not self._ignoreNextUpdate:
+                self.pullListUpdates()
+            else:
+                self._ignoreNextUpdate = False
 
     def listenForEvents(self):
         self.taskProvider.registerTaskListUpdatedCallback(self.onTaskListUpdated)
@@ -176,6 +180,7 @@ class TelegramReportingService(IReportingService):
                 task = self._selectedTask
                 task.setStatus("x")
                 self.taskProvider.saveTask(task)
+                self._ignoreNextUpdate = True
                 self.doFilter()
                 await self.sendTaskList()
             else:
@@ -189,6 +194,7 @@ class TelegramReportingService(IReportingService):
                     params[1] = "me"
                 await self.processSetParam(task, params[0], " ".join(params[1:]) if len(params) > 2 else params[1])
                 self.taskProvider.saveTask(task)
+                self._ignoreNextUpdate = True
                 await self.sendTaskInformation(task)
             else:
                 await self.bot.sendMessage(chat_id=self.chatId, text="no task selected.")
@@ -196,6 +202,7 @@ class TelegramReportingService(IReportingService):
             params = messageText.split(" ")[1:]
             if len(params) > 0:
                 self._selectedTask = self.taskProvider.createDefaultTask(" ".join(params))
+                self._ignoreNextUpdate = True
                 self._lastRawList.append(self._selectedTask)
                 self.doFilter()
                 await self.sendTaskInformation(self._selectedTask)
@@ -206,6 +213,7 @@ class TelegramReportingService(IReportingService):
             if self._selectedTask is not None:
                 self.scheduling.schedule(self._selectedTask, params.pop() if len(params) > 0 else "")
                 self.taskProvider.saveTask(self._selectedTask)
+                self._ignoreNextUpdate = True
                 await self.sendTaskInformation(self._selectedTask)
             else:
                 await self.bot.sendMessage(chat_id=self.chatId, text="no task provided.")
