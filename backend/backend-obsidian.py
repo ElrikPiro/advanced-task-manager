@@ -80,7 +80,7 @@ if __name__ == '__main__':
     service.listenForEvents()
 
 # TODO: Roadmap
-## 1. Dockerize the application
+## 1. Dockerize the application (docker-compose)
 ## 2. Implement dependency container
 ## 3. Wrap the telegram bot in a wrapper class
 ## 4. Refactor TelegramReportingService to separate concerns

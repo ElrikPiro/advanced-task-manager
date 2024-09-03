@@ -1,4 +1,5 @@
 from os import getenv
+from os import path
 
 import telegram
 
@@ -16,14 +17,26 @@ from src.GtdTaskFilter import GtdTaskFilter
 from src.ActiveTaskFilter import InactiveTaskFilter
 from src.DaysToThresholdHeuristic import DaysToThresholdHeuristic
 
+# checks if a variable is defined in the environment or throws an error if not
+def getenv_or_throw(var_name: str) -> str:
+    value = getenv(var_name)
+    if value is None:
+        raise ValueError(f"Environment variable {var_name} is not defined.")
+    return value
+
 if __name__ == '__main__':
 
     # IoC
 
     ## environment variables
-    token = getenv("TELEGRAM_BOT_TOKEN")
-    chatId = getenv("TELEGRAM_CHAT_ID")
-    jsonPath = getenv("JSON_PATH")
+    token = getenv_or_throw("TELEGRAM_BOT_TOKEN")
+    chatId = getenv_or_throw("TELEGRAM_CHAT_ID")
+    jsonPath = getenv_or_throw("JSON_PATH")
+
+    # if jsonPath does not exist create it
+    if not path.exists(jsonPath):
+        with open(jsonPath, "w+") as file:
+            file.write("{\"tasks\": [], \"pomodoros_per_day\": \"2\"}")
 
     ## telegram bot
     bot : telegram.Bot = telegram.Bot(token)
