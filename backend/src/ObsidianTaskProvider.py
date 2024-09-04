@@ -12,8 +12,8 @@ class ObsidianTaskProvider(ITaskProvider):
         self.TaskJsonProvider = taskJsonProvider
         self.vaultPath = vaultPath
         self.service = threading.Thread(target=self._serviceThread)
-        self.service.start()
         self.serviceRunning = True
+        self.service.start()
         self.lastJson : dict = {}
         self.lastTaskList : List[ITaskModel] = []
         self.onTaskListUpdatedCallbacks : list[callable] = []

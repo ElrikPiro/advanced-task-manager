@@ -16,6 +16,13 @@ from src.GtdTaskFilter import GtdTaskFilter
 from src.ActiveTaskFilter import InactiveTaskFilter
 from src.DaysToThresholdHeuristic import DaysToThresholdHeuristic
 
+# checks if a variable is defined in the environment or throws an error if not
+def getenv_or_throw(var_name: str) -> str:
+    value = getenv(var_name)
+    if value is None:
+        raise ValueError(f"Environment variable {var_name} is not defined.")
+    return value
+
 if __name__ == '__main__':
 
     # IoC
@@ -80,7 +87,7 @@ if __name__ == '__main__':
     service.listenForEvents()
 
 # TODO: Roadmap
-## 1. Dockerize the application (docker-compose)
+## 1. Dockerize the application (dockerize also the obsidian vault model)
 ## 2. Implement dependency container
 ## 3. Wrap the telegram bot in a wrapper class
 ## 4. Refactor TelegramReportingService to separate concerns

@@ -24,6 +24,6 @@ ENV JSON_PATH=/app/data/data.json
 # Set the command to run the application
 WORKDIR /app/backend
 RUN echo ""
-CMD [ "python", "backend-standalone.py" ]
+CMD [ "./app.sh" ]
 
 # https://docs.docker.com/reference/dockerfile/#run---mounttypebind

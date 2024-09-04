@@ -1,1 +1,0 @@
-$env:PYTHONPATH = "D:\David Baselga\Documents\Git\advanced-task-manager\backend"
