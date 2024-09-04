@@ -6,5 +6,6 @@ services:
     environment:
       - TELEGRAM_BOT_TOKEN={PASTE_YOUR_BOT_TOKEN}
       - TELEGRAM_CHAT_ID={PASTE_YOUR_CHAT_ID}
+      - APP_MODE=0
     volumes:
       - .:/app/data/

@@ -87,7 +87,6 @@ if __name__ == '__main__':
     service.listenForEvents()
 
 # TODO: Roadmap
-## 1. Dockerize the application (dockerize also the obsidian vault model)
 ## 2. Implement dependency container
 ## 3. Wrap the telegram bot in a wrapper class
 ## 4. Refactor TelegramReportingService to separate concerns
