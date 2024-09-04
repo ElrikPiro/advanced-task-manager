@@ -77,18 +77,18 @@ class ObsidianTaskProvider(ITaskProvider):
         if not isinstance(task, ObsidianTaskModel) or task.getFile() == "" or task.getLine() == -1:
             file = "ObsidianTaskProvider.md"
             # if file doesnt exist in vault path, create it
-            if not os.path.exists(self.vaultPath + "\\" + file):
+            if not os.path.exists(self.vaultPath + os.sep + file):
                 with open(self.vaultPath + file, "w+", encoding='utf-8') as f:
                     f.write("# Task list\n\n")
                     f.write(taskLine)
             else:
                 # clean completed tasks
                 lines = []
-                with open(self.vaultPath + "\\" + file, "r", encoding='utf-8') as f:
+                with open(self.vaultPath + os.sep + file, "r", encoding='utf-8') as f:
                     lines = f.readlines()
 
                 numLines = 1
-                with open(self.vaultPath + "\\" + file, "w", encoding='utf-8') as f:
+                with open(self.vaultPath + os.sep + file, "w", encoding='utf-8') as f:
                     for line in lines:
                         if line.find("- [x]") == -1:
                             f.write(line)
