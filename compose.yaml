@@ -1,0 +1,10 @@
+version: '3.8'
+
+services:
+  advancedtaskmanager:
+    image: advancedtaskmanager
+    environment:
+      - TELEGRAM_BOT_TOKEN={PASTE_YOUR_BOT_TOKEN}
+      - TELEGRAM_CHAT_ID={PASTE_YOUR_CHAT_ID}
+    volumes:
+      - .:/app/data/
