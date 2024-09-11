@@ -1,6 +1,5 @@
 # Roadmap
-## 2. Implement dependency container
-## 3. Wrap the telegram bot in a wrapper class
+## 3. Wrap the telegram bot in a wrapper class, perform a testability refactor
 ## 4. Refactor TelegramReportingService to separate concerns
 ## 5. Crear un sistema de maquina de estados para el servicio de telegram, ejemplos: "Escuchando ordenes, creando tarea, (...)"
 ## 6. Implementar un "/import" para importar tareas desde un archivo json y un "/export" para exportar tareas a un archivo json

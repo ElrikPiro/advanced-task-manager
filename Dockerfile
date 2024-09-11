@@ -19,7 +19,6 @@ ENV PYTHONPATH=/app/backend
 
 # Define volume to store data.json and create data.json
 VOLUME /app/data/
-ENV JSON_PATH=/app/data/data.json
 
 # Set the command to run the application
 WORKDIR /app/backend
