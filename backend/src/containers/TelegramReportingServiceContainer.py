@@ -1,6 +1,7 @@
 from dependency_injector import containers, providers
 import telegram
 
+from src.wrappers.TelegramBotUserCommService import TelegramBotUserCommService
 from src.TaskProvider import TaskProvider
 from src.TaskJsonProvider import TaskJsonProvider
 from src.HeuristicScheduling import HeuristicScheduling
@@ -36,6 +37,7 @@ class TelegramReportingServiceContainer():
 
         # External services
         self.container.bot = providers.Singleton(telegram.Bot, token=self.config.token)
+        self.container.telegramBotUserCommService = providers.Singleton(TelegramBotUserCommService, self.container.bot)
         
         # Data providers
         self.container.jsonLoader = providers.Singleton(JsonLoader)
@@ -103,4 +105,4 @@ class TelegramReportingServiceContainer():
         self.container.heristicScheduling = providers.Singleton(HeuristicScheduling, self.container.taskProvider())
 
         # Reporting service
-        self.container.telegramReportingService = providers.Singleton(TelegramReportingService, self.container.bot, self.container.taskProvider, self.container.heristicScheduling, self.container.heuristicList, self.container.filterList, self.config.chatId)
+        self.container.telegramReportingService = providers.Singleton(TelegramReportingService, self.container.telegramBotUserCommService, self.container.taskProvider, self.container.heristicScheduling, self.container.heuristicList, self.container.filterList, self.config.chatId)

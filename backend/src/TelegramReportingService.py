@@ -10,11 +10,11 @@ from .Interfaces.ITaskProvider import ITaskProvider
 from .Interfaces.ITaskModel import ITaskModel
 from .Interfaces.IFilter import IFilter
 from .Interfaces.IScheduling import IScheduling
-import telegram
+from .wrappers.interfaces.IUserCommService import IUserCommService
 
 class TelegramReportingService(IReportingService):
 
-    def __init__(self, bot : telegram.Bot , taskProvider : ITaskProvider, scheduling : IScheduling, heuristics : List[Tuple[str, IHeuristic]], filters : List[Tuple[str, IFilter]], chatId: int = 0):
+    def __init__(self, bot : IUserCommService , taskProvider : ITaskProvider, scheduling : IScheduling, heuristics : List[Tuple[str, IHeuristic]], filters : List[Tuple[str, IFilter]], chatId: int = 0):
         self.run = True
         self.bot = bot
         self.chatId = chatId
@@ -121,19 +121,16 @@ class TelegramReportingService(IReportingService):
             await self.checkFilteredListChanges()
 
         # Reads every message received by the bot
-        result : List[telegram.Update] = await self.bot.getUpdates(limit=1, timeout=1, allowed_updates=['message'], offset=self._lastOffset)
+        result = await self.bot.getMessageUpdates()
             
         with self._lock:
-            if len(result) == 0:
+            if result == None:
                 return
             
-            self._lastOffset = result[0].update_id + 1
-            message : telegram.Message = result[0].message
-
             if self.chatId == 0:
-                self.chatId = message.chat.id
-            elif message.chat.id == int(self.chatId):
-                await self.processMessage(message)
+                self.chatId = result[0]
+            elif result[0] == int(self.chatId):
+                await self.processMessage(result[1])
 
     async def sendHelp(self):
         helpMessage = "Commands:"
@@ -144,8 +141,7 @@ class TelegramReportingService(IReportingService):
         helpMessage += "\n\t/schedule [expected work per day (optional)] - Reeschedules the selected task"
         await self.bot.sendMessage(chat_id=self.chatId, text=helpMessage)
 
-    async def processMessage(self, message: telegram.Message):
-        messageText = message.text
+    async def processMessage(self, messageText: str):
         if messageText == "/list":
             self._taskListPage = 0
             await self.sendTaskList()
