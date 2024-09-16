@@ -155,6 +155,11 @@ class TelegramReportingService(IReportingService):
             taskId = self._taskListPage * self._tasksPerPage + int(messageText.split("_")[1]) - 1
             self._selectedTask = self._lastTaskList[taskId]
             await self.sendTaskInformation(self._selectedTask)
+        elif messageText.startswith("/info"):
+            if self._selectedTask is not None:
+                await self.sendTaskInformation(self._selectedTask, True)
+            else:
+                await self.bot.sendMessage(chat_id=self.chatId, text="no task selected.")
         elif messageText == "/heuristic":
             heuristicList = "\n".join([f"/heuristic_{i+1} : {heuristic[0]}" for i, heuristic in enumerate(self._heuristicList)])
             heuristicList += "\n\n/filter - List filter options"
@@ -301,7 +306,7 @@ class TelegramReportingService(IReportingService):
         await self.bot.sendMessage(chat_id=self.chatId, text=taskListString)
         pass
 
-    async def sendTaskInformation(self, task: ITaskModel):
+    async def sendTaskInformation(self, task: ITaskModel, extended : bool = False):
         taskDescription = task.getDescription()
         taskContext = task.getContext()
         taskSeverity = task.getSeverity()
@@ -311,14 +316,18 @@ class TelegramReportingService(IReportingService):
         taskEffortInvested = max(task.getInvestedEffort(), 0)
         
         taskInformation = f"Task: {taskDescription}\nContext: {taskContext}\nStart Date: {taskStartDate}\nDue Date: {taskDueDate}\nRemaining Cost: {taskRemainingCost}/{taskRemainingCost+taskEffortInvested}\nSeverity: {taskSeverity}"
-        for i, heuristic in enumerate(self._heuristicList):
-            heuristicName, heuristicInstance = heuristic
-            taskInformation += f"\n{heuristicName} : " + str(heuristicInstance.evaluate(task))
         
-        taskInformation += f"\n\n<b>Metadata:</b><code>{self.taskProvider.getTaskMetadata(task)}</code>"
+        if extended:
+            for i, heuristic in enumerate(self._heuristicList):
+                heuristicName, heuristicInstance = heuristic
+                taskInformation += f"\n{heuristicName} : " + str(heuristicInstance.evaluate(task))
+            
+            taskInformation += f"\n\n<b>Metadata:</b><code>{self.taskProvider.getTaskMetadata(task)}</code>"
 
         taskInformation += "\n\n/list - Return to list"
         taskInformation += "\n/done - Mark task as done"
         taskInformation += "\n/set [param] [value] - Set task parameter"
         taskInformation += "\n\tparameters: description, context, start, due, severity, total\\_cost, effort\\_invested, calm"
+        taskInformation += "\n/info - Show extended information"
+
         await self.bot.sendMessage(chat_id=self.chatId, text=taskInformation, parse_mode="HTML")
