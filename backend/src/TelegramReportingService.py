@@ -226,6 +226,17 @@ class TelegramReportingService(IReportingService):
                 await self.sendTaskInformation(self._selectedTask)
             else:
                 await self.bot.sendMessage(chat_id=self.chatId, text="no task provided.")
+        elif messageText.startswith("/work"):
+            params = messageText.split(" ")[1:]
+            if self._selectedTask is not None:
+                task = self._selectedTask
+                await self.processSetParam(task, "effort_invested", " ".join(params[0:]))
+                self.taskProvider.saveTask(task)
+                #TODO: self.statiticsProvider.workDone(date, work_units)
+                await self.sendTaskInformation(task)
+            else:
+                await self.bot.sendMessage(chat_id=self.chatId, text="no task provided.")
+        #TODO elif messageText.startswith("/stats"): #show work done statistics
         else:
             await self.sendHelp()
 
@@ -328,6 +339,7 @@ class TelegramReportingService(IReportingService):
         taskInformation += "\n/done - Mark task as done"
         taskInformation += "\n/set [param] [value] - Set task parameter"
         taskInformation += "\n\tparameters: description, context, start, due, severity, total\\_cost, effort\\_invested, calm"
+        taskInformation += "\n/work [work_units] - invest work units in the task"
         taskInformation += "\n/info - Show extended information"
 
         await self.bot.sendMessage(chat_id=self.chatId, text=taskInformation, parse_mode="HTML")
