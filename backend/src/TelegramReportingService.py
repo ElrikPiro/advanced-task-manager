@@ -262,6 +262,8 @@ class TelegramReportingService(IReportingService):
                     modifier *= 60 * 60
                 elif value.endswith("m"):
                     modifier *= 60
+                elif value.endswith("w"):
+                    modifier *= 7 * 24 * 60 * 60
                 current = current + sign * int(value[1:-1]) * modifier
         return current
 
