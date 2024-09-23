@@ -10,16 +10,18 @@ from .Interfaces.ITaskProvider import ITaskProvider
 from .Interfaces.ITaskModel import ITaskModel
 from .Interfaces.IFilter import IFilter
 from .Interfaces.IScheduling import IScheduling
+from .Interfaces.IStatisticsService import IStatisticsService
 from .wrappers.interfaces.IUserCommService import IUserCommService
 
 class TelegramReportingService(IReportingService):
 
-    def __init__(self, bot : IUserCommService , taskProvider : ITaskProvider, scheduling : IScheduling, heuristics : List[Tuple[str, IHeuristic]], filters : List[Tuple[str, IFilter]], chatId: int = 0):
+    def __init__(self, bot : IUserCommService , taskProvider : ITaskProvider, scheduling : IScheduling, statiticsProvider : IStatisticsService, heuristics : List[Tuple[str, IHeuristic]], filters : List[Tuple[str, IFilter]], chatId: int = 0):
         self.run = True
         self.bot = bot
         self.chatId = chatId
         self.taskProvider = taskProvider
         self.scheduling = scheduling
+        self.statiticsProvider = statiticsProvider
         self._taskListPage = 0
         self._tasksPerPage = 5
         self._selectedTask = None
@@ -117,6 +119,8 @@ class TelegramReportingService(IReportingService):
 
     async def runEventLoop(self):
 
+        self.statiticsProvider.initialize()
+
         with self._lock:
             await self.checkFilteredListChanges()
 
@@ -139,6 +143,7 @@ class TelegramReportingService(IReportingService):
         helpMessage += "\n\t/filter - List filter options"
         helpMessage += "\n\t/new [description] - Create a new default task"
         helpMessage += "\n\t/schedule [expected work per day (optional)] - Reeschedules the selected task"
+        helpMessage += "\n\t/stats - Show work done statistics"
         await self.bot.sendMessage(chat_id=self.chatId, text=helpMessage)
 
     async def processMessage(self, messageText: str):
@@ -230,13 +235,31 @@ class TelegramReportingService(IReportingService):
             params = messageText.split(" ")[1:]
             if self._selectedTask is not None:
                 task = self._selectedTask
-                await self.processSetParam(task, "effort_invested", " ".join(params[0:]))
+                work_units_str = " ".join(params[0:])
+                await self.processSetParam(task, "effort_invested", work_units_str)
                 self.taskProvider.saveTask(task)
-                #TODO: self.statiticsProvider.workDone(date, work_units)
+                work_units = float(params[0])
+                date = datetime.datetime.now().date()
+                self.statiticsProvider.doWork(date, work_units)
                 await self.sendTaskInformation(task)
             else:
                 await self.bot.sendMessage(chat_id=self.chatId, text="no task provided.")
-        #TODO elif messageText.startswith("/stats"): #show work done statistics
+        elif messageText.startswith("/stats"): #show work done statistics
+            statsMessage = "Work done in the last 7 days:\n"
+            statsMessage += "`|    Date    | Work Done |`\n"
+            statsMessage += "`|------------|-----------|`\n"
+            totalWork = 0
+            for i in range(7):
+                date = datetime.datetime.now().date() - datetime.timedelta(days=i)
+                workDone = self.statiticsProvider.getWorkDone(date)
+                totalWork += workDone
+                statsMessage += f"`| {date} |    {workDone}    |`\n"
+            # add average work done per day
+            statsMessage += "`|------------|-----------|`\n"
+            statsMessage += f"`|   Average  |    {totalWork/7}    |`\n"
+
+            await self.bot.sendMessage(chat_id=self.chatId, text=statsMessage, parse_mode="Markdown")
+
         else:
             await self.sendHelp()
 

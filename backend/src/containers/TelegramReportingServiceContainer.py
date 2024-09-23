@@ -1,5 +1,6 @@
 from dependency_injector import containers, providers
 import telegram
+import os
 
 from src.wrappers.TelegramBotUserCommService import TelegramBotUserCommService
 from src.TaskProvider import TaskProvider
@@ -17,6 +18,7 @@ from src.ContextPrefixTaskFilter import ContextPrefixTaskFilter
 from src.GtdTaskFilter import GtdTaskFilter
 from src.ActiveTaskFilter import InactiveTaskFilter
 from src.DaysToThresholdHeuristic import DaysToThresholdHeuristic
+from src.StatisticsService import StatisticsService
 
 class TelegramReportingServiceContainer():
 
@@ -28,10 +30,12 @@ class TelegramReportingServiceContainer():
         self.config.mode.from_env("APP_MODE", as_=str, required=True)
         self.config.token.from_env("TELEGRAM_BOT_TOKEN", as_=str, required=True)
         self.config.chatId.from_env("TELEGRAM_CHAT_ID", as_=str, required=True)
+        self.config.jsonPath.from_env("JSON_PATH", as_=str, required=True)
+        
         if self.config.mode() == "1":
             self.config.vaultPath.from_env("OBSIDIAN_VAULT_PATH", as_=str, required=True)
         elif self.config.mode() == "0":
-            self.config.jsonPath.from_env("JSON_PATH", as_=str, required=True)
+            pass
         else:
             raise ValueError("Invalid mode " + self.config.mode())
 
@@ -103,6 +107,11 @@ class TelegramReportingServiceContainer():
 
         # Scheduling algorithm
         self.container.heristicScheduling = providers.Singleton(HeuristicScheduling, self.container.taskProvider())
+        
+        # Statistics service
+        jsonDir = self.config.jsonPath()[:self.config.jsonPath().rfind(os.path.sep)]
+        statisticsJsonPath = os.path.join(jsonDir, "statistics.json")
+        self.container.statisticsService = providers.Singleton(StatisticsService, self.container.jsonLoader, statisticsJsonPath)
 
         # Reporting service
-        self.container.telegramReportingService = providers.Singleton(TelegramReportingService, self.container.telegramBotUserCommService, self.container.taskProvider, self.container.heristicScheduling, self.container.heuristicList, self.container.filterList, self.config.chatId)
+        self.container.telegramReportingService = providers.Singleton(TelegramReportingService, self.container.telegramBotUserCommService, self.container.taskProvider, self.container.heristicScheduling, self.container.statisticsService, self.container.heuristicList, self.container.filterList, self.config.chatId)
