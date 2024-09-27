@@ -52,13 +52,18 @@ class TelegramReportingService(IReportingService):
 
     def listenForEvents(self):
         self.taskProvider.registerTaskListUpdatedCallback(self.onTaskListUpdated)
+        errCount = 0
         while self.run:
             try:
                 asyncio.run(self._listenForEvents())
+                errCount = 0
             except Exception as e:
                 self._lastError = f"Error: {repr(e)}"
                 print(self._lastError)
                 sleepSync(10)
+                errCount += 1
+                if errCount > 30:
+                    raise e
             
 
     async def _listenForEvents(self):
