@@ -151,122 +151,160 @@ class TelegramReportingService(IReportingService):
         helpMessage += "\n\t/stats - Show work done statistics"
         await self.bot.sendMessage(chat_id=self.chatId, text=helpMessage)
 
-    async def processMessage(self, messageText: str):
-        if messageText == "/list":
-            self._taskListPage = 0
-            await self.sendTaskList()
-        elif messageText == "/next":
-            self._taskListPage += 1
-            await self.sendTaskList()
-        elif messageText == "/previous":
-            self._taskListPage -= 1
-            await self.sendTaskList()
-        elif messageText.startswith("/task_"):
-            taskId = self._taskListPage * self._tasksPerPage + int(messageText.split("_")[1]) - 1
-            self._selectedTask = self._lastTaskList[taskId]
-            await self.sendTaskInformation(self._selectedTask)
-        elif messageText.startswith("/info"):
-            if self._selectedTask is not None:
-                await self.sendTaskInformation(self._selectedTask, True)
-            else:
-                await self.bot.sendMessage(chat_id=self.chatId, text="no task selected.")
-        elif messageText == "/heuristic":
-            heuristicList = "\n".join([f"/heuristic_{i+1} : {heuristic[0]}" for i, heuristic in enumerate(self._heuristicList)])
-            heuristicList += "\n\n/filter - List filter options"
-            await self.bot.sendMessage(chat_id=self.chatId, text=heuristicList)
-        elif messageText.startswith("/heuristic_"):
-            self._selectedHeuristicIndex = int(messageText.split("_")[1]) - 1
-            self.doFilter()
-            await self.sendTaskList()
-        elif messageText == "/filter":
-            filterList = "\n".join([f"/filter_{i+1} : {filter[0]}" for i, filter in enumerate(self._filterList)])
-            filterList += "\n\n/heuristic - List heuristic options"
-            await self.bot.sendMessage(chat_id=self.chatId, text=filterList)
-        elif messageText.startswith("/filter_"):
-            self._selectedFilterIndex = int(messageText.split("_")[1]) - 1
-            self.doFilter()
-            await self.sendTaskList()
-        elif messageText == "/done":
-            if self._selectedTask is not None:
-                task = self._selectedTask
-                task.setStatus("x")
-                self.taskProvider.saveTask(task)
-                self._ignoreNextUpdate = True
-                self.doFilter()
-                await self.sendTaskList()
-            else:
-                await self.bot.sendMessage(chat_id=self.chatId, text="no task selected.")
-        elif messageText.startswith("/set"):
-            if self._selectedTask is not None:
-                task = self._selectedTask
-                params = messageText.split(" ")[1:]
-                if len(params) < 2:
-                    params[0] = "help"
-                    params[1] = "me"
-                await self.processSetParam(task, params[0], " ".join(params[1:]) if len(params) > 2 else params[1])
-                self.taskProvider.saveTask(task)
-                # self._ignoreNextUpdate = True
-                await self.sendTaskInformation(task)
-            else:
-                await self.bot.sendMessage(chat_id=self.chatId, text="no task selected.")
-        elif messageText.startswith("/new"):
-            params = messageText.split(" ")[1:]
-            if len(params) > 0:
-                extendedParams = " ".join(params).split(";")
-                
-                if len(extendedParams) == 3:
-                    self._selectedTask = self.taskProvider.createDefaultTask(extendedParams[0])
-                    self._selectedTask.setContext(extendedParams[1])
-                    self._selectedTask.setTotalCost(float(extendedParams[2]))
-                else:
-                    self._selectedTask = self.taskProvider.createDefaultTask(" ".join(params))
+    # Each command must be made into an object and injected into this class
+    async def listCommand(self, messageText: str = ""):
+        self._taskListPage = 0
+        await self.sendTaskList()
 
-                self._ignoreNextUpdate = True
-                self._lastRawList.append(self._selectedTask)
-                self.doFilter()
-                await self.sendTaskInformation(self._selectedTask)
-            else:
-                await self.bot.sendMessage(chat_id=self.chatId, text="no description provided.")
-        elif messageText.startswith("/schedule"):
-            params = messageText.split(" ")[1:]
-            if self._selectedTask is not None:
-                self.scheduling.schedule(self._selectedTask, params.pop() if len(params) > 0 else "")
-                self.taskProvider.saveTask(self._selectedTask)
-                # self._ignoreNextUpdate = True
-                await self.sendTaskInformation(self._selectedTask)
-            else:
-                await self.bot.sendMessage(chat_id=self.chatId, text="no task provided.")
-        elif messageText.startswith("/work"):
-            params = messageText.split(" ")[1:]
-            if self._selectedTask is not None:
-                task = self._selectedTask
-                work_units_str = " ".join(params[0:])
-                await self.processSetParam(task, "effort_invested", work_units_str)
-                self.taskProvider.saveTask(task)
-                work_units = float(params[0])
-                date = datetime.datetime.now().date()
-                self.statiticsProvider.doWork(date, work_units)
-                await self.sendTaskInformation(task)
-            else:
-                await self.bot.sendMessage(chat_id=self.chatId, text="no task provided.")
-        elif messageText.startswith("/stats"): #show work done statistics
-            statsMessage = "Work done in the last 7 days:\n"
-            statsMessage += "`|    Date    | Work Done |`\n"
-            statsMessage += "`|------------|-----------|`\n"
-            totalWork = 0
-            for i in range(7):
-                date = datetime.datetime.now().date() - datetime.timedelta(days=i)
-                workDone = self.statiticsProvider.getWorkDone(date)
-                totalWork += workDone
-                statsMessage += f"`| {date} |    {workDone}    |`\n"
-            # add average work done per day
-            statsMessage += "`|------------|-----------|`\n"
-            statsMessage += f"`|   Average  |    {totalWork/7}    |`\n"
+    async def nextCommand(self, messageText: str = ""):
+        self._taskListPage += 1
+        await self.sendTaskList()
 
-            await self.bot.sendMessage(chat_id=self.chatId, text=statsMessage, parse_mode="Markdown")
+    async def previousCommand(self, messageText: str = ""):
+        self._taskListPage -= 1
+        await self.sendTaskList()
 
+    async def selectTaskCommand(self, messageText: str = ""):
+        taskId = self._taskListPage * self._tasksPerPage + int(messageText.split("_")[1]) - 1
+        self._selectedTask = self._lastTaskList[taskId]
+        await self.sendTaskInformation(self._selectedTask)
+
+    async def taskInfoCommand(self, messageText: str = ""):
+        if self._selectedTask is not None:
+            await self.sendTaskInformation(self._selectedTask, True)
         else:
-            await self.sendHelp()
+            await self.bot.sendMessage(chat_id=self.chatId, text="no task selected.")
+
+    async def helpCommand(self, messageText: str = ""):
+        await self.sendHelp()
+
+    async def heuristicListCommand(self, messageText: str = ""):
+        heuristicList = "\n".join([f"/heuristic_{i+1} : {heuristic[0]}" for i, heuristic in enumerate(self._heuristicList)])
+        heuristicList += "\n\n/filter - List filter options"
+        await self.bot.sendMessage(chat_id=self.chatId, text=heuristicList)
+
+    async def filterListCommand(self, messageText: str = ""):
+        filterList = "\n".join([f"/filter_{i+1} : {filter[0]}" for i, filter in enumerate(self._filterList)])
+        filterList += "\n\n/heuristic - List heuristic options"
+        await self.bot.sendMessage(chat_id=self.chatId, text=filterList)
+
+    async def heuristicSelectionCommand(self, messageText: str = ""):
+        self._selectedHeuristicIndex = int(messageText.split("_")[1]) - 1
+        self.doFilter()
+        await self.sendTaskList()
+
+    async def filterSelectionCommand(self, messageText: str = ""):
+        self._selectedFilterIndex = int(messageText.split("_")[1]) - 1
+        self.doFilter()
+        await self.sendTaskList()
+
+    async def doneCommand(self, messageText: str = ""):
+        if self._selectedTask is not None:
+            task = self._selectedTask
+            task.setStatus("x")
+            self.taskProvider.saveTask(task)
+            self._ignoreNextUpdate = True
+            self.doFilter()
+            await self.sendTaskList()
+        else:
+            await self.bot.sendMessage(chat_id=self.chatId, text="no task selected.")
+
+    async def setCommand(self, messageText: str = ""):
+        if self._selectedTask is not None:
+            task = self._selectedTask
+            params = messageText.split(" ")[1:]
+            if len(params) < 2:
+                params[0] = "help"
+                params[1] = "me"
+            await self.processSetParam(task, params[0], " ".join(params[1:]) if len(params) > 2 else params[1])
+            self.taskProvider.saveTask(task)
+            # self._ignoreNextUpdate = True
+            await self.sendTaskInformation(task)
+        else:
+            await self.bot.sendMessage(chat_id=self.chatId, text="no task selected.")
+
+    async def newCommand(self, messageText: str = ""):
+        params = messageText.split(" ")[1:]
+        if len(params) > 0:
+            extendedParams = " ".join(params).split(";")
+            
+            if len(extendedParams) == 3:
+                self._selectedTask = self.taskProvider.createDefaultTask(extendedParams[0])
+                self._selectedTask.setContext(extendedParams[1])
+                self._selectedTask.setTotalCost(float(extendedParams[2]))
+            else:
+                self._selectedTask = self.taskProvider.createDefaultTask(" ".join(params))
+
+            self._ignoreNextUpdate = True
+            self._lastRawList.append(self._selectedTask)
+            self.doFilter()
+            await self.sendTaskInformation(self._selectedTask)
+        else:
+            await self.bot.sendMessage(chat_id=self.chatId, text="no description provided.")
+
+    async def scheduleCommand(self, messageText: str = ""):
+        params = messageText.split(" ")[1:]
+        if self._selectedTask is not None:
+            self.scheduling.schedule(self._selectedTask, params.pop() if len(params) > 0 else "")
+            self.taskProvider.saveTask(self._selectedTask)
+            # self._ignoreNextUpdate = True
+            await self.sendTaskInformation(self._selectedTask)
+        else:
+            await self.bot.sendMessage(chat_id=self.chatId, text="no task provided.")
+
+    async def workCommand(self, messageText: str = ""):
+        params = messageText.split(" ")[1:]
+        if self._selectedTask is not None:
+            task = self._selectedTask
+            work_units_str = " ".join(params[0:])
+            await self.processSetParam(task, "effort_invested", work_units_str)
+            self.taskProvider.saveTask(task)
+            work_units = float(params[0])
+            date = datetime.datetime.now().date()
+            self.statiticsProvider.doWork(date, work_units)
+            await self.sendTaskInformation(task)
+        else:
+            await self.bot.sendMessage(chat_id=self.chatId, text="no task provided.")
+
+    async def statsCommand(self, messageText: str = ""):
+        statsMessage = "Work done in the last 7 days:\n"
+        statsMessage += "`|    Date    | Work Done |`\n"
+        statsMessage += "`|------------|-----------|`\n"
+        totalWork = 0
+        for i in range(7):
+            date = datetime.datetime.now().date() - datetime.timedelta(days=i)
+            workDone = self.statiticsProvider.getWorkDone(date)
+            totalWork += workDone
+            statsMessage += f"`| {date} |    {workDone}    |`\n"
+        # add average work done per day
+        statsMessage += "`|------------|-----------|`\n"
+        statsMessage += f"`|   Average  |    {totalWork/7}    |`\n"
+
+        await self.bot.sendMessage(chat_id=self.chatId, text=statsMessage, parse_mode="Markdown")
+
+
+    async def processMessage(self, messageText: str):
+        commands : list[(str, function)] = [
+            ("/list", self.listCommand),
+            ("/next", self.nextCommand),
+            ("/previous", self.previousCommand),
+            ("/task_", self.selectTaskCommand),
+            ("/info", self.taskInfoCommand),
+            ("/heuristic", self.heuristicListCommand),
+            ("/heuristic_", self.heuristicSelectionCommand),
+            ("/filter", self.filterListCommand),
+            ("/filter_", self.filterSelectionCommand),
+            ("/done", self.doneCommand),
+            ("/set", self.setCommand),
+            ("/new", self.newCommand),
+            ("/schedule", self.scheduleCommand),
+            ("/work", self.workCommand),
+            ("/stats", self.statsCommand),
+        ]
+
+        # get first command that starts with the messageText
+        command = next((command for command in commands if messageText.startswith(command[0])), ("/help", self.helpCommand))[1]
+        await command(messageText)
 
     def processRelativeTimeSet(self, current: int, value: str):
         values = value.split(";")
