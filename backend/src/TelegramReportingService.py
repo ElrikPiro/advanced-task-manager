@@ -333,43 +333,72 @@ class TelegramReportingService(IReportingService):
                 current = current + sign * int(value[1:-1]) * modifier
         return current
 
+    async def setDescriptionCommand(self, task: ITaskModel, value: str):
+        task.setDescription(value)
+        pass
+
+    async def setContextCommand(self, task: ITaskModel, value: str):
+        task.setContext(value)
+        pass
+
+    async def setStartCommand(self, task: ITaskModel, value: str):
+        if value.startswith("+") or value.startswith("-") or value.startswith("now") or value.startswith("today") or value.startswith("tomorrow"):
+            start_timestamp = self.processRelativeTimeSet(task.getStart(), value)
+            task.setStart(int(start_timestamp))
+        else:
+            start_datetime = datetime.datetime.strptime(value, '%Y-%m-%dT%H:%M')
+            start_timestamp = int(start_datetime.timestamp() * 1000)
+            task.setStart(int(start_timestamp))
+        pass
+
+    async def setDueCommand(self, task: ITaskModel, value: str):
+        if value.startswith("+") or value.startswith("-") or value.startswith("today") or value.startswith("tomorrow"):
+            due_timestamp = self.processRelativeTimeSet(task.getDue(), value)
+            task.setDue(int(due_timestamp))
+        else:
+            due_datetime = datetime.datetime.strptime(value, '%Y-%m-%d')
+            due_timestamp = int(due_datetime.timestamp() * 1000)
+            task.setDue(int(due_timestamp))
+        pass
+
+    async def setSeverityCommand(self, task: ITaskModel, value: str):
+        task.setSeverity(float(value))
+        pass
+
+    async def setTotalCostCommand(self, task: ITaskModel, value: str):
+        task.setTotalCost(float(value))
+        pass
+
+    async def setEffortInvestedCommand(self, task: ITaskModel, value: str):
+        newInvestedEffort = task.getInvestedEffort() + float(value)
+        newTotalCost = task.getTotalCost() - float(value)
+        task.setInvestedEffort(float(newInvestedEffort))
+        task.setTotalCost(float(newTotalCost))
+        pass
+
+    async def setCalmCommand(self, task: ITaskModel, value: str):
+        task.setCalm(value.upper().startswith("TRUE"))
+        pass
+
     async def processSetParam(self, task: ITaskModel, param: str, value: str):
-        if param == "description":
-            task.setDescription(value)
-            pass
-        elif param == "context":
-            task.setContext(value)
-        elif param == "start":
-            if value.startswith("+") or value.startswith("-") or value.startswith("now") or value.startswith("today") or value.startswith("tomorrow"):
-                start_timestamp = self.processRelativeTimeSet(task.getStart(), value)
-                task.setStart(int(start_timestamp))
-            else:
-                start_datetime = datetime.datetime.strptime(value, '%Y-%m-%dT%H:%M')
-                start_timestamp = int(start_datetime.timestamp() * 1000)
-                task.setStart(int(start_timestamp))
-        elif param == "due":
-            if value.startswith("+") or value.startswith("-") or value.startswith("today") or value.startswith("tomorrow"):
-                due_timestamp = self.processRelativeTimeSet(task.getDue(), value)
-                task.setDue(int(due_timestamp))
-            else:
-                due_datetime = datetime.datetime.strptime(value, '%Y-%m-%d')
-                due_timestamp = int(due_datetime.timestamp() * 1000)
-                task.setDue(int(due_timestamp))
-        elif param == "severity":
-            task.setSeverity(float(value))
-        elif param == "total_cost":
-            task.setTotalCost(float(value))
-        elif param == "effort_invested":
-            newInvestedEffort = task.getInvestedEffort() + float(value)
-            newTotalCost = task.getTotalCost() - float(value)
-            task.setInvestedEffort(float(newInvestedEffort))
-            task.setTotalCost(float(newTotalCost))
-        elif param == "calm":
-            task.setCalm(value.upper().startswith("TRUE"))
+
+        commands : list[(str, function)] = [
+            ("description", self.setDescriptionCommand),
+            ("context", self.setContextCommand),
+            ("start", self.setStartCommand),
+            ("due", self.setDueCommand),
+            ("severity", self.setSeverityCommand),
+            ("total_cost", self.setTotalCostCommand),
+            ("effort_invested", self.setEffortInvestedCommand),
+            ("calm", self.setCalmCommand),
+        ]
+
+        command = next((command for command in commands if command[0].startswith(param)), ("", None))[1]
+        if command is not None:
+            await command(task, value)
         else:
             errorMessage = f"Invalid parameter {param}\nvalid parameters would be: description, context, start, due, severity, total_cost, effort_invested, calm"
             await self.bot.sendMessage(chat_id=self.chatId, text=errorMessage)
-        pass
 
     async def sendTaskList(self):
         self._selectedTask = None
