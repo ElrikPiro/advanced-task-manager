@@ -63,7 +63,9 @@ class TelegramReportingService(IReportingService):
                 sleepSync(10)
                 errCount += 1
                 if errCount > 30:
-                    raise e
+                    print("stopping container")
+                    self.run = False
+                    exit(-1)
             
 
     async def _listenForEvents(self):
