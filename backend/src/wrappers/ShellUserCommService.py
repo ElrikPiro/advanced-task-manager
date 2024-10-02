@@ -1,6 +1,6 @@
 from src.wrappers.interfaces.IUserCommService import IUserCommService
 
-class ShellUserBotService(IUserCommService):
+class ShellUserCommService(IUserCommService):
     def __init__(self):
         self.offset = 0
 

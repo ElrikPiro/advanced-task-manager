@@ -52,7 +52,7 @@ class TelegramReportingServiceContainer():
         if self.config.mode() == "1":
             self.container.taskJsonProvider = providers.Singleton(ObsidianDataviewTaskJsonProvider, self.container.jsonLoader)
             self.container.taskProvider = providers.Singleton(ObsidianTaskProvider, self.container.taskJsonProvider, self.config.vaultPath)
-        elif self.config.mode() == "0":
+        elif self.config.mode() == "0" or self.config.mode() == "-1":
             self.container.taskJsonProvider = providers.Singleton(TaskJsonProvider, self.config.jsonPath, self.container.jsonLoader)
             self.container.taskProvider = providers.Singleton(TaskProvider, self.container.taskJsonProvider)
         # Heuristics
