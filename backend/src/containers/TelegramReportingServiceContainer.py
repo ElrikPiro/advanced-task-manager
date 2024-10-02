@@ -3,6 +3,7 @@ import telegram
 import os
 
 from src.wrappers.TelegramBotUserCommService import TelegramBotUserCommService
+from src.wrappers.ShellUserCommService import ShellUserCommService
 from src.TaskProvider import TaskProvider
 from src.TaskJsonProvider import TaskJsonProvider
 from src.HeuristicScheduling import HeuristicScheduling
@@ -36,12 +37,14 @@ class TelegramReportingServiceContainer():
             self.config.vaultPath.from_env("OBSIDIAN_VAULT_PATH", as_=str, required=True)
         elif self.config.mode() == "0":
             pass
+        elif self.config.mode() == "-1":
+            pass
         else:
             raise ValueError("Invalid mode " + self.config.mode())
 
         # External services
         self.container.bot = providers.Singleton(telegram.Bot, token=self.config.token)
-        self.container.telegramBotUserCommService = providers.Singleton(TelegramBotUserCommService, self.container.bot)
+        self.container.userCommService = providers.Singleton(ShellUserCommService) if self.config.mode() == "-1" else providers.Singleton(TelegramBotUserCommService, self.container.bot)
         
         # Data providers
         self.container.jsonLoader = providers.Singleton(JsonLoader)
@@ -114,4 +117,4 @@ class TelegramReportingServiceContainer():
         self.container.statisticsService = providers.Singleton(StatisticsService, self.container.jsonLoader, statisticsJsonPath)
 
         # Reporting service
-        self.container.telegramReportingService = providers.Singleton(TelegramReportingService, self.container.telegramBotUserCommService, self.container.taskProvider, self.container.heristicScheduling, self.container.statisticsService, self.container.heuristicList, self.container.filterList, self.config.chatId)
+        self.container.telegramReportingService = providers.Singleton(TelegramReportingService, self.container.userCommService, self.container.taskProvider, self.container.heristicScheduling, self.container.statisticsService, self.container.heuristicList, self.container.filterList, self.config.chatId)
