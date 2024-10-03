@@ -3,9 +3,14 @@ version: '3.8'
 services:
   advancedtaskmanager:
     image: advancedtaskmanager
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: always
     environment:
-      - TELEGRAM_BOT_TOKEN={PASTE_YOUR_BOT_TOKEN}
-      - TELEGRAM_CHAT_ID={PASTE_YOUR_CHAT_ID}
+      - TELEGRAM_BOT_TOKEN= # Your Telegram Bot Token
+      - TELEGRAM_CHAT_ID= # Your Telegram Chat ID
+      - JSON_PATH=/app/data/data.json
       - APP_MODE=0
       - TZ=Europe/Madrid
     volumes:
