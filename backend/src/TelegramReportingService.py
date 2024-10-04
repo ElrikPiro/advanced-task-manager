@@ -236,7 +236,8 @@ class TelegramReportingService(IReportingService):
                 self._selectedTask.setTotalCost(float(extendedParams[2]))
             else:
                 self._selectedTask = self.taskProvider.createDefaultTask(" ".join(params))
-
+            
+            self.taskProvider.saveTask(self._selectedTask)
             self._ignoreNextUpdate = True
             self._lastRawList.append(self._selectedTask)
             self.doFilter()
