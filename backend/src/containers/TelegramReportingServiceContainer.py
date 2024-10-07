@@ -44,7 +44,7 @@ class TelegramReportingServiceContainer():
 
         # External services
         self.container.bot = providers.Singleton(telegram.Bot, token=self.config.token)
-        self.container.userCommService = providers.Singleton(ShellUserCommService) if self.config.mode() == "-1" else providers.Singleton(TelegramBotUserCommService, self.container.bot)
+        self.container.userCommService = providers.Singleton(ShellUserCommService, self.config.chatId) if self.config.mode() == "-1" else providers.Singleton(TelegramBotUserCommService, self.container.bot)
         
         # Data providers
         self.container.jsonLoader = providers.Singleton(JsonLoader)
