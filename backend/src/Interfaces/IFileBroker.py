@@ -1,5 +1,6 @@
 from abc import ABC, abstractmethod
 from enum import Enum
+import json
 import os
 
 # Enumeration of files that can be read
@@ -15,7 +16,15 @@ class IFileBroker(ABC):
         pass
 
     @abstractmethod
+    def readFileContentJson(self, fileRegistry: FileRegistry) -> dict:
+        pass
+
+    @abstractmethod
     def writeFileContent(self, fileRegistry: FileRegistry, content: str) -> None:
+        pass
+
+    @abstractmethod
+    def writeFileContentJson(self, fileRegistry: FileRegistry, content: dict) -> None:
         pass
 
 # future file: FileBroker.py
@@ -35,3 +44,13 @@ class FileBroker(IFileBroker):
     def writeFileContent(self, fileRegistry: FileRegistry, content: str) -> None:
         with open(self.filePaths[fileRegistry], "w") as file:
             file.write(content)
+
+    @abstractmethod
+    def readFileContentJson(self, fileRegistry: FileRegistry) -> dict:
+        with open(self.filePaths[fileRegistry], "r") as file:
+            return json.load(file)
+        
+    @abstractmethod
+    def writeFileContentJson(self, fileRegistry: FileRegistry, content: dict) -> None:
+        with open(self.filePaths[fileRegistry], "w") as file:
+            json.dump(content, file, indent=4)

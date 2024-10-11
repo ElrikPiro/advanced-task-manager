@@ -2,32 +2,27 @@ import datetime
 import json
 
 from .Interfaces.IStatisticsService import IStatisticsService
-from .Interfaces.IJsonLoader import IJsonLoader
+from .Interfaces.IFileBroker import IFileBroker, FileRegistry
 
 class StatisticsService(IStatisticsService):
 
-    def __init__(self, jsonLoader : IJsonLoader, jsonPath : str):
+    def __init__(self, fileBroker : IFileBroker):
         self.workDone : dict[str, float] = {datetime.date.today().isoformat() : 0.0}
-        self.jsonLoader = jsonLoader
-        self.jsonPath = jsonPath
-        pass
+        self.fileBroker = fileBroker
 
     def initialize(self):
         try:
-            data = self.jsonLoader.load_json(self.jsonPath)
+            data = self.fileBroker.readFileContentJson(FileRegistry.STATISTICS_JSON)
             self.workDone = data
-        except FileNotFoundError:
-            print(f"File '{self.jsonPath}' not found. Initializing with empty data.")
-        except ValueError:
-            print(f"Error decoding JSON in file '{self.jsonPath}'. Initializing with empty data.")
-        pass
+        except Exception as e:
+            print(f"{e.__class__.__name__}: {e}")
+            print("Initializing StatisticsService with empty data.")
 
     def doWork(self, date : datetime.date, work_units : float):
         self.workDone[date.isoformat()] = self.workDone.get(date.isoformat(), 0.0) + work_units
         # Save to file
         with open(self.jsonPath, 'w', encoding='utf-8') as file:
             json.dump(self.workDone, file)
-        pass
 
     def getWorkDone(self, date : datetime.date) -> float:
         return self.workDone.get(date.isoformat(), 0.0)
