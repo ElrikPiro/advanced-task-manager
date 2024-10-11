@@ -30,10 +30,10 @@ class IFileBroker(ABC):
 # future file: FileBroker.py
 
 class FileBroker(IFileBroker):
-    def __init__(self, dataStorePath: str, jsonPath : str, appdata: str):
+    def __init__(self, jsonPath : str, appdata: str):
         self.filePaths : dict[FileRegistry, str] = {
-            FileRegistry.TASKS_JSON: os.path.join(dataStorePath, "tasks.json"),
-            FileRegistry.STATISTICS_JSON: jsonPath,
+            FileRegistry.TASKS_JSON: os.path.join(jsonPath, "tasks.json"),
+            FileRegistry.STATISTICS_JSON: os.path.join(jsonPath, "statistics.json"),
             FileRegistry.OBSIDIAN_TASKS_JSON: os.path.join(appdata, "obsidian", "tareas.json")
         }
 
