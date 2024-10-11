@@ -1,4 +1,3 @@
-import os
 from .Interfaces.ITaskJsonProvider import ITaskJsonProvider
 from .Interfaces.IFileBroker import IFileBroker, FileRegistry
 

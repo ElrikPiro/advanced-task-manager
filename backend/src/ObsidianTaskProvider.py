@@ -7,6 +7,8 @@ from .Interfaces.ITaskJsonProvider import ITaskJsonProvider
 from .ObsidianTaskModel import ObsidianTaskModel
 from typing import List
 
+#TODO: Use filebroker to save and get task metadata
+
 class ObsidianTaskProvider(ITaskProvider):
     def __init__(self, taskJsonProvider: ITaskJsonProvider, vaultPath: str):
         self.TaskJsonProvider = taskJsonProvider
