@@ -11,7 +11,6 @@ from src.ActiveTaskFilter import ActiveTaskFilter
 from src.TelegramReportingService import TelegramReportingService
 from src.ObsidianTaskProvider import ObsidianTaskProvider
 from src.ObsidianDataviewTaskJsonProvider import ObsidianDataviewTaskJsonProvider
-from src.JsonLoader import JsonLoader
 from src.SlackHeuristic import SlackHeuristic
 from src.TomorrowSlackHeuristic import TomorrowSlackHeuristic
 from src.RemainingEffortHeuristic import RemainingEffortHeuristic
@@ -29,25 +28,30 @@ class TelegramReportingServiceContainer():
 
         # Configuration
         self.config.mode.from_env("APP_MODE", as_=str, required=True)
-        self.config.token.from_env("TELEGRAM_BOT_TOKEN", as_=str, required=True)
-        self.config.chatId.from_env("TELEGRAM_CHAT_ID", as_=str, required=True)
-        self.config.jsonPath.from_env("JSON_PATH", as_=str, required=True)
+        configMode : int = int(self.config.mode())
+        telegramMode = configMode >= 0
+        obsidianMode = configMode == 1
         
-        if self.config.mode() == "1":
-            self.config.vaultPath.from_env("OBSIDIAN_VAULT_PATH", as_=str, required=True)
-        elif self.config.mode() == "0":
-            pass
-        elif self.config.mode() == "-1":
-            pass
-        else:
-            raise ValueError("Invalid mode " + self.config.mode())
+        # Environment variables
+        self.config.token.from_env("TELEGRAM_BOT_TOKEN", as_=str, required=telegramMode, default="NULL_TOKEN")
+        self.config.chatId.from_env("TELEGRAM_CHAT_ID", as_=str, required=telegramMode, default="NULL_CHAT_ID")
+        self.config.jsonPath.from_env("JSON_PATH", as_=str, required=True)
+        self.config.vaultPath.from_env("OBSIDIAN_VAULT_PATH", as_=str, required=obsidianMode, default="NULL_VAULT_PATH")
 
         # External services
+
+        ## Telegram bots
         self.container.bot = providers.Singleton(telegram.Bot, token=self.config.token)
-        self.container.userCommService = providers.Singleton(ShellUserCommService, self.config.chatId) if self.config.mode() == "-1" else providers.Singleton(TelegramBotUserCommService, self.container.bot)
+
+        ## User communication services
+        self.container.shellUserCommService = providers.Singleton(ShellUserCommService, self.config.chatId)
+        self.container.telegramUserCommService = providers.Singleton(TelegramBotUserCommService, self.container.bot)
+        
+        self.container.userCommService = self.container.telegramUserCommService if telegramMode else self.container.shellUserCommService
         
         # Data providers
-        self.container.jsonLoader = providers.Singleton(JsonLoader)
+        # self.container.jsonLoader = providers.Singleton(JsonLoader)
+        # TODO: Add file broker here
 
         if self.config.mode() == "1":
             self.container.taskJsonProvider = providers.Singleton(ObsidianDataviewTaskJsonProvider, self.container.jsonLoader)
