@@ -1,30 +1,28 @@
 import datetime
 import os
 import threading
+
+from .Interfaces.IFileBroker import IFileBroker, FileRegistry
 from .Interfaces.ITaskProvider import ITaskProvider
 from .Interfaces.ITaskModel import ITaskModel
 from .Interfaces.ITaskJsonProvider import ITaskJsonProvider
 from .ObsidianTaskModel import ObsidianTaskModel
 from typing import List
 
-#TODO: Use filebroker to save and get task metadata
-
 class ObsidianTaskProvider(ITaskProvider):
-    def __init__(self, taskJsonProvider: ITaskJsonProvider, vaultPath: str):
+    def __init__(self, taskJsonProvider: ITaskJsonProvider, fileBroker : IFileBroker):
         self.TaskJsonProvider = taskJsonProvider
-        self.vaultPath = vaultPath
+        self.fileBroker = fileBroker
         self.service = threading.Thread(target=self._serviceThread)
         self.serviceRunning = True
         self.service.start()
         self.lastJson : dict = {}
         self.lastTaskList : List[ITaskModel] = []
         self.onTaskListUpdatedCallbacks : list[callable] = []
-        pass
 
     def __del__(self):
         self.serviceRunning = False
         self.service.join()
-        pass
 
     def _serviceThread(self):
         while self.serviceRunning:
@@ -34,7 +32,6 @@ class ObsidianTaskProvider(ITaskProvider):
                 for callback in self.onTaskListUpdatedCallbacks:
                     callback()
             threading.Event().wait(10)
-        pass
 
     def _getTaskList(self) -> List[ITaskModel]:
         obsidianJson : dict = self.TaskJsonProvider.getJson()
@@ -77,32 +74,25 @@ class ObsidianTaskProvider(ITaskProvider):
         file = ""
         lineNumber = -1
         if not isinstance(task, ObsidianTaskModel) or task.getFile() == "" or task.getLine() == -1:
-            file = "ObsidianTaskProvider.md"
-            # if file doesnt exist in vault path, create it
-            if not os.path.exists(self.vaultPath + os.sep + file):
-                with open(self.vaultPath + file, "w+", encoding='utf-8') as f:
-                    f.write("# Task list\n\n")
-                    f.write(taskLine)
-            else:
-                # clean completed tasks
-                lines = []
-                with open(self.vaultPath + os.sep + file, "r", encoding='utf-8') as f:
-                    lines = f.readlines()
+            lines = self.fileBroker.readFileContent(FileRegistry.OBSIDIAN_TASKS_MD).split(os.linesep)
+            newLines = []
 
-                numLines = 1
-                with open(self.vaultPath + os.sep + file, "w", encoding='utf-8') as f:
-                    for line in lines:
-                        if line.find("- [x]") == -1:
-                            f.write(line)
-                            numLines += 1
-                    f.write(taskLine)
-                task.setFile(file)
-                task.setLine(numLines - 1)
+            numLines = 1
+            for line in lines:
+                if line.find("- [x]") == -1:
+                    newLines.append(line)
+                    numLines += 1
+            newLines.append(taskLine)
+            
+            task.setFile(file)
+            task.setLine(numLines - 1)
+            self.fileBroker.writeFileContent(FileRegistry.OBSIDIAN_TASKS_MD, os.linesep.join(newLines))
         else:
             ObsidianTask : ObsidianTaskModel = task
             file = ObsidianTask.getFile()
             lineNumber = ObsidianTask.getLine()
             fileLines = []
+            # TODO: Use [get|write]VaultFileLines
             with open(self.vaultPath + "/" + file, "r", encoding='utf-8') as f:
                 fileLines = f.readlines()
             lineOfInterest = fileLines[lineNumber]

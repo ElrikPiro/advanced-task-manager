@@ -21,9 +21,7 @@ class StatisticsService(IStatisticsService):
     def doWork(self, date : datetime.date, work_units : float):
         self.workDone[date.isoformat()] = self.workDone.get(date.isoformat(), 0.0) + work_units
         # Save to file
-        # TODO: use filebroker
-        with open(self.jsonPath, 'w', encoding='utf-8') as file:
-            json.dump(self.workDone, file)
+        self.fileBroker.writeFileContentJson(FileRegistry.STATISTICS_JSON, self.workDone)
 
     def getWorkDone(self, date : datetime.date) -> float:
         return self.workDone.get(date.isoformat(), 0.0)

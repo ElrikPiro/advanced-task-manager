@@ -8,6 +8,7 @@ class FileRegistry(Enum):
     STANDALONE_TASKS_JSON = 1
     STATISTICS_JSON = 2
     OBSIDIAN_TASKS_JSON = 3
+    OBSIDIAN_TASKS_MD = 4
 
 class VaultRegistry(Enum):
     OBSIDIAN = 1
@@ -43,10 +44,13 @@ class IFileBroker(ABC):
 
 class FileBroker(IFileBroker):
     def __init__(self, jsonPath : str, appdata: str, vaultPath: str):
-        self.filePaths : dict[FileRegistry, str] = {
-            FileRegistry.TASKS_JSON: os.path.join(jsonPath, "tasks.json"),
-            FileRegistry.STATISTICS_JSON: os.path.join(jsonPath, "statistics.json"),
-            FileRegistry.OBSIDIAN_TASKS_JSON: os.path.join(appdata, "obsidian", "tareas.json")
+        defaultTaskJson = '{"tasks": [], "pomodoros_per_day": "2"}'
+
+        self.filePaths : dict[FileRegistry, dict] = {
+            FileRegistry.TASKS_JSON: {"path": os.path.join(jsonPath, "tasks.json"), "default": defaultTaskJson},
+            FileRegistry.STATISTICS_JSON: {"path": os.path.join(jsonPath, "statistics.json"), "default": '{}'},
+            FileRegistry.OBSIDIAN_TASKS_JSON: {"path": os.path.join(appdata, "obsidian", "tareas.json"), "default": defaultTaskJson},
+            FileRegistry.OBSIDIAN_TASKS_MD: {"path": os.path.join(vaultPath, "ObsidianTaskProvider.md"), "default": f"# Task list{os.linesep}{os.linesep}"},
         }
 
         self.vaultPaths : dict[VaultRegistry, str] = {
