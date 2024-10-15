@@ -278,10 +278,10 @@ class TelegramReportingService(IReportingService):
             date = datetime.datetime.now().date() - datetime.timedelta(days=i)
             workDone = self.statiticsProvider.getWorkDone(date)
             totalWork += workDone
-            statsMessage += f"`| {date} |    {workDone}    |`\n"
+            statsMessage += f"`| {date} |    {round(workDone, 1)}    |`\n"
         # add average work done per day
         statsMessage += "`|------------|-----------|`\n"
-        statsMessage += f"`|   Average  |    {totalWork/7}    |`\n"
+        statsMessage += f"`|   Average  |    {round(totalWork/7, 1)}    |`\n"
 
         await self.bot.sendMessage(chat_id=self.chatId, text=statsMessage, parse_mode="Markdown")
 
