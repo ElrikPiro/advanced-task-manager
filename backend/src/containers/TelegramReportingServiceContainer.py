@@ -64,13 +64,9 @@ class TelegramReportingServiceContainer():
         ## Heuristic list
         self.container.heuristicList = providers.List(
             ("Remaining Effort(1)", self.container.remainingEffortHeuristic(1.0)),
-            ("Remaining Effort(5)", self.container.remainingEffortHeuristic(5.0)),
-            ("Remaining Effort(10)", self.container.remainingEffortHeuristic(10.0)),
             ("Remaining Time(100)", self.container.daysToThresholdHeuristic(100.0)),
-            ("Remaining Time(5)", self.container.daysToThresholdHeuristic(5.0)),
             ("Remaining Time(1)", self.container.daysToThresholdHeuristic(1.0)),
             ("Slack Heuristic", self.container.slackHeuristic()),
-            ("Tomorrow Slack Heuristic", self.container.tomorrowSlackHeuristic()),
         )
 
         # Filters
@@ -87,6 +83,7 @@ class TelegramReportingServiceContainer():
         self.container.defaultHeuristic = providers.Object((self.container.slackHeuristic(), 1.0))
 
         self.container.orderedCategories = providers.List(
+            ("Alert and events filter", self.container.contextPrefixTaskFilter(prefix="alert")),
             ("Bullet journal filter", self.container.contextPrefixTaskFilter(prefix="bujo")),
             ("Indoor task filter", self.container.contextPrefixTaskFilter(prefix="indoor")),
             ("Device-specific task filter", self.container.contextPrefixTaskFilter(prefix="aux_device")),
