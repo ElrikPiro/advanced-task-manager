@@ -91,14 +91,10 @@ class ObsidianTaskProvider(ITaskProvider):
             ObsidianTask : ObsidianTaskModel = task
             file = ObsidianTask.getFile()
             lineNumber = ObsidianTask.getLine()
-            fileLines = []
-            # TODO: Use [get|write]VaultFileLines
-            with open(self.vaultPath + "/" + file, "r", encoding='utf-8') as f:
-                fileLines = f.readlines()
+            fileLines = self.fileBroker.getVaultFileLines(FileRegistry.OBSIDIAN, file)
             lineOfInterest = fileLines[lineNumber]
             fileLines[lineNumber] = lineOfInterest.split("- [")[0] + taskLine
-            with open(self.vaultPath + "/" + file, "w", encoding='utf-8') as f:
-                f.writelines(fileLines)
+            self.fileBroker.writeVaultFileLines(FileRegistry.OBSIDIAN, file, fileLines)
 
     def createDefaultTask(self, description: str):
         starts = int(datetime.datetime.now().timestamp() * 1e3)
@@ -118,9 +114,7 @@ class ObsidianTaskProvider(ITaskProvider):
     def getTaskMetadata(self, task: ITaskModel) -> str:
         file = task.getFile()
         line = task.getLine()
-        fileLines = []
-        with open(self.vaultPath + "/" + file, "r", encoding='utf-8') as f:
-            fileLines = f.readlines()
+        fileLines = fileLines = self.fileBroker.getVaultFileLines(FileRegistry.OBSIDIAN, file)
 
         metadata = []
         for i in range(max(line, 0), min(line+5,len(fileLines))):
