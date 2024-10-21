@@ -2,3 +2,4 @@
 
 while true; do
     python backend.py
+    done
