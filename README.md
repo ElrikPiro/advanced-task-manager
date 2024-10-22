@@ -5,6 +5,8 @@
 ## 9. Crear un FileSystemBroker para manejar la persistencia de los ficheros y refactorizar los objetos para que usen este broker en lugar de manejar ellos los objetos
 ## 10. Validacion de los 'context' y unificacion de su definicion
 ## 11. Añadir a stats el workload, el total remaining cost y el max slack, usar un filtro para quitar las tareas urgentes
+## 12. Añadir a stats el workload, el total remaining cost y el max slack, usar un filtro para quitar las tareas urgentes
+## 13. Crear el /snooze como alias de /set start now[;+5m]
 
 # Schedule
 ## 9. Crear un FileSystemBroker para manejar la persistencia de los ficheros y refactorizar los objetos para que usen este broker en lugar de manejar ellos los objetos

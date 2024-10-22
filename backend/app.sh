@@ -1,3 +1,5 @@
 #!/bin/sh
 
-python backend.py
+while true; do
+    python backend.py
+    done
