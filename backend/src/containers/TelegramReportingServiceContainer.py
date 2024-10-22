@@ -31,7 +31,7 @@ class TelegramReportingServiceContainer():
         self.config.mode.from_env("APP_MODE", as_=str, required=True)
         configMode : int = int(self.config.mode())
         telegramMode = configMode >= 0
-        obsidianMode = True#configMode == 1
+        obsidianMode = configMode == 1
         
         # Environment variables
         self.config.jsonPath.from_env("JSON_PATH", as_=str, required=True)
