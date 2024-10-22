@@ -84,6 +84,7 @@ class ObsidianTaskProvider(ITaskProvider):
                     numLines += 1
             newLines.append(taskLine)
             
+            #TODO: this constant must be changed to be get from a config value
             task.setFile("ObsidianTaskProvider.md")
             task.setLine(numLines - 1)
             self.fileBroker.writeFileContent(FileRegistry.OBSIDIAN_TASKS_MD, "\n".join(newLines))
