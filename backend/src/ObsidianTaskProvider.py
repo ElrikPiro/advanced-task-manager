@@ -2,7 +2,7 @@ import datetime
 import os
 import threading
 
-from .Interfaces.IFileBroker import IFileBroker, FileRegistry
+from .Interfaces.IFileBroker import IFileBroker, FileRegistry, VaultRegistry
 from .Interfaces.ITaskProvider import ITaskProvider
 from .Interfaces.ITaskModel import ITaskModel
 from .Interfaces.ITaskJsonProvider import ITaskJsonProvider
@@ -43,7 +43,7 @@ class ObsidianTaskProvider(ITaskProvider):
         taskList : List[ITaskModel] = []
         for task in taskListJson:
             try:
-                obsidianTask = ObsidianTaskModel(task["taskText"], task["track"], task["starts"], task["due"], task["severity"], task["total_cost"], task["effort_invested"], task["status"], task["file"], task["line"], task["calm"], vaultPath=self.vaultPath)
+                obsidianTask = ObsidianTaskModel(task["taskText"], task["track"], task["starts"], task["due"], task["severity"], task["total_cost"], task["effort_invested"], task["status"], task["file"], task["line"], task["calm"])
                 taskList.append(obsidianTask)
             except Exception as e:
                 # print error cause and skip task
@@ -74,7 +74,7 @@ class ObsidianTaskProvider(ITaskProvider):
         file = ""
         lineNumber = -1
         if not isinstance(task, ObsidianTaskModel) or task.getFile() == "" or task.getLine() == -1:
-            lines = self.fileBroker.readFileContent(FileRegistry.OBSIDIAN_TASKS_MD).split(os.linesep)
+            lines = self.fileBroker.readFileContent(FileRegistry.OBSIDIAN_TASKS_MD).split("\n")
             newLines = []
 
             numLines = 1
@@ -84,17 +84,17 @@ class ObsidianTaskProvider(ITaskProvider):
                     numLines += 1
             newLines.append(taskLine)
             
-            task.setFile(file)
+            task.setFile("ObsidianTaskProvider.md")
             task.setLine(numLines - 1)
-            self.fileBroker.writeFileContent(FileRegistry.OBSIDIAN_TASKS_MD, os.linesep.join(newLines))
+            self.fileBroker.writeFileContent(FileRegistry.OBSIDIAN_TASKS_MD, "\n".join(newLines))
         else:
             ObsidianTask : ObsidianTaskModel = task
             file = ObsidianTask.getFile()
             lineNumber = ObsidianTask.getLine()
-            fileLines = self.fileBroker.getVaultFileLines(FileRegistry.OBSIDIAN, file)
+            fileLines = self.fileBroker.getVaultFileLines(VaultRegistry.OBSIDIAN, file)
             lineOfInterest = fileLines[lineNumber]
             fileLines[lineNumber] = lineOfInterest.split("- [")[0] + taskLine
-            self.fileBroker.writeVaultFileLines(FileRegistry.OBSIDIAN, file, fileLines)
+            self.fileBroker.writeVaultFileLines(VaultRegistry.OBSIDIAN, file, fileLines)
 
     def createDefaultTask(self, description: str):
         starts = int(datetime.datetime.now().timestamp() * 1e3)
@@ -107,14 +107,14 @@ class ObsidianTaskProvider(ITaskProvider):
         status = " "
         calm = "False"
 
-        task = ObsidianTaskModel(description, "workstation", starts, due, 1, severity, invested, status, "", -1, calm, vaultPath=self.vaultPath)
+        task = ObsidianTaskModel(description, "workstation", starts, due, 1, severity, invested, status, "", -1, calm)
         self.saveTask(task)
         return task
     
     def getTaskMetadata(self, task: ITaskModel) -> str:
         file = task.getFile()
         line = task.getLine()
-        fileLines = fileLines = self.fileBroker.getVaultFileLines(FileRegistry.OBSIDIAN, file)
+        fileLines = fileLines = self.fileBroker.getVaultFileLines(VaultRegistry.OBSIDIAN, file)
 
         metadata = []
         for i in range(max(line, 0), min(line+5,len(fileLines))):

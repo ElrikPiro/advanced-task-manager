@@ -4,7 +4,7 @@ from math import ceil
 from .Interfaces.ITaskModel import ITaskModel
 
 class ObsidianTaskModel(ITaskModel):
-    def __init__(self, description: str, context: str, start: int, due: int, severity: float, totalCost: float, investedEffort: float, status: str, file: str, line: int, calm : str, vaultPath: str):
+    def __init__(self, description: str, context: str, start: int, due: int, severity: float, totalCost: float, investedEffort: float, status: str, file: str, line: int, calm : str):
         self._description : str = description
         self._context : str = context
         self._start : int = int(start)
@@ -16,7 +16,6 @@ class ObsidianTaskModel(ITaskModel):
         self._file : str = file
         self._line : int = int(line)
         self._calm : bool = True if calm.upper().startswith("TRUE") else False
-        self._vaultPath : str = vaultPath
 
     def getDescription(self) -> str:
         slash = "/"
