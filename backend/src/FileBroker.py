@@ -1,3 +1,5 @@
+import json
+import os
 from .Interfaces.IFileBroker import IFileBroker, FileRegistry, VaultRegistry
 
 class FileBroker(IFileBroker):
@@ -5,7 +7,7 @@ class FileBroker(IFileBroker):
         defaultTaskJson = '{"tasks": [], "pomodoros_per_day": "2"}'
 
         self.filePaths : dict[FileRegistry, dict] = {
-            FileRegistry.TASKS_JSON: {"path": os.path.join(jsonPath, "tasks.json"), "default": defaultTaskJson},
+            FileRegistry.STANDALONE_TASKS_JSON: {"path": os.path.join(jsonPath, "tasks.json"), "default": defaultTaskJson},
             FileRegistry.STATISTICS_JSON: {"path": os.path.join(jsonPath, "statistics.json"), "default": '{}'},
             FileRegistry.OBSIDIAN_TASKS_JSON: {"path": os.path.join(appdata, "obsidian", "tareas.json"), "default": defaultTaskJson},
             FileRegistry.OBSIDIAN_TASKS_MD: {"path": os.path.join(vaultPath, "ObsidianTaskProvider.md"), "default": f"# Task list{os.linesep}{os.linesep}"},
@@ -16,19 +18,27 @@ class FileBroker(IFileBroker):
         }
 
     def readFileContent(self, fileRegistry: FileRegistry) -> str:
-        with open(self.filePaths[fileRegistry], "r") as file:
-            return file.read()
+        try:
+            with open(self.filePaths[fileRegistry]["path"], "r") as file:
+                return file.read()
+        except FileNotFoundError:
+            print(f"File not found: {self.filePaths[fileRegistry]['path']}")
+            return self.filePaths[fileRegistry]["default"]
 
     def writeFileContent(self, fileRegistry: FileRegistry, content: str) -> None:
-        with open(self.filePaths[fileRegistry], "w") as file:
+        with open(self.filePaths[fileRegistry]["path"], 'w+') as file:
             file.write(content)
 
     def readFileContentJson(self, fileRegistry: FileRegistry) -> dict:
-        with open(self.filePaths[fileRegistry], "r") as file:
-            return json.load(file)
+        try:
+            with open(self.filePaths[fileRegistry]["path"], "r") as file:
+                return json.load(file)
+        except FileNotFoundError:
+            print(f"File not found: {self.filePaths[fileRegistry]['path']}")
+            return json.loads(self.filePaths[fileRegistry]["default"])
         
     def writeFileContentJson(self, fileRegistry: FileRegistry, content: dict) -> None:
-        with open(self.filePaths[fileRegistry], "w") as file:
+        with open(self.filePaths[fileRegistry]["path"], 'w+') as file:
             json.dump(content, file, indent=4)
 
     def getVaultFileLines(self, vaultRegistry: VaultRegistry, relativePath: str) -> list[str]:

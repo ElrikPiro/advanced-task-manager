@@ -39,7 +39,7 @@ class TelegramReportingServiceContainer():
         self.config.token.from_env("TELEGRAM_BOT_TOKEN", as_=str, required=telegramMode, default="NULL_TOKEN")
         self.config.chatId.from_env("TELEGRAM_CHAT_ID", as_=str, required=telegramMode, default="NULL_CHAT_ID")
 
-        self.config.jsonPath.from_env("APPDATA", as_=str, required=obsidianMode, default="NULL_APPDATA")
+        self.config.appdata.from_env("APPDATA", as_=str, required=obsidianMode, default="NULL_APPDATA")
         self.config.vaultPath.from_env("OBSIDIAN_VAULT_PATH", as_=str, required=obsidianMode, default="NULL_VAULT_PATH")
 
         # External services
