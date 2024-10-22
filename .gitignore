@@ -6,3 +6,4 @@ backend/environment.txt
 compose-obsidian.yaml
 compose-standalone.yaml
 statistics.json
+tasks.json
