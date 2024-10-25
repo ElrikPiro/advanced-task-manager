@@ -291,7 +291,7 @@ class TelegramReportingService(IReportingService):
             params = params[0]
         else:
             params = "5m"
-            
+
         startParams = f"/set start now;+{params}"
         await self.setCommand(startParams)
 
@@ -450,6 +450,7 @@ class TelegramReportingService(IReportingService):
         taskInformation += "\n/set [param] [value] - Set task parameter"
         taskInformation += "\n\tparameters: description, context, start, due, severity, total\\_cost, effort\\_invested, calm"
         taskInformation += "\n/work [work_units] - invest work units in the task"
+        taskInformation += "\n/snooze - snooze the task for 5 minutes"
         taskInformation += "\n/info - Show extended information"
 
         await self.bot.sendMessage(chat_id=self.chatId, text=taskInformation, parse_mode="HTML")
