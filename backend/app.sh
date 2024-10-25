@@ -1,5 +1,8 @@
-#!/bin/sh
+#!/bin/bash
 
-while true; do
+while true
+do
     python backend.py
-    done
+    echo "Server 'backend.py' crashed with exit code $?.  Respawning..." >&2
+    sleep 1
+done

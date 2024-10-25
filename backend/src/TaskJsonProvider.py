@@ -1,18 +1,16 @@
 # class interface
 
 from .Interfaces.ITaskJsonProvider import ITaskJsonProvider
-from .Interfaces.IJsonLoader import IJsonLoader
-from json import dump
+from .Interfaces.IFileBroker import IFileBroker, FileRegistry
+import json
 
 class TaskJsonProvider(ITaskJsonProvider):
     
-    def __init__(self, path, json_loader):
-        self.path : str = path
-        self.jsonLoader : IJsonLoader = json_loader
+    def __init__(self, fileBroker: IFileBroker):
+        self.fileBroker = fileBroker
 
     def getJson(self) -> dict:
-        return self.jsonLoader.load_json(self.path)
+        return self.fileBroker.readFileContentJson(FileRegistry.STANDALONE_TASKS_JSON)
     
     def saveJson(self, json: dict):
-        with open(self.path, "w") as file:
-            dump(json, file, indent=4)
+        self.fileBroker.writeFileContentJson(FileRegistry.STANDALONE_TASKS_JSON, json)

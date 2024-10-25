@@ -1,17 +1,13 @@
-import os
 from .Interfaces.ITaskJsonProvider import ITaskJsonProvider
-from .Interfaces.IJsonLoader import IJsonLoader
+from .Interfaces.IFileBroker import IFileBroker, FileRegistry
 
 class ObsidianDataviewTaskJsonProvider(ITaskJsonProvider):
 
-    def __init__(self, json_loader : IJsonLoader):
-        self.filename = "tareas.json"
-        self.JsonLoader = json_loader
+    def __init__(self, fileBroker: IFileBroker):
+        self.fileBroker = fileBroker
 
     def getJson(self) -> dict:
-        appdata = os.getenv('APPDATA')
-        json_path = appdata + "/obsidian/" + self.filename
-        return self.JsonLoader.load_json(json_path)
+        return self.fileBroker.readFileContentJson(FileRegistry.OBSIDIAN_TASKS_JSON)
     
     def saveJson(self, json: dict):
         #do nothing
