@@ -285,6 +285,15 @@ class TelegramReportingService(IReportingService):
 
         await self.bot.sendMessage(chat_id=self.chatId, text=statsMessage, parse_mode="Markdown")
 
+    async def snoozeCommand(self, messageText: str = ""):
+        params = messageText.split(" ")[1:]
+        if len(params) > 0:
+            params = params[0]
+        else:
+            params = "5m"
+            
+        startParams = f"/set start now;+{params}"
+        await self.setCommand(startParams)
 
     async def processMessage(self, messageText: str):
         commands : list[(str, function)] = [
@@ -303,6 +312,7 @@ class TelegramReportingService(IReportingService):
             ("/schedule", self.scheduleCommand),
             ("/work", self.workCommand),
             ("/stats", self.statsCommand),
+            ("/snooze", self.snoozeCommand),
         ]
 
         # get first command that starts with the messageText
