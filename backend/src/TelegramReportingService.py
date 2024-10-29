@@ -154,64 +154,70 @@ class TelegramReportingService(IReportingService):
         await self.bot.sendMessage(chat_id=self.chatId, text=helpMessage)
 
     # Each command must be made into an object and injected into this class
-    async def listCommand(self, messageText: str = ""):
+    async def listCommand(self, messageText: str = "", expectAnswer: bool = True):
         self._taskListPage = 0
         await self.sendTaskList()
 
-    async def nextCommand(self, messageText: str = ""):
+    async def nextCommand(self, messageText: str = "", expectAnswer: bool = True):
         self._taskListPage += 1
-        await self.sendTaskList()
+        if expectAnswer:
+            await self.sendTaskList()
 
-    async def previousCommand(self, messageText: str = ""):
+    async def previousCommand(self, messageText: str = "", expectAnswer: bool = True):
         self._taskListPage -= 1
-        await self.sendTaskList()
+        if expectAnswer:
+            await self.sendTaskList()
 
-    async def selectTaskCommand(self, messageText: str = ""):
+    async def selectTaskCommand(self, messageText: str = "", expectAnswer: bool = True):
         taskId = self._taskListPage * self._tasksPerPage + int(messageText.split("_")[1]) - 1
         self._selectedTask = self._lastTaskList[taskId]
-        await self.sendTaskInformation(self._selectedTask)
+        if expectAnswer:
+            await self.sendTaskInformation(self._selectedTask)
 
-    async def taskInfoCommand(self, messageText: str = ""):
+    async def taskInfoCommand(self, messageText: str = "", expectAnswer: bool = True):
         if self._selectedTask is not None:
             await self.sendTaskInformation(self._selectedTask, True)
         else:
             await self.bot.sendMessage(chat_id=self.chatId, text="no task selected.")
 
-    async def helpCommand(self, messageText: str = ""):
+    async def helpCommand(self, messageText: str = "", expectAnswer: bool = True):
         await self.sendHelp()
 
-    async def heuristicListCommand(self, messageText: str = ""):
+    async def heuristicListCommand(self, messageText: str = "", expectAnswer: bool = True):
         heuristicList = "\n".join([f"/heuristic_{i+1} : {heuristic[0]}" for i, heuristic in enumerate(self._heuristicList)])
         heuristicList += "\n\n/filter - List filter options"
         await self.bot.sendMessage(chat_id=self.chatId, text=heuristicList)
 
-    async def filterListCommand(self, messageText: str = ""):
+    async def filterListCommand(self, messageText: str = "", expectAnswer: bool = True):
         filterList = "\n".join([f"/filter_{i+1} : {filter[0]}" for i, filter in enumerate(self._filterList)])
         filterList += "\n\n/heuristic - List heuristic options"
         await self.bot.sendMessage(chat_id=self.chatId, text=filterList)
 
-    async def heuristicSelectionCommand(self, messageText: str = ""):
+    async def heuristicSelectionCommand(self, messageText: str = "", expectAnswer: bool = True):
         self._selectedHeuristicIndex = int(messageText.split("_")[1]) - 1
         self.doFilter()
-        await self.sendTaskList()
+        if expectAnswer:
+            await self.sendTaskList()
 
-    async def filterSelectionCommand(self, messageText: str = ""):
+    async def filterSelectionCommand(self, messageText: str = "", expectAnswer: bool = True):
         self._selectedFilterIndex = int(messageText.split("_")[1]) - 1
         self.doFilter()
-        await self.sendTaskList()
+        if expectAnswer:
+            await self.sendTaskList()
 
-    async def doneCommand(self, messageText: str = ""):
+    async def doneCommand(self, messageText: str = "", expectAnswer: bool = True):
         if self._selectedTask is not None:
             task = self._selectedTask
             task.setStatus("x")
             self.taskProvider.saveTask(task)
             self._ignoreNextUpdate = True
             self.doFilter()
-            await self.sendTaskList()
+            if expectAnswer:
+                await self.sendTaskList()
         else:
             await self.bot.sendMessage(chat_id=self.chatId, text="no task selected.")
 
-    async def setCommand(self, messageText: str = ""):
+    async def setCommand(self, messageText: str = "", expectAnswer: bool = True):
         if self._selectedTask is not None:
             task = self._selectedTask
             params = messageText.split(" ")[1:]
@@ -221,11 +227,12 @@ class TelegramReportingService(IReportingService):
             await self.processSetParam(task, params[0], " ".join(params[1:]) if len(params) > 2 else params[1])
             self.taskProvider.saveTask(task)
             # self._ignoreNextUpdate = True
-            await self.sendTaskInformation(task)
+            if expectAnswer:
+                await self.sendTaskInformation(task)
         else:
             await self.bot.sendMessage(chat_id=self.chatId, text="no task selected.")
 
-    async def newCommand(self, messageText: str = ""):
+    async def newCommand(self, messageText: str = "", expectAnswer: bool = True):
         params = messageText.split(" ")[1:]
         if len(params) > 0:
             extendedParams = " ".join(params).split(";")
@@ -241,21 +248,22 @@ class TelegramReportingService(IReportingService):
             self._ignoreNextUpdate = True
             self._lastRawList.append(self._selectedTask)
             self.doFilter()
-            await self.sendTaskInformation(self._selectedTask)
+            if expectAnswer:
+                await self.sendTaskInformation(self._selectedTask)
         else:
             await self.bot.sendMessage(chat_id=self.chatId, text="no description provided.")
 
-    async def scheduleCommand(self, messageText: str = ""):
+    async def scheduleCommand(self, messageText: str = "", expectAnswer: bool = True):
         params = messageText.split(" ")[1:]
         if self._selectedTask is not None:
             self.scheduling.schedule(self._selectedTask, params.pop() if len(params) > 0 else "")
             self.taskProvider.saveTask(self._selectedTask)
-            # self._ignoreNextUpdate = True
-            await self.sendTaskInformation(self._selectedTask)
+            if expectAnswer:
+                await self.sendTaskInformation(self._selectedTask)
         else:
             await self.bot.sendMessage(chat_id=self.chatId, text="no task provided.")
 
-    async def workCommand(self, messageText: str = ""):
+    async def workCommand(self, messageText: str = "", expectAnswer: bool = True):
         params = messageText.split(" ")[1:]
         if self._selectedTask is not None:
             task = self._selectedTask
@@ -265,11 +273,12 @@ class TelegramReportingService(IReportingService):
             work_units = float(params[0])
             date = datetime.datetime.now().date()
             self.statiticsProvider.doWork(date, work_units)
-            await self.sendTaskInformation(task)
+            if expectAnswer:
+                await self.sendTaskInformation(task)
         else:
             await self.bot.sendMessage(chat_id=self.chatId, text="no task provided.")
 
-    async def statsCommand(self, messageText: str = ""):
+    async def statsCommand(self, messageText: str = "", expectAnswer: bool = True):
         statsMessage = "Work done in the last 7 days:\n"
         statsMessage += "`|    Date    | Work Done |`\n"
         statsMessage += "`|------------|-----------|`\n"
@@ -285,7 +294,7 @@ class TelegramReportingService(IReportingService):
 
         await self.bot.sendMessage(chat_id=self.chatId, text=statsMessage, parse_mode="Markdown")
 
-    async def snoozeCommand(self, messageText: str = ""):
+    async def snoozeCommand(self, messageText: str = "", expectAnswer: bool = True):
         params = messageText.split(" ")[1:]
         if len(params) > 0:
             params = params[0]
@@ -315,9 +324,15 @@ class TelegramReportingService(IReportingService):
             ("/snooze", self.snoozeCommand),
         ]
 
+        messageTextLines = messageText.strip().splitlines()
+
         # get first command that starts with the messageText
-        command = next((command for command in commands if messageText.startswith(command[0])), ("/help", self.helpCommand))[1]
-        await command(messageText)
+        iteration = 0
+        for message in messageTextLines:
+            command = next((command for command in commands if message.startswith(command[0])), ("/help", self.helpCommand))[1]
+            isLastIteration = iteration == len(messageTextLines) - 1
+            await command(message, isLastIteration)
+            iteration += 1
 
     def processRelativeTimeSet(self, current: int, value: str):
         values = value.split(";")
