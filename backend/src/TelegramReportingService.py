@@ -291,6 +291,22 @@ class TelegramReportingService(IReportingService):
         # add average work done per day
         statsMessage += "`|------------|-----------|`\n"
         statsMessage += f"`|   Average  |    {round(totalWork/7, 1)}    |`\n"
+        statsMessage += "`|------------|-----------|`\n\n"
+
+        statsMessage += "Workload statistics:\n"
+        workloadStats = self.statiticsProvider.getWorkloadStats(self._lastRawList)
+        workload = workloadStats[0]
+        remEffort = workloadStats[1]
+        heuristicValue = workloadStats[2]
+        heuristicName = workloadStats[3]
+        offender = workloadStats[4]
+        offenderMax = workloadStats[5]
+
+        statsMessage += f"`current workload: {round(workload, 2)}`\n"
+        statsMessage += f"    `max Offender: '{offender}' with {round(offenderMax, 2)}`\n"
+        statsMessage += f"`total remaining effort: {round(remEffort, 2)}`\n"
+        statsMessage += f"`max {heuristicName}: {round(heuristicValue, 2)}`\n\n"
+        statsMessage += "/list - return back to the task list"
 
         await self.bot.sendMessage(chat_id=self.chatId, text=statsMessage, parse_mode="Markdown")
 
