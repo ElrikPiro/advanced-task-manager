@@ -20,6 +20,7 @@ from src.ActiveTaskFilter import InactiveTaskFilter
 from src.DaysToThresholdHeuristic import DaysToThresholdHeuristic
 from src.StatisticsService import StatisticsService
 from src.FileBroker import FileBroker
+from src.WorkloadAbleFilter import WorkloadAbleFilter
 
 class TelegramReportingServiceContainer():
 
@@ -100,6 +101,8 @@ class TelegramReportingServiceContainer():
 
         self.container.gtdFilter = providers.Singleton(GtdTaskFilter, self.container.activeFilter(), self.container.orderedCategories(), self.container.orderedHeuristics(), self.container.defaultHeuristic())
 
+        self.container.workLoadAbleFilter = providers.Singleton(WorkloadAbleFilter, self.container.activeFilter())
+
         ## Filter list
         self.container.filterList = providers.List(
             ("GTD filter", self.container.gtdFilter()),
@@ -116,7 +119,7 @@ class TelegramReportingServiceContainer():
         self.container.heristicScheduling = providers.Singleton(HeuristicScheduling, self.container.taskProvider())
         
         # Statistics service
-        self.container.statisticsService = providers.Singleton(StatisticsService, self.container.fileBroker)
+        self.container.statisticsService = providers.Singleton(StatisticsService, self.container.fileBroker, self.container.workLoadAbleFilter, self.container.remainingEffortHeuristic(1.0), self.container.slackHeuristic)
 
         # Reporting service
         self.container.telegramReportingService = providers.Singleton(TelegramReportingService, self.container.userCommService, self.container.taskProvider, self.container.heristicScheduling, self.container.statisticsService, self.container.heuristicList, self.container.filterList, self.config.chatId)
