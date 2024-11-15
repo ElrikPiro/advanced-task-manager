@@ -22,6 +22,8 @@ from src.StatisticsService import StatisticsService
 from src.FileBroker import FileBroker
 from src.WorkloadAbleFilter import WorkloadAbleFilter
 
+from src.Interfaces.IFilter import IFilter
+
 class TelegramReportingServiceContainer():
 
     def __init__(self):
@@ -33,8 +35,8 @@ class TelegramReportingServiceContainer():
         configMode : int = int(self.config.mode())
         telegramMode = configMode >= 0
         obsidianMode = configMode == 1
-        
-        # Environment variables
+
+        ## Environment variables
         self.config.jsonPath.from_env("JSON_PATH", as_=str, required=True)
 
         self.config.token.from_env("TELEGRAM_BOT_TOKEN", as_=str, required=telegramMode, default="NULL_TOKEN")
@@ -42,6 +44,11 @@ class TelegramReportingServiceContainer():
 
         self.config.appdata.from_env("APPDATA", as_=str, required=obsidianMode, default="NULL_APPDATA")
         self.config.vaultPath.from_env("OBSIDIAN_VAULT_PATH", as_=str, required=obsidianMode, default="NULL_VAULT_PATH")
+
+        ## Configuration file
+        self.config.jsonConfig.from_json("config.json", required=True)
+        
+        self.container.categories : list[dict] = self.config.jsonConfig.categories()
 
         # External services
 
@@ -90,30 +97,23 @@ class TelegramReportingServiceContainer():
 
         self.container.defaultHeuristic = providers.Object((self.container.slackHeuristic(), 1.0))
 
-        self.container.orderedCategories = providers.List(
-            ("Alert and events filter", self.container.contextPrefixTaskFilter(prefix="alert")),
-            ("Bullet journal filter", self.container.contextPrefixTaskFilter(prefix="bujo")),
-            ("Indoor task filter", self.container.contextPrefixTaskFilter(prefix="indoor")),
-            ("Device-specific task filter", self.container.contextPrefixTaskFilter(prefix="aux_device")),
-            ("Computer task filter", self.container.contextPrefixTaskFilter(prefix="workstation")),
-            ("Outdoor task filter", self.container.contextPrefixTaskFilter(prefix="outdoor")),
-        )
+        self.container.orderedCategories = []
+        for categoryDict in self.container.categories:
+            prefix = categoryDict["prefix"]
+            description = categoryDict["description"]
+            self.container.orderedCategories.append((description, self.container.contextPrefixTaskFilter(prefix=prefix)))
 
-        self.container.gtdFilter = providers.Singleton(GtdTaskFilter, self.container.activeFilter(), self.container.orderedCategories(), self.container.orderedHeuristics(), self.container.defaultHeuristic())
+        self.container.gtdFilter = providers.Singleton(GtdTaskFilter, self.container.activeFilter(), self.container.orderedCategories, self.container.orderedHeuristics(), self.container.defaultHeuristic())
 
         self.container.workLoadAbleFilter = providers.Singleton(WorkloadAbleFilter, self.container.activeFilter())
 
         ## Filter list
-        self.container.filterList = providers.List(
+        self.container.filterList = [
             ("GTD filter", self.container.gtdFilter()),
             ("All active task filter", self.container.activeFilter()),
             ("All inactive task filter", InactiveTaskFilter()),
-            ("Bullet journal filter", self.container.contextPrefixTaskFilter(prefix="bujo")),
-            ("Indoor task filter", self.container.contextPrefixTaskFilter(prefix="indoor")),
-            ("Device-specific task filter", self.container.contextPrefixTaskFilter(prefix="aux_device")),
-            ("Computer task filter", self.container.contextPrefixTaskFilter(prefix="workstation")),
-            ("Outdoor task filter", self.container.contextPrefixTaskFilter(prefix="outdoor")),
-        )
+        ]
+        self.container.filterList.extend(self.container.orderedCategories)
 
         # Scheduling algorithm
         self.container.heristicScheduling = providers.Singleton(HeuristicScheduling, self.container.taskProvider())
