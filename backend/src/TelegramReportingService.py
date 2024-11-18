@@ -15,7 +15,7 @@ from .wrappers.interfaces.IUserCommService import IUserCommService
 
 class TelegramReportingService(IReportingService):
 
-    def __init__(self, bot : IUserCommService , taskProvider : ITaskProvider, scheduling : IScheduling, statiticsProvider : IStatisticsService, heuristics : List[Tuple[str, IHeuristic]], filters : List[Tuple[str, IFilter]], chatId: int = 0):
+    def __init__(self, bot : IUserCommService , taskProvider : ITaskProvider, scheduling : IScheduling, statiticsProvider : IStatisticsService, heuristics : List[Tuple[str, IHeuristic]], filters : List[Tuple[str, IFilter]], categories : list[dict], chatId: int = 0):
         self.run = True
         self.bot = bot
         self.chatId = chatId
@@ -33,6 +33,8 @@ class TelegramReportingService(IReportingService):
 
         self._filterList = filters
         self._selectedFilterIndex = 0
+
+        self._categories = categories
 
         self._updateFlag = False
         self._lastTaskList = self.taskProvider.getTaskList()
@@ -382,8 +384,12 @@ class TelegramReportingService(IReportingService):
         pass
 
     async def setContextCommand(self, task: ITaskModel, value: str):
-        task.setContext(value)
-        pass
+        # check if context is equal to any of the categories prefixes throw error if not
+        if any([value.startswith(category["prefix"]) for category in self._categories]):
+            task.setContext(value)
+        else:
+            errorMessage = f"Invalid context {value}\nvalid contexts would be: {', '.join([category['prefix'] for category in self._categories])}"
+            await self.bot.sendMessage(chat_id=self.chatId, text=errorMessage)
 
     async def setStartCommand(self, task: ITaskModel, value: str):
         if value.startswith("+") or value.startswith("-") or value.startswith("now") or value.startswith("today") or value.startswith("tomorrow"):
