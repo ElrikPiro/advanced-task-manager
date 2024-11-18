@@ -1,0 +1,32 @@
+{
+    "categories": [
+        {
+            "prefix": "alert",
+            "description": "Alert and events"
+        },
+        {
+            "prefix": "billable",
+            "description": "Tasks that generate income"
+        },
+        {
+            "prefix": "bujo",
+            "description": "Bullet journal tasks"
+        },
+        {
+            "prefix": "indoor",
+            "description": "Indoor dynamic tasks"
+        },
+        {
+            "prefix": "aux_device",
+            "description": "Lightweight digital/analogic tasks"
+        },
+        {
+            "prefix": "workstation",
+            "description": "Heavyweight digital tasks"
+        },
+        {
+            "prefix": "outdoor",
+            "description": "Outdoor dynamic tasks"
+        }
+    ]
+}
