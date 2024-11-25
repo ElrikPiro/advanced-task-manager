@@ -32,3 +32,7 @@ class ITaskProvider(ABC):
     @abstractmethod
     def compare(self, listA : list[ITaskModel], listB : list[ITaskModel]) -> bool:
         pass
+
+    @abstractmethod
+    def exportTasks(self, selectedFormat : str) -> bytearray:
+        pass

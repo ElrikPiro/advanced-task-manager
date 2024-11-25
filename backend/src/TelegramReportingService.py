@@ -322,6 +322,27 @@ class TelegramReportingService(IReportingService):
         startParams = f"/set start now;+{params}"
         await self.setCommand(startParams)
 
+    async def exportCommand(self, messageText: str = "", expectAnswer: bool = True):
+        formatIds : dict = {
+            "json": "json",
+            #TODO: "ical": "ical"
+        }
+        
+        messageArgs = messageText.split(" ")
+
+        # message text contains the format of the export [json, ical]
+        if len(messageArgs) > 1:
+            exportFormat = messageArgs[1]
+            selectedFormat = formatIds.get(exportFormat, "json")
+        else:
+            selectedFormat = "json"
+
+        # get the exported data
+        exportData : bytearray = self.taskProvider.exportTasks(selectedFormat)
+
+        # send the exported data
+        await self.bot.sendFile(chat_id=self.chatId, data=exportData) #TODO: implement sendFile
+
     async def processMessage(self, messageText: str):
         commands : list[(str, function)] = [
             ("/list", self.listCommand),
@@ -340,6 +361,7 @@ class TelegramReportingService(IReportingService):
             ("/work", self.workCommand),
             ("/stats", self.statsCommand),
             ("/snooze", self.snoozeCommand),
+            ("/export", self.exportCommand),
         ]
 
         messageTextLines = messageText.strip().splitlines()

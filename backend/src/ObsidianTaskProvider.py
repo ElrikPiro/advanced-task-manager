@@ -1,5 +1,5 @@
 import datetime
-import os
+import json
 import threading
 
 from .Interfaces.IFileBroker import IFileBroker, FileRegistry, VaultRegistry
@@ -133,3 +133,15 @@ class ObsidianTaskProvider(ITaskProvider):
             if list1[i] != list2[i]:
                 return False
         return True
+    
+    def _exportJson(self) -> bytearray:
+        jsonData = self.TaskJsonProvider.getJson()
+        jsonStr = json.dumps(jsonData, indent=4)
+        return bytearray(jsonStr, "utf-8")
+
+    def exportTasks(self, selectedFormat : str) -> bytearray:
+        supportedFormats : dict = {
+            "json": self._exportJson,
+        }
+
+        return supportedFormats[selectedFormat]()

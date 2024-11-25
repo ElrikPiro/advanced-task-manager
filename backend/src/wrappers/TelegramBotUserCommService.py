@@ -27,3 +27,10 @@ class TelegramBotUserCommService(IUserCommService):
         else:
             self.offset = result[0].update_id + 1
             return (result[0].message.chat.id, result[0].message.text)
+        
+    async def sendFile(self, chat_id: int, data: bytearray) -> None:
+        import io
+        from io import BufferedReader as file
+        f = io.BufferedReader(io.BytesIO(data))
+
+        await self.bot.send_document(chat_id, f, filename="export.txt")

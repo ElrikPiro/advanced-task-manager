@@ -4,6 +4,7 @@ from .Interfaces.ITaskModel import ITaskModel
 from .Interfaces.ITaskJsonProvider import ITaskJsonProvider
 from .TaskModel import TaskModel
 from typing import List
+import json
 
 class TaskProvider(ITaskProvider):
 
@@ -105,3 +106,15 @@ class TaskProvider(ITaskProvider):
             if list_a[i] != list_b[i]:
                 return False
         return True
+    
+    def _exportJson(self) -> bytearray:
+        jsonData = self.taskJsonProvider.getJson()
+        jsonStr = json.dumps(jsonData, indent=4)
+        return bytearray(jsonStr, "utf-8")
+
+    def exportTasks(self, selectedFormat : str) -> bytearray:
+        supportedFormats : dict = {
+            "json": self._exportJson,
+        }
+
+        return supportedFormats[selectedFormat]()
