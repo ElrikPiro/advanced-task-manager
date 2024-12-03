@@ -55,14 +55,14 @@ class TelegramReportingServiceContainer():
         ## Telegram bots
         self.container.bot = providers.Singleton(telegram.Bot, token=self.config.token)
 
-        ## User communication services
-        self.container.shellUserCommService = providers.Singleton(ShellUserCommService, self.config.chatId)
-        self.container.telegramUserCommService = providers.Singleton(TelegramBotUserCommService, self.container.bot)
-        
-        self.container.userCommService = self.container.telegramUserCommService if telegramMode else self.container.shellUserCommService
-        
         # Data providers
         self.container.fileBroker = providers.Singleton(FileBroker, self.config.jsonPath, self.config.appdata, self.config.vaultPath)
+
+        ## User communication services
+        self.container.shellUserCommService = providers.Singleton(ShellUserCommService, self.config.chatId)
+        self.container.telegramUserCommService = providers.Singleton(TelegramBotUserCommService, self.container.bot, self.container.fileBroker)
+        
+        self.container.userCommService = self.container.telegramUserCommService if telegramMode else self.container.shellUserCommService
 
         if obsidianMode:
             self.container.taskJsonProvider = providers.Singleton(ObsidianDataviewTaskJsonProvider, self.container.fileBroker)

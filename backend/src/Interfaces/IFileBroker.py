@@ -9,6 +9,7 @@ class FileRegistry(Enum):
     STATISTICS_JSON = 2
     OBSIDIAN_TASKS_JSON = 3
     OBSIDIAN_TASKS_MD = 4
+    LAST_RECEIVED_FILE = 5
 
 class VaultRegistry(Enum):
     OBSIDIAN = 1
