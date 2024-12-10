@@ -55,21 +55,21 @@ class TelegramReportingServiceContainer():
         ## Telegram bots
         self.container.bot = providers.Singleton(telegram.Bot, token=self.config.token)
 
-        ## User communication services
-        self.container.shellUserCommService = providers.Singleton(ShellUserCommService, self.config.chatId)
-        self.container.telegramUserCommService = providers.Singleton(TelegramBotUserCommService, self.container.bot)
-        
-        self.container.userCommService = self.container.telegramUserCommService if telegramMode else self.container.shellUserCommService
-        
         # Data providers
         self.container.fileBroker = providers.Singleton(FileBroker, self.config.jsonPath, self.config.appdata, self.config.vaultPath)
+
+        ## User communication services
+        self.container.shellUserCommService = providers.Singleton(ShellUserCommService, self.config.chatId)
+        self.container.telegramUserCommService = providers.Singleton(TelegramBotUserCommService, self.container.bot, self.container.fileBroker)
+        
+        self.container.userCommService = self.container.telegramUserCommService if telegramMode else self.container.shellUserCommService
 
         if obsidianMode:
             self.container.taskJsonProvider = providers.Singleton(ObsidianDataviewTaskJsonProvider, self.container.fileBroker)
             self.container.taskProvider = providers.Singleton(ObsidianTaskProvider, self.container.taskJsonProvider, self.container.fileBroker)
         else:
             self.container.taskJsonProvider = providers.Singleton(TaskJsonProvider, self.container.fileBroker)
-            self.container.taskProvider = providers.Singleton(TaskProvider, self.container.taskJsonProvider)
+            self.container.taskProvider = providers.Singleton(TaskProvider, self.container.taskJsonProvider, self.container.fileBroker)
         # Heuristics
         self.container.remainingEffortHeuristic = providers.Factory(RemainingEffortHeuristic, self.container.taskProvider)
         self.container.daysToThresholdHeuristic = providers.Factory(DaysToThresholdHeuristic, self.container.taskProvider)

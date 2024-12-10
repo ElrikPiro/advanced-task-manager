@@ -322,6 +322,48 @@ class TelegramReportingService(IReportingService):
         startParams = f"/set start now;+{params}"
         await self.setCommand(startParams)
 
+    async def exportCommand(self, messageText: str = "", expectAnswer: bool = True):
+        formatIds : dict = {
+            "json": "json",
+            #TODO: "ical": "ical"
+        }
+        
+        messageArgs = messageText.split(" ")
+
+        # message text contains the format of the export [json, ical]
+        if len(messageArgs) > 1:
+            exportFormat = messageArgs[1]
+            selectedFormat = formatIds.get(exportFormat, "json")
+        else:
+            selectedFormat = "json"
+
+        # get the exported data
+        exportData : bytearray = self.taskProvider.exportTasks(selectedFormat)
+
+        # send the exported data
+        await self.bot.sendFile(chat_id=self.chatId, data=exportData)
+
+    async def importCommand(self, messageText: str = "", expectAnswer: bool = True):
+        formatIds : dict = {
+            "json": "json",
+            #TODO: "ical": "ical"
+        }
+
+        messageArgs = messageText.split(" ")
+
+        # message text contains the format of the import [json, ical]
+        if len(messageArgs) > 1:
+            importFormat = messageArgs[1]
+            selectedFormat = formatIds.get(importFormat, "json")
+        else:
+            selectedFormat = "json"
+
+        # get the imported data
+        self.taskProvider.importTasks(selectedFormat)
+        self._lastRawList = self.taskProvider.getTaskList()
+        await self.bot.sendMessage(chat_id=self.chatId, text=f"{selectedFormat} file imported", parse_mode="Markdown")
+        await self.listCommand(messageText, expectAnswer)
+
     async def processMessage(self, messageText: str):
         commands : list[(str, function)] = [
             ("/list", self.listCommand),
@@ -340,6 +382,8 @@ class TelegramReportingService(IReportingService):
             ("/work", self.workCommand),
             ("/stats", self.statsCommand),
             ("/snooze", self.snoozeCommand),
+            ("/export", self.exportCommand),
+            ("/import", self.importCommand),
         ]
 
         messageTextLines = messageText.strip().splitlines()

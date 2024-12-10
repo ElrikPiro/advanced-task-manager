@@ -17,3 +17,7 @@ class IUserCommService(ABC):
     @abstractmethod
     async def getMessageUpdates(self) -> tuple[int, str]:
         pass
+
+    @abstractmethod
+    async def sendFile(self, chat_id: int, data: bytearray) -> None:
+        pass
