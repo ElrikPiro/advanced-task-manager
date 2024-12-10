@@ -69,7 +69,7 @@ class TelegramReportingServiceContainer():
             self.container.taskProvider = providers.Singleton(ObsidianTaskProvider, self.container.taskJsonProvider, self.container.fileBroker)
         else:
             self.container.taskJsonProvider = providers.Singleton(TaskJsonProvider, self.container.fileBroker)
-            self.container.taskProvider = providers.Singleton(TaskProvider, self.container.taskJsonProvider)
+            self.container.taskProvider = providers.Singleton(TaskProvider, self.container.taskJsonProvider, self.container.fileBroker)
         # Heuristics
         self.container.remainingEffortHeuristic = providers.Factory(RemainingEffortHeuristic, self.container.taskProvider)
         self.container.daysToThresholdHeuristic = providers.Factory(DaysToThresholdHeuristic, self.container.taskProvider)

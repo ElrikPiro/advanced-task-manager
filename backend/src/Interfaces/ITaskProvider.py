@@ -36,3 +36,7 @@ class ITaskProvider(ABC):
     @abstractmethod
     def exportTasks(self, selectedFormat : str) -> bytearray:
         pass
+
+    @abstractmethod
+    def importTasks(self, selectedFormat : str):
+        pass

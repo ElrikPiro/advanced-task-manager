@@ -145,3 +145,6 @@ class ObsidianTaskProvider(ITaskProvider):
         }
 
         return supportedFormats[selectedFormat]()
+    
+    def importTasks(self, selectedFormat : str):
+        raise NotImplementedError("Importing tasks is not supported for ObsidianTaskProvider")

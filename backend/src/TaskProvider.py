@@ -2,14 +2,16 @@ import datetime
 from .Interfaces.ITaskProvider import ITaskProvider
 from .Interfaces.ITaskModel import ITaskModel
 from .Interfaces.ITaskJsonProvider import ITaskJsonProvider
+from .Interfaces.IFileBroker import IFileBroker, FileRegistry
 from .TaskModel import TaskModel
 from typing import List
 import json
 
 class TaskProvider(ITaskProvider):
 
-    def __init__(self, task_json_provider : ITaskJsonProvider):
+    def __init__(self, task_json_provider : ITaskJsonProvider, fileBroker : IFileBroker):
         self.taskJsonProvider = task_json_provider
+        self.fileBroker = fileBroker
         self.dict_task_list = self.taskJsonProvider.getJson()
         self.taskJsonProvider.onTaskListUpdatedCallbacks = []
 
@@ -118,3 +120,14 @@ class TaskProvider(ITaskProvider):
         }
 
         return supportedFormats[selectedFormat]()
+    
+    def _importJson(self):
+        self.dict_task_list = self.fileBroker.readFileContentJson(FileRegistry.LAST_RECEIVED_FILE)
+        self.taskJsonProvider.saveJson(self.dict_task_list)
+
+    def importTasks(self, selectedFormat : str):
+        supportedFormats : dict = {
+            "json": self._importJson,
+        }
+
+        supportedFormats[selectedFormat]()
