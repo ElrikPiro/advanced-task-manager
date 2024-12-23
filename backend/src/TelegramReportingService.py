@@ -364,6 +364,23 @@ class TelegramReportingService(IReportingService):
         await self.bot.sendMessage(chat_id=self.chatId, text=f"{selectedFormat} file imported", parse_mode="Markdown")
         await self.listCommand(messageText, expectAnswer)
 
+    async def searchCommand(self, messageText: str = "", expectAnswer: bool = True):
+        searchResults = []
+        searchTerms = messageText.split(" ")[1:]
+        for task in self._lastRawList:
+            for term in searchTerms:
+                if term.lower() in task.getDescription().lower():
+                    searchResults.append(task)
+                    break
+        if len(searchResults) == 1:
+            self._selectedTask = searchResults[0]
+            await self.sendTaskInformation(self._selectedTask)
+        elif len(searchResults) > 0:
+            self._lastTaskList = searchResults
+            await self.sendTaskList(False)
+        else:
+            await self.bot.sendMessage(chat_id=self.chatId, text="No results found")
+
     async def processMessage(self, messageText: str):
         commands : list[(str, function)] = [
             ("/list", self.listCommand),
@@ -384,6 +401,7 @@ class TelegramReportingService(IReportingService):
             ("/snooze", self.snoozeCommand),
             ("/export", self.exportCommand),
             ("/import", self.importCommand),
+            ("/search", self.searchCommand),
         ]
 
         messageTextLines = messageText.strip().splitlines()
@@ -494,17 +512,20 @@ class TelegramReportingService(IReportingService):
             errorMessage = f"Invalid parameter {param}\nvalid parameters would be: description, context, start, due, severity, total_cost, effort_invested, calm"
             await self.bot.sendMessage(chat_id=self.chatId, text=errorMessage)
 
-    async def sendTaskList(self):
+    async def sendTaskList(self, interactive : bool = True):
         self._selectedTask = None
+        interactiveId = "/task_" if interactive else ""
 
         subTaskList = self._lastTaskList[self._taskListPage * self._tasksPerPage : (self._taskListPage + 1) * self._tasksPerPage]
-        subTaskListDescriptions = [(f"/task_{i+1} : {task.getDescription()}") for i, task in enumerate(subTaskList)]
+        subTaskListDescriptions = [(f"{interactiveId}{i+1} : {task.getDescription()}") for i, task in enumerate(subTaskList)]
 
         taskListString = "\n".join(subTaskListDescriptions)
-        taskListString += "\n\nPage " + str(self._taskListPage + 1) + " of " + str(len(self._lastTaskList) // self._tasksPerPage + 1) + "\n"
-        taskListString += "/next - Next page\n/previous - Previous page"
-        taskListString += "\n\nselected /heuristic : " + self._heuristicList[self._selectedHeuristicIndex][0]
-        taskListString += "\nselected /filter : " + self._filterList[self._selectedFilterIndex][1].getDescription()
+        if interactive:
+            taskListString += "\n\nPage " + str(self._taskListPage + 1) + " of " + str(len(self._lastTaskList) // self._tasksPerPage + 1) + "\n"
+            taskListString += "/next - Next page\n/previous - Previous page"
+            taskListString += "\n\nselected /heuristic : " + self._heuristicList[self._selectedHeuristicIndex][0]
+            taskListString += "\nselected /filter : " + self._filterList[self._selectedFilterIndex][1].getDescription()
+
         await self.bot.sendMessage(chat_id=self.chatId, text=taskListString)
         pass
 
