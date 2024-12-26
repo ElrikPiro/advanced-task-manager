@@ -67,7 +67,7 @@ class TelegramReportingService(IReportingService):
                 if errCount > 30:
                     print("stopping container")
                     self.run = False
-                    exit(-1)
+                    break
             
 
     async def _listenForEvents(self):
