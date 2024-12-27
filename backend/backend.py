@@ -9,6 +9,7 @@ if __name__ == '__main__':
     service = container.container.telegramReportingService()
     service.listenForEvents()
     print("Exiting the program")
-    _exit(0) #TODO: fix hanging threads and remove this line
+    service.dispose()
+    exit(0)
     
     

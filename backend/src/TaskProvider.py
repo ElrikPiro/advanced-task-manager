@@ -15,6 +15,9 @@ class TaskProvider(ITaskProvider):
         self.dict_task_list = self.taskJsonProvider.getJson()
         self.taskJsonProvider.onTaskListUpdatedCallbacks = []
 
+    def dispose(self):
+        pass
+
     def getTaskList(self) -> List[ITaskModel]:
         task_list = []
         index = 0
