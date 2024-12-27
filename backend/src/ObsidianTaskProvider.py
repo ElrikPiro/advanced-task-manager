@@ -20,7 +20,7 @@ class ObsidianTaskProvider(ITaskProvider):
         self.lastTaskList : List[ITaskModel] = []
         self.onTaskListUpdatedCallbacks : list[callable] = []
 
-    def __del__(self):
+    def dispose(self):
         self.serviceRunning = False
         self.service.join()
 

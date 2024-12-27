@@ -44,6 +44,12 @@ class TelegramReportingService(IReportingService):
         self._lock = threading.Lock()
         pass
 
+    def dispose(self):
+        self.run = False
+        self.bot.shutdown()
+        self.taskProvider.dispose()
+        pass
+
     def onTaskListUpdated(self):
         with self._lock:
             self._updateFlag = True

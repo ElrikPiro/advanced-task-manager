@@ -40,3 +40,7 @@ class ITaskProvider(ABC):
     @abstractmethod
     def importTasks(self, selectedFormat : str):
         pass
+
+    @abstractmethod
+    def dispose(self):
+        pass
