@@ -271,14 +271,29 @@ class TelegramReportingService(IReportingService):
         else:
             await self.bot.sendMessage(chat_id=self.chatId, text="no task provided.")
 
+    def convertToPomodoros(self, work_units_str: str) -> str:
+        work_units = 0-0
+        if work_units_str.endswith("p"):
+            work_units = float(work_units_str[:-1])
+        if work_units_str.endswith("m"):
+            work_units = float(work_units_str[:-1]) / 25.0
+        elif work_units_str.endswith("h"):
+            work_units = float(work_units_str[:-1]) * 2.4
+        else:
+            work_units = float(work_units_str)
+
+        # round to 0.2
+        work_units = round(work_units * 5) / 5
+        return str(work_units)
+
     async def workCommand(self, messageText: str = "", expectAnswer: bool = True):
         params = messageText.split(" ")[1:]
         if self._selectedTask is not None:
             task = self._selectedTask
-            work_units_str = " ".join(params[0:])
+            work_units_str = self.convertToPomodoros(" ".join(params[0:]))
             await self.processSetParam(task, "effort_invested", work_units_str)
             self.taskProvider.saveTask(task)
-            work_units = float(params[0])
+            work_units = float(work_units_str)
             date = datetime.datetime.now().date()
             self.statiticsProvider.doWork(date, work_units)
             if expectAnswer:
