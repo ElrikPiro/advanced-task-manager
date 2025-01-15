@@ -31,6 +31,12 @@ class TimeAmount:
 
     def __str__(self):
         return _convert_seconds_to_time_string(self.int_representation)
+    
+    def as_pomodoros(self) -> int:
+        """
+        Returns the time amount as a number of pomodoros.
+        """
+        return ceil((self.int_representation*5) / (25*60*1000))/5
 
 class TimePoint:
     """
@@ -71,7 +77,17 @@ class TimePoint:
 # Private helper functions in module
 
 def _convert_time_string_to_miliseconds(value: str) -> int:
-    sign = 1 if value.startswith("+") else -1
+    value = str(value)
+    
+    sign = 0
+    if value.startswith("-"):
+        sign = -1
+    elif value.startswith("+"):
+        sign = 1
+    else:
+        sign = 1
+        value = "+" + value
+
     modifier = 1000
     if value.endswith("d"):
         modifier *= 24 * 60 * 60
@@ -81,15 +97,22 @@ def _convert_time_string_to_miliseconds(value: str) -> int:
         modifier *= 60
     elif value.endswith("w"):
         modifier *= 7 * 24 * 60 * 60
-    return sign * int(value[1:-1]) * modifier
+    elif value.endswith("p"):
+        modifier *= 25 * 60
+    else: # no letter at the end, assume pomodoros
+        value += "p"
+        modifier *= 25 * 60
+
+    floatValue = float(value[1:-1])
+    return int(sign * floatValue * modifier)
 
 def _convert_seconds_to_time_string(miliseconds: int) -> str:
-    pomodoros = ceil(miliseconds / (25*60*1000*5))/5
+    pomodoros = ceil((5*miliseconds) / (25*60*1000))/5
     #round pomodoros to 1 decimal place
     days, miliseconds = divmod(miliseconds, 86400000)
     hours, miliseconds = divmod(miliseconds, 3600000)
     minutes, miliseconds = divmod(miliseconds, 60000)
     # a value only appears if it is not zero
     retval = f"{days}d" * bool(days) + f"{hours}h" * bool(hours) + f"{minutes}m" * bool(minutes) + f"{miliseconds/1000}s" * bool(miliseconds)
-    return retval + f" ({pomodoros} pomodoros)" if pomodoros > 0 else retval
+    return retval + f" ({pomodoros} pomodoros)" if pomodoros > 0 else "None"
     
