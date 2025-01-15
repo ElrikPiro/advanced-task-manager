@@ -9,16 +9,16 @@
             "description": "Tasks that generate income"
         },
         {
-            "prefix": "bujo",
-            "description": "Bullet journal tasks"
-        },
-        {
             "prefix": "indoor",
             "description": "Indoor dynamic tasks"
         },
         {
             "prefix": "aux_device",
             "description": "Lightweight digital/analogic tasks"
+        },
+        {
+            "prefix": "bujo",
+            "description": "Bullet journal tasks"
         },
         {
             "prefix": "workstation",
