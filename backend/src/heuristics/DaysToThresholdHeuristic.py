@@ -1,12 +1,15 @@
+import datetime
+
 from typing import List, Tuple
-from .Interfaces.IHeuristic import IHeuristic
-from .Interfaces.ITaskModel import ITaskModel
-from .Interfaces.ITaskProvider import ITaskProvider
+from ..Interfaces.IHeuristic import IHeuristic
+from ..Interfaces.ITaskModel import ITaskModel
+from ..Interfaces.ITaskProvider import ITaskProvider
 
-class TomorrowSlackHeuristic(IHeuristic):
+class DaysToThresholdHeuristic(IHeuristic):
 
-    def __init__(self, pomodorosPerDayProvider: ITaskProvider):
+    def __init__(self, pomodorosPerDayProvider: ITaskProvider, threshold: float):
         self.pomodorosPerDayProvider = pomodorosPerDayProvider
+        self.threshold = threshold
 
     def sort(self, tasks: List[ITaskModel]) -> List[Tuple[ITaskModel, float]]:
         pomodorosPerDay = float(self.pomodorosPerDayProvider.getTaskListAttribute("pomodoros_per_day"))
@@ -19,13 +22,10 @@ class TomorrowSlackHeuristic(IHeuristic):
         w = 1
         s = task.getSeverity()
         r = task.getTotalCost()
-        d = task.calculateRemainingTime() - 1
+        d = task.calculateRemainingTime()
+        h = self.threshold
 
-        try:
-            h = (p * w * s * r) / (p * d - r)
-            return round(h, 2) if h > 0 else 100
-        except ZeroDivisionError:
-            return 100
+        return d - (r * (p*s*w + h)) / (h*p)
 
     def evaluate(self, task: ITaskModel) -> float:
         p = float(self.pomodorosPerDayProvider.getTaskListAttribute("pomodoros_per_day"))

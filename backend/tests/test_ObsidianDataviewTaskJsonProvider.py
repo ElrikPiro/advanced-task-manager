@@ -1,6 +1,6 @@
 import unittest
 from unittest.mock import Mock, patch
-from src.ObsidianDataviewTaskJsonProvider import ObsidianDataviewTaskJsonProvider
+from src.taskjsonproviders.ObsidianDataviewTaskJsonProvider import ObsidianDataviewTaskJsonProvider
 from src.Interfaces.IJsonLoader import IJsonLoader
 
 class TestObsidianDataviewTaskJsonProvider(unittest.TestCase):

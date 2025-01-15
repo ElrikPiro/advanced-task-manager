@@ -4,23 +4,23 @@ import os
 
 from src.wrappers.TelegramBotUserCommService import TelegramBotUserCommService
 from src.wrappers.ShellUserCommService import ShellUserCommService
-from src.TaskProvider import TaskProvider
-from src.TaskJsonProvider import TaskJsonProvider
+from src.taskproviders.TaskProvider import TaskProvider
+from src.taskjsonproviders.TaskJsonProvider import TaskJsonProvider
 from src.HeuristicScheduling import HeuristicScheduling
-from src.ActiveTaskFilter import ActiveTaskFilter
+from src.filters.ActiveTaskFilter import ActiveTaskFilter
 from src.TelegramReportingService import TelegramReportingService
-from src.ObsidianTaskProvider import ObsidianTaskProvider
-from src.ObsidianDataviewTaskJsonProvider import ObsidianDataviewTaskJsonProvider
-from src.SlackHeuristic import SlackHeuristic
-from src.TomorrowSlackHeuristic import TomorrowSlackHeuristic
-from src.RemainingEffortHeuristic import RemainingEffortHeuristic
-from src.ContextPrefixTaskFilter import ContextPrefixTaskFilter
-from src.GtdTaskFilter import GtdTaskFilter
-from src.ActiveTaskFilter import InactiveTaskFilter
-from src.DaysToThresholdHeuristic import DaysToThresholdHeuristic
+from src.taskproviders.ObsidianTaskProvider import ObsidianTaskProvider
+from src.taskjsonproviders.ObsidianDataviewTaskJsonProvider import ObsidianDataviewTaskJsonProvider
+from src.heuristics.SlackHeuristic import SlackHeuristic
+from src.heuristics.TomorrowSlackHeuristic import TomorrowSlackHeuristic
+from src.heuristics.RemainingEffortHeuristic import RemainingEffortHeuristic
+from src.filters.ContextPrefixTaskFilter import ContextPrefixTaskFilter
+from src.filters.GtdTaskFilter import GtdTaskFilter
+from src.filters.ActiveTaskFilter import InactiveTaskFilter
+from src.heuristics.DaysToThresholdHeuristic import DaysToThresholdHeuristic
 from src.StatisticsService import StatisticsService
 from src.FileBroker import FileBroker
-from src.WorkloadAbleFilter import WorkloadAbleFilter
+from src.filters.WorkloadAbleFilter import WorkloadAbleFilter
 
 from src.Interfaces.IFilter import IFilter
 

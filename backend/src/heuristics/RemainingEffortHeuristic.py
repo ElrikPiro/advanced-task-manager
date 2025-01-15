@@ -1,7 +1,7 @@
 from typing import List, Tuple
-from .Interfaces.IHeuristic import IHeuristic
-from .Interfaces.ITaskModel import ITaskModel
-from .Interfaces.ITaskProvider import ITaskProvider
+from ..Interfaces.IHeuristic import IHeuristic
+from ..Interfaces.ITaskModel import ITaskModel
+from ..Interfaces.ITaskProvider import ITaskProvider
 
 class RemainingEffortHeuristic(IHeuristic):
 

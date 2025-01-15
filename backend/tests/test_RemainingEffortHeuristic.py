@@ -1,5 +1,5 @@
 import unittest
-from src.RemainingEffortHeuristic import RemainingEffortHeuristic
+from src.heuristics.RemainingEffortHeuristic import RemainingEffortHeuristic
 from src.Interfaces.ITaskModel import ITaskModel
 from unittest import TestCase, mock
 

@@ -1,7 +1,7 @@
 from abc import ABC, abstractmethod
 from typing import List
-from .Interfaces.ITaskModel import ITaskModel
-from .Interfaces.IFilter import IFilter
+from ..Interfaces.ITaskModel import ITaskModel
+from ..Interfaces.IFilter import IFilter
 
 class WorkloadAbleFilter(IFilter):
 

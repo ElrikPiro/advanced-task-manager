@@ -1,9 +1,9 @@
 import datetime
 from typing import Tuple
 
-from .Interfaces.IFilter import IFilter
-from .Interfaces.IHeuristic import IHeuristic
-from .Interfaces.ITaskModel import ITaskModel
+from ..Interfaces.IFilter import IFilter
+from ..Interfaces.IHeuristic import IHeuristic
+from ..Interfaces.ITaskModel import ITaskModel
 
 class GtdTaskFilter(IFilter):
 

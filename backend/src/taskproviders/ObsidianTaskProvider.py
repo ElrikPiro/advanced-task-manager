@@ -2,11 +2,11 @@ import datetime
 import json
 import threading
 
-from .Interfaces.IFileBroker import IFileBroker, FileRegistry, VaultRegistry
-from .Interfaces.ITaskProvider import ITaskProvider
-from .Interfaces.ITaskModel import ITaskModel
-from .Interfaces.ITaskJsonProvider import ITaskJsonProvider
-from .ObsidianTaskModel import ObsidianTaskModel
+from ..Interfaces.IFileBroker import IFileBroker, FileRegistry, VaultRegistry
+from ..Interfaces.ITaskProvider import ITaskProvider
+from ..Interfaces.ITaskModel import ITaskModel
+from ..Interfaces.ITaskJsonProvider import ITaskJsonProvider
+from ..taskmodels.ObsidianTaskModel import ObsidianTaskModel
 from typing import List
 
 class ObsidianTaskProvider(ITaskProvider):
