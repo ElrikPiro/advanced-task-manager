@@ -539,7 +539,7 @@ class TelegramReportingService(IReportingService):
         taskDueDate : TimePoint = TimePoint(datetime.datetime.fromtimestamp(task.getDue() / 1e3))
         taskRemainingCost : TimeAmount = TimeAmount(max(task.getTotalCost(), 0))
         taskEffortInvested = max(task.getInvestedEffort(), 0)
-        taskTotalCost = max(task.getTotalCost(), 0)+taskEffortInvested
+        taskTotalCost = TimeAmount(max(task.getTotalCost(), 0)+taskEffortInvested)
         
         taskInformation = f"Task: {taskDescription}\nContext: {taskContext}\nStart Date: {taskStartDate}\nDue Date: {taskDueDate}\nTotal Cost: {taskTotalCost}\nRemaining: {taskRemainingCost}\nSeverity: {taskSeverity}"
         
