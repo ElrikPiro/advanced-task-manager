@@ -546,7 +546,7 @@ class TelegramReportingService(IReportingService):
         if extended:
             for i, heuristic in enumerate(self._heuristicList):
                 heuristicName, heuristicInstance = heuristic
-                taskInformation += f"\n{heuristicName} : " + str(heuristicInstance.evaluate(task))
+                taskInformation += f"\n{heuristicName} : " + heuristicInstance.getComment(task)
             
             taskInformation += f"\n\n<b>Metadata:</b><code>{self.taskProvider.getTaskMetadata(task)}</code>"
 

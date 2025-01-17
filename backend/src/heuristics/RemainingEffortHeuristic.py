@@ -2,6 +2,7 @@ from typing import List, Tuple
 from ..Interfaces.IHeuristic import IHeuristic
 from ..Interfaces.ITaskModel import ITaskModel
 from ..Interfaces.ITaskProvider import ITaskProvider
+from src.wrappers.TimeManagement import TimeAmount
 
 class RemainingEffortHeuristic(IHeuristic):
 
@@ -14,9 +15,6 @@ class RemainingEffortHeuristic(IHeuristic):
         retval = [(task, self.fastEvaluate(task, pomodorosPerDay)) for task in tasks]
         retval.sort(key=lambda x: x[1], reverse=True)
         return retval
-
-        #let desiredRemainingCost = (dr) => (dr * d * p) / (p*s*w + dr)
-		#let remainingWork = (dr) => r - desiredRemainingCost(dr)
 
     def evaluate(self, task: ITaskModel) -> float:
         p = float(self.pomodorosPerDayProvider.getTaskListAttribute("pomodoros_per_day"))
@@ -32,3 +30,8 @@ class RemainingEffortHeuristic(IHeuristic):
         dr = self.desiredH
 
         return r - ((dr * d * p) / (p*s*w + dr))
+
+    def getComment(self, task: ITaskModel) -> str:
+        remaining_effort = self.evaluate(task)
+        time_amount = TimeAmount(remaining_effort)
+        return str(time_amount)
