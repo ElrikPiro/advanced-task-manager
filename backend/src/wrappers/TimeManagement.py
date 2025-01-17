@@ -17,21 +17,21 @@ class TimeAmount:
         self.int_representation = _convert_time_string_to_miliseconds(str_representation)
 
     def __add__(self, other):
-        return TimeAmount(str(self.int_representation + other.int_representation))
+        return TimeAmount(str(self.int_representation + other.int_representation)+"ms")
 
     def __sub__(self, other):
-        return TimeAmount(str(self.int_representation - other.int_representation))
+        return TimeAmount(str(self.int_representation - other.int_representation)+"ms")
 
     def __mul__(self, other):
-        return TimeAmount(str(self.int_representation * other.int_representation))
+        return TimeAmount(str(self.int_representation * other.int_representation)+"ms")
 
     def __truediv__(self, other):
-        return TimeAmount(str(self.int_representation / other.int_representation))
+        return TimeAmount(str(self.int_representation / other.int_representation)+"ms")
 
     def __str__(self):
         return _convert_seconds_to_time_string(self.int_representation)
     
-    def as_pomodoros(self) -> int:
+    def as_pomodoros(self) -> float:
         """
         Returns the time amount as a number of pomodoros.
         """
@@ -101,6 +101,11 @@ def _convert_time_string_to_miliseconds(value: str) -> int:
         modifier *= 7 * 24 * 60 * 60
     elif value.endswith("p"):
         modifier *= 25 * 60
+    elif value.endswith("ms"):
+        value = value[:-1]
+        modifier = 1
+    elif value.endswith("s"):
+        modifier *= 1
     else: # no letter at the end, assume pomodoros
         value += "p"
         modifier *= 25 * 60
