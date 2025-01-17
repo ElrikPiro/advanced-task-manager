@@ -28,7 +28,7 @@ class TaskProvider(ITaskProvider):
         return task_list
 
     def createTaskFromDict(self, dict_task : dict, index : int) -> ITaskModel:
-        return TaskModel(index=index, description=dict_task["description"], context=dict_task["context"], start=TimePoint.from_string(str(dict_task["start"])), due=TimePoint.from_string(str(dict_task["due"])), severity=dict_task["severity"], totalCost=TimeAmount(dict_task["totalCost"]), investedEffort=TimeAmount(dict_task["investedEffort"]), status=dict_task["status"], calm=dict_task["calm"])
+        return TaskModel(index=index, description=dict_task["description"], context=dict_task["context"], start=TimePoint.from_timestamp(dict_task["start"]), due=TimePoint.from_timestamp(dict_task["due"]), severity=dict_task["severity"], totalCost=TimeAmount(dict_task["totalCost"]), investedEffort=TimeAmount(dict_task["investedEffort"]), status=dict_task["status"], calm=dict_task["calm"])
 
     def getTaskListAttribute(self, string: str) -> str:
         try:
