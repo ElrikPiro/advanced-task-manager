@@ -33,5 +33,5 @@ class RemainingEffortHeuristic(IHeuristic):
 
         return r - ((dr * d * p) / (p*s*w + dr))
 
-    def getComment(self) -> str:
+    def getComment(self, task: ITaskModel) -> str:
         return "This heuristic calculates the remaining effort required to complete a task."

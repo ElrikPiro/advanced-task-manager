@@ -13,5 +13,5 @@ class IHeuristic(ABC):
         pass
 
     @abstractmethod
-    def getComment(self) -> str:
+    def getComment(self, task: ITaskModel) -> str:
         pass

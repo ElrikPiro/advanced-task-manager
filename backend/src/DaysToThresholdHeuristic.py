@@ -31,5 +31,5 @@ class DaysToThresholdHeuristic(IHeuristic):
         p = float(self.pomodorosPerDayProvider.getTaskListAttribute("pomodoros_per_day"))
         return self.fastEvaluate(task, p)
 
-    def getComment(self) -> str:
+    def getComment(self, task: ITaskModel) -> str:
         return "This heuristic calculates the number of days remaining until the task reaches the threshold."
