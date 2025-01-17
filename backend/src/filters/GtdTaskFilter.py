@@ -4,6 +4,7 @@ from typing import Tuple
 from ..Interfaces.IFilter import IFilter
 from ..Interfaces.IHeuristic import IHeuristic
 from ..Interfaces.ITaskModel import ITaskModel
+from ..wrappers.TimeManagement import TimePoint
 
 class GtdTaskFilter(IFilter):
 
@@ -59,7 +60,7 @@ class GtdTaskFilter(IFilter):
     def _filterUrgents(self, tasks : list[ITaskModel]) -> list:
         retval = []
         for task in tasks:
-            if task.getDue()/1000.0 < datetime.datetime.now().timestamp():
+            if task.getDue().datetime_representation.timestamp() < TimePoint.now().datetime_representation.timestamp():
                 retval.append(task)
         return retval
     

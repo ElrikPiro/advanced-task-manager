@@ -24,7 +24,7 @@ class RemainingEffortHeuristic(IHeuristic):
         p = pomodorosPerDay
         w = 1
         s = task.getSeverity()
-        r = task.getTotalCost()
+        r = task.getTotalCost().int_representation
         d = task.calculateRemainingTime()
 
         dr = self.desiredH
@@ -33,5 +33,5 @@ class RemainingEffortHeuristic(IHeuristic):
 
     def getComment(self, task: ITaskModel) -> str:
         remaining_effort = self.evaluate(task)
-        time_amount = TimeAmount(remaining_effort)
+        time_amount = TimeAmount(str(remaining_effort))
         return str(time_amount)

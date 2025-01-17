@@ -2,6 +2,7 @@ from math import ceil
 from .Interfaces.IScheduling import IScheduling
 from .Interfaces.ITaskModel import ITaskModel
 from .Interfaces.ITaskProvider import ITaskProvider
+from .wrappers.TimeManagement import TimeAmount
 
 class HeuristicScheduling(IScheduling):
     
@@ -12,13 +13,13 @@ class HeuristicScheduling(IScheduling):
         
         d = task.calculateRemainingTime()
         p = float(self.pomodoroConstProvider.getTaskListAttribute("pomodoros_per_day"))
-        r = task.getTotalCost()
+        r = task.getTotalCost().int_representation
 
         if param.replace(".", "").isnumeric():
             effortPerDay = float(param)
             severity = 1 / effortPerDay
             optimalDayTo = ceil((r * (p * severity + 1)) / p)
-            task.setDue(task.getStart() + optimalDayTo * 86400 * 1000)
+            task.setDue(task.getStart() + TimeAmount(f"{optimalDayTo}d"))
             task.setSeverity(severity)
         else:
             severity = max((d*p-r)/(p*r), 1)

@@ -4,6 +4,7 @@ from ..Interfaces.ITaskModel import ITaskModel
 from ..Interfaces.ITaskJsonProvider import ITaskJsonProvider
 from ..Interfaces.IFileBroker import IFileBroker, FileRegistry
 from ..taskmodels.TaskModel import TaskModel
+from ..wrappers.TimeManagement import TimePoint, TimeAmount
 from typing import List
 import json
 
@@ -27,7 +28,7 @@ class TaskProvider(ITaskProvider):
         return task_list
 
     def createTaskFromDict(self, dict_task : dict, index : int) -> ITaskModel:
-        return TaskModel(index=index, description=dict_task["description"], context=dict_task["context"], start=dict_task["start"], due=dict_task["due"], severity=dict_task["severity"], totalCost=dict_task["totalCost"], investedEffort=dict_task["investedEffort"], status=dict_task["status"], calm=dict_task["calm"])
+        return TaskModel(index=index, description=dict_task["description"], context=dict_task["context"], start=TimePoint.from_string(dict_task["start"]), due=TimePoint.from_string(dict_task["due"]), severity=dict_task["severity"], totalCost=TimeAmount(dict_task["totalCost"]), investedEffort=TimeAmount(dict_task["investedEffort"]), status=dict_task["status"], calm=dict_task["calm"])
 
     def getTaskListAttribute(self, string: str) -> str:
         try:
@@ -43,11 +44,11 @@ class TaskProvider(ITaskProvider):
                 self.dict_task_list["tasks"][index] = dict(
                     description=task.getDescription(), 
                     context=task.getContext(), 
-                    start=task.getStart(), 
-                    due=task.getDue(), 
+                    start=task.getStart().datetime_representation.strftime("%Y-%m-%dT%H:%M"), 
+                    due=task.getDue().datetime_representation.strftime("%Y-%m-%d"), 
                     severity=task.getSeverity(), 
-                    totalCost=task.getTotalCost(), 
-                    investedEffort=task.getInvestedEffort(), 
+                    totalCost=str(task.getTotalCost()), 
+                    investedEffort=str(task.getInvestedEffort()), 
                     status=task.getStatus(), 
                     calm="True" if task.getCalm() else "False"
                 )
@@ -58,24 +59,22 @@ class TaskProvider(ITaskProvider):
             callback()
 
     def createDefaultTask(self, description: str) -> ITaskModel:
-        starts = int(datetime.datetime.now().timestamp() * 1e3)
-        due = int(datetime.datetime.today().timestamp() * 1e3)
-        starts = starts - starts % 60000
-        due = due - due % 60000
+        starts = TimePoint.now()
+        due = TimePoint.today()
         
         severity = 1.0
-        invested = 0.0
+        invested = TimeAmount("0")
         status = " "
         calm = "False"
         
         default_task = dict(
             description=description, 
             context="workstation", 
-            start=starts, 
-            due=due, 
+            start=starts.datetime_representation.strftime("%Y-%m-%dT%H:%M"), 
+            due=due.datetime_representation.strftime("%Y-%m-%d"), 
             severity=severity, 
-            totalCost=1.0, 
-            investedEffort=invested, 
+            totalCost="1.0", 
+            investedEffort=str(invested), 
             status=status, 
             calm=calm
         )
@@ -91,11 +90,11 @@ class TaskProvider(ITaskProvider):
         return dict(
             description=task.getDescription(), 
             context=task.getContext(), 
-            start=task.getStart(), 
-            due=task.getDue(), 
+            start=task.getStart().datetime_representation.strftime("%Y-%m-%dT%H:%M"), 
+            due=task.getDue().datetime_representation.strftime("%Y-%m-%d"), 
             severity=task.getSeverity(), 
-            totalCost=task.getTotalCost(), 
-            investedEffort=task.getInvestedEffort(), 
+            totalCost=str(task.getTotalCost()), 
+            investedEffort=str(task.getInvestedEffort()), 
             status=task.getStatus(), 
             calm="True" if task.getCalm() else "False"
         ).__str__()

@@ -1,14 +1,15 @@
 from abc import ABC, abstractmethod
+from src.wrappers.TimeManagement import TimePoint, TimeAmount
 
 # Interface for TaskModel
 # Datatype contains the following fields:
 # - description: str
 # - context: str
-# - start: datetime (int)
-# - due: datetime (int)
+# - start: datetime (TimePoint)
+# - due: datetime (TimePoint)
 # - severity: float
-# - totalCost: float
-# - investedEffort: float
+# - totalCost: float (TimeAmount)
+# - investedEffort: float (TimeAmount)
 # - status: str
 class ITaskModel(ABC):
 
@@ -21,11 +22,11 @@ class ITaskModel(ABC):
         pass
 
     @abstractmethod
-    def getStart(self) -> int:
+    def getStart(self) -> TimePoint:
         pass
 
     @abstractmethod
-    def getDue(self) -> int:
+    def getDue(self) -> TimePoint:
         pass
 
     @abstractmethod
@@ -33,11 +34,11 @@ class ITaskModel(ABC):
         pass
 
     @abstractmethod
-    def getTotalCost(self) -> float:
+    def getTotalCost(self) -> TimeAmount:
         pass
 
     @abstractmethod
-    def getInvestedEffort(self) -> float:
+    def getInvestedEffort(self) -> TimeAmount:
         pass
 
     @abstractmethod
@@ -57,11 +58,11 @@ class ITaskModel(ABC):
         pass
 
     @abstractmethod
-    def setStart(self, start: int):
+    def setStart(self, start: TimePoint):
         pass
 
     @abstractmethod
-    def setDue(self, due: int):
+    def setDue(self, due: TimePoint):
         pass
 
     @abstractmethod
@@ -69,11 +70,11 @@ class ITaskModel(ABC):
         pass
 
     @abstractmethod
-    def setTotalCost(self, totalCost: float):
+    def setTotalCost(self, totalCost: TimeAmount):
         pass
 
     @abstractmethod
-    def setInvestedEffort(self, investedEffort: float):
+    def setInvestedEffort(self, investedEffort: TimeAmount):
         pass
 
     @abstractmethod
@@ -91,5 +92,3 @@ class ITaskModel(ABC):
     @abstractmethod
     def __eq__(self, other):
         pass
-
-    

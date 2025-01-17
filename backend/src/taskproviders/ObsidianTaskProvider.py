@@ -7,6 +7,7 @@ from ..Interfaces.ITaskProvider import ITaskProvider
 from ..Interfaces.ITaskModel import ITaskModel
 from ..Interfaces.ITaskJsonProvider import ITaskJsonProvider
 from ..taskmodels.ObsidianTaskModel import ObsidianTaskModel
+from ..wrappers.TimeManagement import TimePoint, TimeAmount
 from typing import List
 
 class ObsidianTaskProvider(ITaskProvider):
@@ -43,7 +44,7 @@ class ObsidianTaskProvider(ITaskProvider):
         taskList : List[ITaskModel] = []
         for task in taskListJson:
             try:
-                obsidianTask = ObsidianTaskModel(task["taskText"], task["track"], task["starts"], task["due"], task["severity"], task["total_cost"], task["effort_invested"], task["status"], task["file"], task["line"], task["calm"])
+                obsidianTask = ObsidianTaskModel(task["taskText"], task["track"], TimePoint.from_string(task["starts"]), TimePoint.from_string(task["due"]), task["severity"], TimeAmount(task["total_cost"]), TimeAmount(task["effort_invested"]), task["status"], task["file"], task["line"], task["calm"])
                 taskList.append(obsidianTask)
             except Exception as e:
                 # print error cause and skip task
@@ -61,8 +62,8 @@ class ObsidianTaskProvider(ITaskProvider):
     def saveTask(self, task: ITaskModel):
         description = task.getDescription().split("@")[0].strip()
         context = task.getContext()
-        start = datetime.datetime.fromtimestamp(task.getStart() / 1e3).strftime("%Y-%m-%dT%H:%M")
-        due = datetime.datetime.fromtimestamp(task.getDue() / 1e3).strftime("%Y-%m-%d")
+        start = task.getStart().datetime_representation.strftime("%Y-%m-%dT%H:%M")
+        due = task.getDue().datetime_representation.strftime("%Y-%m-%d")
         severity = task.getSeverity()
         totalCost = task.getTotalCost()
         investedEffort = task.getInvestedEffort()
@@ -98,13 +99,11 @@ class ObsidianTaskProvider(ITaskProvider):
             self.fileBroker.writeVaultFileLines(VaultRegistry.OBSIDIAN, file, fileLines)
 
     def createDefaultTask(self, description: str):
-        starts = int(datetime.datetime.now().timestamp() * 1e3)
-        due = int(datetime.datetime.today().timestamp() * 1e3)
-        starts = starts - starts % 60000
-        due = due - due % 60000
+        starts = TimePoint.now()
+        due = TimePoint.today()
         
         severity = 1.0
-        invested = 0.0
+        invested = TimeAmount("0")
         status = " "
         calm = "False"
 

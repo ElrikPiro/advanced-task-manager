@@ -1,6 +1,7 @@
 import datetime
 
 from .Interfaces.ITaskModel import ITaskModel
+from .wrappers.TimeManagement import TimeAmount
 
 from .Interfaces.IStatisticsService import IStatisticsService
 from .Interfaces.IFileBroker import IFileBroker, FileRegistry
@@ -35,7 +36,7 @@ class StatisticsService(IStatisticsService):
     def _getWorkload(self, filteredTasks : list[ITaskModel]) -> float:
         workload = 0.0
         for task in filteredTasks:
-            workload += task.getTotalCost() / task.calculateRemainingTime()
+            workload += task.getTotalCost().int_representation / task.calculateRemainingTime()
 
         return workload
 
@@ -53,7 +54,7 @@ class StatisticsService(IStatisticsService):
         for task in filteredTasks:
             taskRE = self.remainingEffortHeuristic.evaluate(task)
             taskH = self.mainHeuristic.evaluate(task)
-            taskWL = task.getTotalCost() / task.calculateRemainingTime()
+            taskWL = task.getTotalCost().int_representation / task.calculateRemainingTime()
 
             workload += taskWL
             remainingEffort += taskRE if taskRE > 0 else 0

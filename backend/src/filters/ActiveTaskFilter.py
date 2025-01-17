@@ -2,16 +2,17 @@ import datetime
 
 from ..Interfaces.IFilter import IFilter
 from ..Interfaces.ITaskModel import ITaskModel
+from ..wrappers.TimeManagement import TimePoint
 
 def filter(tasks : list[ITaskModel], invert : bool) -> list:
         retval = []
 
         for task in tasks:
-            startTime = datetime.datetime.fromtimestamp(task.getStart() / 1000)
-            currentTime = datetime.datetime.now()
+            startTime = task.getStart()
+            currentTime = TimePoint.now()
             status = task.getStatus()
 
-            isTaskActived = (startTime.timestamp() <= currentTime.timestamp()) ^ invert
+            isTaskActived = (startTime.datetime_representation.timestamp() <= currentTime.datetime_representation.timestamp()) ^ invert
 
             # if the task start time is before the current time, it is an active task
             if isTaskActived and status == " ":

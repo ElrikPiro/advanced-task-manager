@@ -4,6 +4,7 @@ from typing import List, Tuple
 from ..Interfaces.IHeuristic import IHeuristic
 from ..Interfaces.ITaskModel import ITaskModel
 from ..Interfaces.ITaskProvider import ITaskProvider
+from ..wrappers.TimeManagement import TimeAmount
 
 class DaysToThresholdHeuristic(IHeuristic):
 
@@ -21,7 +22,7 @@ class DaysToThresholdHeuristic(IHeuristic):
         p = pomodorosPerDay
         w = 1
         s = task.getSeverity()
-        r = task.getTotalCost()
+        r = task.getTotalCost().int_representation
         d = task.calculateRemainingTime()
         h = self.threshold
 

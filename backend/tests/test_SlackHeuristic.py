@@ -6,6 +6,7 @@ from unittest import TestCase, mock
 from datetime import datetime, timedelta
 from src.heuristics.SlackHeuristic import SlackHeuristic
 from src.Interfaces.ITaskModel import ITaskModel
+from src.wrappers.TimeManagement import TimeAmount
 
 class SlackHeuristicTests(TestCase):
 
@@ -32,8 +33,8 @@ class SlackHeuristicTests(TestCase):
         # Create mock task
         task = mock.Mock(spec=ITaskModel)
         task.getSeverity.return_value = 1
-        task.getTotalCost.return_value = 1
-        task.getInvestedEffort.return_value = 0
+        task.getTotalCost.return_value = TimeAmount("1h")
+        task.getInvestedEffort.return_value = TimeAmount("0h")
         task.calculateRemainingTime.return_value = 2
 
         # Create instance of SlackHeuristic

@@ -254,7 +254,7 @@ class TelegramReportingService(IReportingService):
             if len(extendedParams) == 3:
                 self._selectedTask = self.taskProvider.createDefaultTask(extendedParams[0])
                 self._selectedTask.setContext(extendedParams[1])
-                self._selectedTask.setTotalCost(float(extendedParams[2]))
+                self._selectedTask.setTotalCost(TimeAmount(extendedParams[2]))
             else:
                 self._selectedTask = self.taskProvider.createDefaultTask(" ".join(params))
             
@@ -457,22 +457,22 @@ class TelegramReportingService(IReportingService):
 
     async def setStartCommand(self, task: ITaskModel, value: str):
         if value.startswith("+") or value.startswith("-") or value.startswith("now") or value.startswith("today") or value.startswith("tomorrow"):
-            start_timestamp = self.processRelativeTimeSet(task.getStart(), value)
-            task.setStart(int(start_timestamp))
+            start_timestamp = self.processRelativeTimeSet(task.getStart().datetime_representation.timestamp() * 1000, value)
+            task.setStart(TimePoint(datetime.datetime.fromtimestamp(start_timestamp / 1e3)))
         else:
             start_datetime = datetime.datetime.strptime(value, '%Y-%m-%dT%H:%M')
             start_timestamp = int(start_datetime.timestamp() * 1000)
-            task.setStart(int(start_timestamp))
+            task.setStart(TimePoint(datetime.datetime.fromtimestamp(start_timestamp / 1e3)))
         pass
 
     async def setDueCommand(self, task: ITaskModel, value: str):
         if value.startswith("+") or value.startswith("-") or value.startswith("today") or value.startswith("tomorrow"):
-            due_timestamp = self.processRelativeTimeSet(task.getDue(), value)
-            task.setDue(int(due_timestamp))
+            due_timestamp = self.processRelativeTimeSet(task.getDue().datetime_representation.timestamp() * 1000, value)
+            task.setDue(TimePoint(datetime.datetime.fromtimestamp(due_timestamp / 1e3)))
         else:
             due_datetime = datetime.datetime.strptime(value, '%Y-%m-%d')
             due_timestamp = int(due_datetime.timestamp() * 1000)
-            task.setDue(int(due_timestamp))
+            task.setDue(TimePoint(datetime.datetime.fromtimestamp(due_timestamp / 1e3)))
         pass
 
     async def setSeverityCommand(self, task: ITaskModel, value: str):
@@ -480,14 +480,14 @@ class TelegramReportingService(IReportingService):
         pass
 
     async def setTotalCostCommand(self, task: ITaskModel, value: str):
-        task.setTotalCost(float(value))
+        task.setTotalCost(TimeAmount(value))
         pass
 
     async def setEffortInvestedCommand(self, task: ITaskModel, value: str):
-        newInvestedEffort = task.getInvestedEffort() + float(value)
-        newTotalCost = task.getTotalCost() - float(value)
-        task.setInvestedEffort(float(newInvestedEffort))
-        task.setTotalCost(float(newTotalCost))
+        newInvestedEffort = task.getInvestedEffort() + TimeAmount(value)
+        newTotalCost = task.getTotalCost() - TimeAmount(value)
+        task.setInvestedEffort(newInvestedEffort)
+        task.setTotalCost(newTotalCost)
         pass
 
     async def setCalmCommand(self, task: ITaskModel, value: str):
@@ -535,11 +535,11 @@ class TelegramReportingService(IReportingService):
         taskDescription = task.getDescription()
         taskContext = task.getContext()
         taskSeverity = task.getSeverity()
-        taskStartDate : TimePoint = TimePoint(datetime.datetime.fromtimestamp(task.getStart() / 1e3))
-        taskDueDate : TimePoint = TimePoint(datetime.datetime.fromtimestamp(task.getDue() / 1e3))
-        taskRemainingCost : TimeAmount = TimeAmount(max(task.getTotalCost(), 0))
-        taskEffortInvested = max(task.getInvestedEffort(), 0)
-        taskTotalCost = TimeAmount(max(task.getTotalCost(), 0)+taskEffortInvested)
+        taskStartDate : TimePoint = task.getStart()
+        taskDueDate : TimePoint = task.getDue()
+        taskRemainingCost : TimeAmount = TimeAmount(max(task.getTotalCost().int_representation, 0))
+        taskEffortInvested = TimeAmount(max(task.getInvestedEffort().int_representation, 0))
+        taskTotalCost = TimeAmount(max(task.getTotalCost().int_representation, 0)+taskEffortInvested.int_representation)
         
         taskInformation = f"Task: {taskDescription}\nContext: {taskContext}\nStart Date: {taskStartDate}\nDue Date: {taskDueDate}\nTotal Cost: {taskTotalCost}\nRemaining: {taskRemainingCost}\nSeverity: {taskSeverity}"
         
