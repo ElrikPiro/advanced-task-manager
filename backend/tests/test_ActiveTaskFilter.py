@@ -1,7 +1,6 @@
 import unittest
 from datetime import datetime, timedelta
-from src.ActiveTaskFilter import ActiveTaskFilter
-from src.Interfaces.ITaskModel import ITaskModel
+from src.ActiveTaskFilter import ActiveTaskFilter, InactiveTaskFilter
 from src.Interfaces.ITaskModel import ITaskModel
 
 class ActiveTaskFilterTests(unittest.TestCase):
@@ -10,10 +9,28 @@ class ActiveTaskFilterTests(unittest.TestCase):
         filter = ActiveTaskFilter()
         tomorrow = datetime.today() + timedelta(days=1)
         tasks = [
-            MockTaskModel(1, tomorrow),  # Active task
-            MockTaskModel(2, tomorrow),  # Active task
-            MockTaskModel(3, datetime(2022, 1, 1)),  # Inactive task
-            MockTaskModel(4, datetime(2022, 1, 1)),  # Inactive task
+            MockTaskModel(1, tomorrow, " "),  # Active task
+            MockTaskModel(2, tomorrow, " "),  # Active task
+            MockTaskModel(3, datetime(2022, 1, 1), " "),  # Inactive task
+            MockTaskModel(4, datetime(2022, 1, 1), " "),  # Inactive task
+        ]
+
+        # Act
+        filtered_tasks = filter.filter(tasks)
+
+        # Assert
+        self.assertEqual(len(filtered_tasks), 2)
+
+class InactiveTaskFilterTests(unittest.TestCase):
+    def test_filter(self):
+        # Arrange
+        filter = InactiveTaskFilter()
+        tomorrow = datetime.today() + timedelta(days=1)
+        tasks = [
+            MockTaskModel(1, tomorrow, " "),  # Active task
+            MockTaskModel(2, tomorrow, " "),  # Active task
+            MockTaskModel(3, datetime(2022, 1, 1), " "),  # Inactive task
+            MockTaskModel(4, datetime(2022, 1, 1), " "),  # Inactive task
         ]
 
         # Act
@@ -23,12 +40,16 @@ class ActiveTaskFilterTests(unittest.TestCase):
         self.assertEqual(len(filtered_tasks), 2)
 
 class MockTaskModel(ITaskModel):
-    def __init__(self, task_id, start_time):
+    def __init__(self, task_id, start_time, status):
         self.task_id = task_id
         self.start_time = start_time
+        self.status = status
 
     def getStart(self):
         return self.start_time.timestamp() * 1000
+
+    def getStatus(self):
+        return self.status
 
     def __eq__(self, other):
         # Implement the __eq__ method here
@@ -56,10 +77,6 @@ class MockTaskModel(ITaskModel):
 
     def getSeverity(self):
         # Implement the getSeverity method here
-        pass
-
-    def getStatus(self):
-        # Implement the getStatus method here
         pass
 
     def getTotalCost(self):

@@ -41,5 +41,22 @@ class RemainingEffortHeuristicTests(TestCase):
         # Assert the expected result
         self.assertEqual(result, 0)
 
+    def test_fastEvaluate(self):
+        # Create mock task
+        task = mock.Mock(spec=ITaskModel)
+        task.getSeverity.return_value = 1
+        task.getTotalCost.return_value = 1
+        task.getInvestedEffort.return_value = 0
+        task.calculateRemainingTime.return_value = 2
+
+        # Create instance of RemainingEffortHeuristic
+        heuristic = RemainingEffortHeuristic(1, 1)
+
+        # Call the fastEvaluate method
+        result = round(heuristic.fastEvaluate(task, 1), 2)
+
+        # Assert the expected result
+        self.assertEqual(result, 0)
+
 if __name__ == '__main__':
     unittest.main()
