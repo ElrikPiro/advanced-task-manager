@@ -542,7 +542,8 @@ class TelegramReportingService(IReportingService):
 
         taskListString = "\n".join(subTaskListDescriptions)
         if interactive:
-            taskListString += "\n\nPage " + str(self._taskListPage + 1) + " of " + str(len(self._lastTaskList) // self._tasksPerPage + 1) + "\n"
+            totalPages = (len(self._lastTaskList) + self._tasksPerPage - 1) // self._tasksPerPage
+            taskListString += "\n\nPage " + str(self._taskListPage + 1) + " of " + str(totalPages) + "\n"
             taskListString += "/next - Next page\n/previous - Previous page"
             taskListString += "\n\nselected /heuristic : " + self._heuristicList[self._selectedHeuristicIndex][0]
             taskListString += "\nselected /filter : " + self._filterList[self._selectedFilterIndex][1].getDescription()
