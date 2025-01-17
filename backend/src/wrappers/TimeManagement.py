@@ -1,4 +1,3 @@
-
 """
 This module contains the TimeAmount and TimePoint classes, which are wrappers 
 for time amounts and time points, respectively.
@@ -71,6 +70,9 @@ class TimePoint:
     def from_string(string: str):
         return TimePoint(datetime.datetime.strptime(string, "%Y-%m-%dT%H:%M"))
     
+    @staticmethod
+    def from_timestamp(timestamp: int):
+        return TimePoint(datetime.datetime.fromtimestamp(timestamp / 1000))
 
 
 
