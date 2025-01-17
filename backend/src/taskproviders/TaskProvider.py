@@ -28,7 +28,7 @@ class TaskProvider(ITaskProvider):
         return task_list
 
     def createTaskFromDict(self, dict_task : dict, index : int) -> ITaskModel:
-        return TaskModel(index=index, description=dict_task["description"], context=dict_task["context"], start=TimePoint.from_string(dict_task["start"]), due=TimePoint.from_string(dict_task["due"]), severity=dict_task["severity"], totalCost=TimeAmount(dict_task["totalCost"]), investedEffort=TimeAmount(dict_task["investedEffort"]), status=dict_task["status"], calm=dict_task["calm"])
+        return TaskModel(index=index, description=dict_task["description"], context=dict_task["context"], start=TimePoint.from_string(str(dict_task["start"])), due=TimePoint.from_string(str(dict_task["due"])), severity=dict_task["severity"], totalCost=TimeAmount(dict_task["totalCost"]), investedEffort=TimeAmount(dict_task["investedEffort"]), status=dict_task["status"], calm=dict_task["calm"])
 
     def getTaskListAttribute(self, string: str) -> str:
         try:
@@ -44,11 +44,11 @@ class TaskProvider(ITaskProvider):
                 self.dict_task_list["tasks"][index] = dict(
                     description=task.getDescription(), 
                     context=task.getContext(), 
-                    start=task.getStart().datetime_representation.strftime("%Y-%m-%dT%H:%M"), 
-                    due=task.getDue().datetime_representation.strftime("%Y-%m-%d"), 
+                    start=int(task.getStart().datetime_representation.timestamp()), 
+                    due=int(task.getDue().datetime_representation.timestamp()), 
                     severity=task.getSeverity(), 
-                    totalCost=str(task.getTotalCost()), 
-                    investedEffort=str(task.getInvestedEffort()), 
+                    totalCost=task.getTotalCost().as_pomodoros(), 
+                    investedEffort=task.getInvestedEffort().as_pomodoros(), 
                     status=task.getStatus(), 
                     calm="True" if task.getCalm() else "False"
                 )
@@ -70,11 +70,11 @@ class TaskProvider(ITaskProvider):
         default_task = dict(
             description=description, 
             context="workstation", 
-            start=starts.datetime_representation.strftime("%Y-%m-%dT%H:%M"), 
-            due=due.datetime_representation.strftime("%Y-%m-%d"), 
+            start=int(starts.datetime_representation.timestamp()), 
+            due=int(due.datetime_representation.timestamp()), 
             severity=severity, 
-            totalCost="1.0", 
-            investedEffort=str(invested), 
+            totalCost=1.0, 
+            investedEffort=invested.as_pomodoros(), 
             status=status, 
             calm=calm
         )
@@ -90,11 +90,11 @@ class TaskProvider(ITaskProvider):
         return dict(
             description=task.getDescription(), 
             context=task.getContext(), 
-            start=task.getStart().datetime_representation.strftime("%Y-%m-%dT%H:%M"), 
-            due=task.getDue().datetime_representation.strftime("%Y-%m-%d"), 
+            start=int(task.getStart().datetime_representation.timestamp()), 
+            due=int(task.getDue().datetime_representation.timestamp()), 
             severity=task.getSeverity(), 
-            totalCost=str(task.getTotalCost()), 
-            investedEffort=str(task.getInvestedEffort()), 
+            totalCost=task.getTotalCost().as_pomodoros(), 
+            investedEffort=task.getInvestedEffort().as_pomodoros(), 
             status=task.getStatus(), 
             calm="True" if task.getCalm() else "False"
         ).__str__()

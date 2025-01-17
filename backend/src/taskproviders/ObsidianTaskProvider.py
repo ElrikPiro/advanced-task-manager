@@ -62,11 +62,11 @@ class ObsidianTaskProvider(ITaskProvider):
     def saveTask(self, task: ITaskModel):
         description = task.getDescription().split("@")[0].strip()
         context = task.getContext()
-        start = task.getStart().datetime_representation.strftime("%Y-%m-%dT%H:%M")
-        due = task.getDue().datetime_representation.strftime("%Y-%m-%d")
+        start = int(task.getStart().datetime_representation.timestamp())
+        due = int(task.getDue().datetime_representation.timestamp())
         severity = task.getSeverity()
-        totalCost = task.getTotalCost()
-        investedEffort = task.getInvestedEffort()
+        totalCost = task.getTotalCost().as_pomodoros()
+        investedEffort = task.getInvestedEffort().as_pomodoros()
         status = task.getStatus()
         calm = "true" if task.getCalm() else "false"
 
