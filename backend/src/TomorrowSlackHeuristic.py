@@ -30,3 +30,6 @@ class TomorrowSlackHeuristic(IHeuristic):
     def evaluate(self, task: ITaskModel) -> float:
         p = float(self.pomodorosPerDayProvider.getTaskListAttribute("pomodoros_per_day"))
         return self.fastEvaluate(task, p)
+
+    def getComment(self) -> str:
+        return "This heuristic calculates the slack time for a task considering one day less."

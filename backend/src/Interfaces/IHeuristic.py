@@ -11,3 +11,7 @@ class IHeuristic(ABC):
     @abstractmethod
     def evaluate(self, task: ITaskModel) -> float:
         pass
+
+    @abstractmethod
+    def getComment(self) -> str:
+        pass
