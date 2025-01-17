@@ -1,15 +1,12 @@
-import datetime
-from math import ceil
 from typing import List, Tuple
-from .Interfaces.IHeuristic import IHeuristic
-from .Interfaces.ITaskModel import ITaskModel
-from .Interfaces.ITaskProvider import ITaskProvider
+from ..Interfaces.IHeuristic import IHeuristic
+from ..Interfaces.ITaskModel import ITaskModel
+from ..Interfaces.ITaskProvider import ITaskProvider
 
-class DaysToThresholdHeuristic(IHeuristic):
+class SlackHeuristic(IHeuristic):
 
-    def __init__(self, pomodorosPerDayProvider: ITaskProvider, threshold: float):
+    def __init__(self, pomodorosPerDayProvider: ITaskProvider):
         self.pomodorosPerDayProvider = pomodorosPerDayProvider
-        self.threshold = threshold
 
     def sort(self, tasks: List[ITaskModel]) -> List[Tuple[ITaskModel, float]]:
         pomodorosPerDay = float(self.pomodorosPerDayProvider.getTaskListAttribute("pomodoros_per_day"))
@@ -23,14 +20,16 @@ class DaysToThresholdHeuristic(IHeuristic):
         s = task.getSeverity()
         r = task.getTotalCost()
         d = task.calculateRemainingTime()
-        h = self.threshold
 
-        return d - (r * (p*s*w + h)) / (h*p)
+        try:
+            h = (p * w * s * r) / (p * d - r)
+            return round(h, 2) if h > 0 else 100
+        except ZeroDivisionError:
+            return 100
 
     def evaluate(self, task: ITaskModel) -> float:
         p = float(self.pomodorosPerDayProvider.getTaskListAttribute("pomodoros_per_day"))
         return self.fastEvaluate(task, p)
 
     def getComment(self, task: ITaskModel) -> str:
-        days_remaining = ceil(self.evaluate(task))
-        return f"{days_remaining} days"
+        return f"{round(self.evaluate(task), 2)}"

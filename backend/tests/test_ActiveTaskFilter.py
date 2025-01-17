@@ -1,6 +1,6 @@
 import unittest
 from datetime import datetime, timedelta
-from src.ActiveTaskFilter import ActiveTaskFilter
+from src.filters.ActiveTaskFilter import ActiveTaskFilter
 from src.Interfaces.ITaskModel import ITaskModel
 from src.Interfaces.ITaskModel import ITaskModel
 

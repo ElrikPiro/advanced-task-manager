@@ -1,8 +1,8 @@
 import unittest
 from unittest.mock import MagicMock
-from src.ObsidianTaskProvider import ObsidianTaskProvider
+from src.taskproviders.ObsidianTaskProvider import ObsidianTaskProvider
 from src.Interfaces.ITaskJsonProvider import ITaskJsonProvider
-from src.ObsidianTaskModel import ObsidianTaskModel
+from src.taskmodels.ObsidianTaskModel import ObsidianTaskModel
 
 class ObsidianTaskProviderTests(unittest.TestCase):
     def setUp(self):

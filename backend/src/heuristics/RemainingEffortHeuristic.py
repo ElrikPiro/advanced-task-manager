@@ -1,8 +1,8 @@
 from typing import List, Tuple
-from .Interfaces.IHeuristic import IHeuristic
-from .Interfaces.ITaskModel import ITaskModel
-from .Interfaces.ITaskProvider import ITaskProvider
-from .TimeAmount import TimeAmount
+from ..Interfaces.IHeuristic import IHeuristic
+from ..Interfaces.ITaskModel import ITaskModel
+from ..Interfaces.ITaskProvider import ITaskProvider
+from src.wrappers.TimeManagement import TimeAmount
 
 class RemainingEffortHeuristic(IHeuristic):
 

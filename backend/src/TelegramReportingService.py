@@ -1,9 +1,14 @@
+"""
+TelegramReportingService.py
+"""
+
 import asyncio
+import threading
 import datetime
 
-import threading
 from time import sleep as sleepSync
 from typing import Tuple, List
+
 from .Interfaces.IHeuristic import IHeuristic
 from .Interfaces.IReportingService import IReportingService
 from .Interfaces.ITaskProvider import ITaskProvider
@@ -12,6 +17,7 @@ from .Interfaces.IFilter import IFilter
 from .Interfaces.IScheduling import IScheduling
 from .Interfaces.IStatisticsService import IStatisticsService
 from .wrappers.interfaces.IUserCommService import IUserCommService
+from .wrappers.TimeManagement import TimeAmount, TimePoint
 
 class TelegramReportingService(IReportingService):
 
@@ -272,19 +278,7 @@ class TelegramReportingService(IReportingService):
             await self.bot.sendMessage(chat_id=self.chatId, text="no task provided.")
 
     def convertToPomodoros(self, work_units_str: str) -> str:
-        work_units = 0-0
-        if work_units_str.endswith("p"):
-            work_units = float(work_units_str[:-1])
-        if work_units_str.endswith("m"):
-            work_units = float(work_units_str[:-1]) / 25.0
-        elif work_units_str.endswith("h"):
-            work_units = float(work_units_str[:-1]) * 2.4
-        else:
-            work_units = float(work_units_str)
-
-        # round to 0.2
-        work_units = round(work_units * 5) / 5
-        return str(work_units)
+        return str(TimeAmount(work_units_str).as_pomodoros())
 
     async def workCommand(self, messageText: str = "", expectAnswer: bool = True):
         params = messageText.split(" ")[1:]
@@ -437,30 +431,17 @@ class TelegramReportingService(IReportingService):
 
     def processRelativeTimeSet(self, current: int, value: str):
         values = value.split(";")
+        currentTimePoint = TimePoint(datetime.datetime.fromtimestamp(current / 1e3))
         for value in values:
             if value == "now":
-                current = int(datetime.datetime.now().timestamp() * 1000)
+                currentTimePoint = currentTimePoint.now()
             elif value == "today":
-                today = datetime.datetime.now()
-                today = today.replace(hour=0, minute=0, second=0, microsecond=0)
-                current = int(today.timestamp() * 1000)
+                currentTimePoint = currentTimePoint.today()
             elif value == "tomorrow":
-                tomorrow = datetime.datetime.now() + datetime.timedelta(days=1)
-                tomorrow = tomorrow.replace(hour=0, minute=0, second=0, microsecond=0)
-                current = int(tomorrow.timestamp() * 1000)
+                currentTimePoint = currentTimePoint.tomorrow()
             else:
-                sign = 1 if value.startswith("+") else -1
-                modifier = 1000
-                if value.endswith("d"):
-                    modifier *= 24 * 60 * 60
-                elif value.endswith("h"):
-                    modifier *= 60 * 60
-                elif value.endswith("m"):
-                    modifier *= 60
-                elif value.endswith("w"):
-                    modifier *= 7 * 24 * 60 * 60
-                current = current + sign * int(value[1:-1]) * modifier
-        return current
+                currentTimePoint = currentTimePoint + TimeAmount(value)
+        return int(currentTimePoint.datetime_representation.timestamp() * 1e3)
 
     async def setDescriptionCommand(self, task: ITaskModel, value: str):
         task.setDescription(value)
@@ -554,12 +535,13 @@ class TelegramReportingService(IReportingService):
         taskDescription = task.getDescription()
         taskContext = task.getContext()
         taskSeverity = task.getSeverity()
-        taskStartDate = datetime.datetime.fromtimestamp(task.getStart() / 1e3).strftime("%Y-%m-%d %H:%M:%S")
-        taskDueDate = datetime.datetime.fromtimestamp(task.getDue() / 1e3).strftime("%Y-%m-%d")
-        taskRemainingCost = max(task.getTotalCost(), 0)
+        taskStartDate : TimePoint = TimePoint(datetime.datetime.fromtimestamp(task.getStart() / 1e3))
+        taskDueDate : TimePoint = TimePoint(datetime.datetime.fromtimestamp(task.getDue() / 1e3))
+        taskRemainingCost : TimeAmount = TimeAmount(max(task.getTotalCost(), 0))
         taskEffortInvested = max(task.getInvestedEffort(), 0)
+        taskTotalCost = max(task.getTotalCost(), 0)+taskEffortInvested
         
-        taskInformation = f"Task: {taskDescription}\nContext: {taskContext}\nStart Date: {taskStartDate}\nDue Date: {taskDueDate}\nRemaining Cost: {taskRemainingCost}/{taskRemainingCost+taskEffortInvested}\nSeverity: {taskSeverity}"
+        taskInformation = f"Task: {taskDescription}\nContext: {taskContext}\nStart Date: {taskStartDate}\nDue Date: {taskDueDate}\nTotal Cost: {taskTotalCost}\nRemaining: {taskRemainingCost}\nSeverity: {taskSeverity}"
         
         if extended:
             for i, heuristic in enumerate(self._heuristicList):

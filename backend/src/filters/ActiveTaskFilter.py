@@ -1,7 +1,7 @@
 import datetime
 
-from .Interfaces.IFilter import IFilter
-from .Interfaces.ITaskModel import ITaskModel
+from ..Interfaces.IFilter import IFilter
+from ..Interfaces.ITaskModel import ITaskModel
 
 def filter(tasks : list[ITaskModel], invert : bool) -> list:
         retval = []

@@ -1,8 +1,8 @@
 import unittest
-from src.RemainingEffortHeuristic import RemainingEffortHeuristic
-from src.SlackHeuristic import SlackHeuristic
-from src.ObsidianTaskProvider import ObsidianTaskProvider
-from src.ObsidianDataviewTaskJsonProvider import ObsidianDataviewTaskJsonProvider
+from src.heuristics.RemainingEffortHeuristic import RemainingEffortHeuristic
+from src.heuristics.SlackHeuristic import SlackHeuristic
+from src.taskproviders.ObsidianTaskProvider import ObsidianTaskProvider
+from src.taskjsonproviders.ObsidianDataviewTaskJsonProvider import ObsidianDataviewTaskJsonProvider
 from src.JsonLoader import JsonLoader
 
 class IntegrationTests(unittest.TestCase):

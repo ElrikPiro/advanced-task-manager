@@ -1,7 +1,7 @@
 import datetime
 from math import ceil
 
-from .Interfaces.ITaskModel import ITaskModel
+from ..Interfaces.ITaskModel import ITaskModel
 
 class TaskModel(ITaskModel):
     def __init__(self, description: str, context: str, start: int, due: int, severity: float, totalCost: float, investedEffort: float, status: str, calm : str, index : int):

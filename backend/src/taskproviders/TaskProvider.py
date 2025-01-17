@@ -1,9 +1,9 @@
 import datetime
-from .Interfaces.ITaskProvider import ITaskProvider
-from .Interfaces.ITaskModel import ITaskModel
-from .Interfaces.ITaskJsonProvider import ITaskJsonProvider
-from .Interfaces.IFileBroker import IFileBroker, FileRegistry
-from .TaskModel import TaskModel
+from ..Interfaces.ITaskProvider import ITaskProvider
+from ..Interfaces.ITaskModel import ITaskModel
+from ..Interfaces.ITaskJsonProvider import ITaskJsonProvider
+from ..Interfaces.IFileBroker import IFileBroker, FileRegistry
+from ..taskmodels.TaskModel import TaskModel
 from typing import List
 import json
 
