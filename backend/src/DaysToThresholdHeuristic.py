@@ -1,5 +1,5 @@
 import datetime
-
+from math import ceil
 from typing import List, Tuple
 from .Interfaces.IHeuristic import IHeuristic
 from .Interfaces.ITaskModel import ITaskModel
@@ -32,4 +32,5 @@ class DaysToThresholdHeuristic(IHeuristic):
         return self.fastEvaluate(task, p)
 
     def getComment(self, task: ITaskModel) -> str:
-        return "This heuristic calculates the number of days remaining until the task reaches the threshold."
+        days_remaining = ceil(self.evaluate(task))
+        return f"{days_remaining} days"

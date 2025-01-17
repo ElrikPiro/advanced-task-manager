@@ -32,4 +32,4 @@ class SlackHeuristic(IHeuristic):
         return self.fastEvaluate(task, p)
 
     def getComment(self, task: ITaskModel) -> str:
-        return "This heuristic calculates the slack time for a task."
+        return f"{round(self.evaluate(task), 2)}"
