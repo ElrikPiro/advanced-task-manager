@@ -21,6 +21,9 @@ class SlackHeuristic(IHeuristic):
         r = task.getTotalCost()
         d = task.calculateRemainingTime()
 
+        if d < 1:
+            return 100
+        
         try:
             h = (p * w * s * r) / (p * d - r)
             return round(h, 2) if h > 0 else 100
