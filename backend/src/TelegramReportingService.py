@@ -299,15 +299,15 @@ class TelegramReportingService(IReportingService):
         statsMessage = "Work done in the last 7 days:\n"
         statsMessage += "`|    Date    | Work Done |`\n"
         statsMessage += "`|------------|-----------|`\n"
-        totalWork = 0
+        totalWork : TimeAmount = TimeAmount("0")
         for i in range(7):
-            date = datetime.datetime.now().date() - datetime.timedelta(days=i)
-            workDone = self.statiticsProvider.getWorkDone(date)
+            date : TimePoint = TimePoint.today() + TimeAmount(f"-{i}d")
+            workDone : TimeAmount = self.statiticsProvider.getWorkDone(date)
             totalWork += workDone
-            statsMessage += f"`| {date} |    {round(workDone, 1)}    |`\n"
+            statsMessage += f"`| {date} |    {round(workDone.as_pomodoros(), 1)}    |`\n"
         # add average work done per day
         statsMessage += "`|------------|-----------|`\n"
-        statsMessage += f"`|   Average  |    {round(totalWork/7, 1)}    |`\n"
+        statsMessage += f"`|   Average  |    {round(totalWork.as_pomodoros()/7, 1)}    |`\n"
         statsMessage += "`|------------|-----------|`\n\n"
 
         statsMessage += "Workload statistics:\n"
@@ -319,10 +319,10 @@ class TelegramReportingService(IReportingService):
         offender = workloadStats[4]
         offenderMax = workloadStats[5]
 
-        statsMessage += f"`current workload: {round(workload, 2)}`\n"
-        statsMessage += f"    `max Offender: '{offender}' with {round(offenderMax, 2)}`\n"
-        statsMessage += f"`total remaining effort: {round(remEffort, 2)}`\n"
-        statsMessage += f"`max {heuristicName}: {round(heuristicValue, 2)}`\n\n"
+        statsMessage += f"`current workload: {workload} per day`\n"
+        statsMessage += f"    `max Offender: '{offender}' with {offenderMax} per day`\n"
+        statsMessage += f"`total remaining effort: {remEffort}`\n"
+        statsMessage += f"`max {heuristicName}: {heuristicValue}`\n\n"
         statsMessage += "/list - return back to the task list"
 
         await self.bot.sendMessage(chat_id=self.chatId, text=statsMessage, parse_mode="Markdown")

@@ -2,6 +2,7 @@ from abc import ABC, abstractmethod
 import datetime
 
 from .ITaskModel import ITaskModel
+from ..wrappers.TimeManagement import TimePoint, TimeAmount
 
 class IStatisticsService(ABC):
 
@@ -10,7 +11,7 @@ class IStatisticsService(ABC):
         pass
 
     @abstractmethod
-    def getWorkDone(self, date : datetime.date) -> float:
+    def getWorkDone(self, date : TimePoint) -> TimeAmount:
         pass
 
     @abstractmethod
