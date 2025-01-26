@@ -254,7 +254,7 @@ class TelegramReportingService(IReportingService):
             if len(extendedParams) == 3:
                 self._selectedTask = self.taskProvider.createDefaultTask(extendedParams[0])
                 self._selectedTask.setContext(extendedParams[1])
-                self._selectedTask.setTotalCost(float(extendedParams[2]))
+                self._selectedTask.setTotalCost(TimeAmount(extendedParams[2]).as_pomodoros())
             else:
                 self._selectedTask = self.taskProvider.createDefaultTask(" ".join(params))
             
@@ -277,19 +277,15 @@ class TelegramReportingService(IReportingService):
         else:
             await self.bot.sendMessage(chat_id=self.chatId, text="no task provided.")
 
-    def convertToPomodoros(self, work_units_str: str) -> str:
-        return str(TimeAmount(work_units_str).as_pomodoros())
-
     async def workCommand(self, messageText: str = "", expectAnswer: bool = True):
         params = messageText.split(" ")[1:]
         if self._selectedTask is not None:
             task = self._selectedTask
-            work_units_str = self.convertToPomodoros(" ".join(params[0:]))
-            await self.processSetParam(task, "effort_invested", work_units_str)
+            work_units = TimeAmount(" ".join(params[0:]))
+            await self.processSetParam(task, "effort_invested", str(work_units.as_pomodoros()))
             self.taskProvider.saveTask(task)
-            work_units = float(work_units_str)
             date = datetime.datetime.now().date()
-            self.statiticsProvider.doWork(date, work_units)
+            self.statiticsProvider.doWork(date, work_units.as_pomodoros())
             if expectAnswer:
                 await self.sendTaskInformation(task)
         else:
