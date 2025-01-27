@@ -34,11 +34,11 @@ class ITaskModel(ABC):
         pass
 
     @abstractmethod
-    def getTotalCost(self) -> float:
+    def getTotalCost(self) -> float: #TODO: change to TimeAmount
         pass
 
     @abstractmethod
-    def getInvestedEffort(self) -> float:
+    def getInvestedEffort(self) -> float: #TODO: change to TimeAmount
         pass
 
     @abstractmethod
@@ -58,11 +58,11 @@ class ITaskModel(ABC):
         pass
 
     @abstractmethod
-    def setStart(self, start: int):
+    def setStart(self, start: int): #TODO: change to TimePoint
         pass
 
     @abstractmethod
-    def setDue(self, due: int):
+    def setDue(self, due: int): #TODO: change to TimePoint
         pass
 
     @abstractmethod
@@ -70,11 +70,11 @@ class ITaskModel(ABC):
         pass
 
     @abstractmethod
-    def setTotalCost(self, totalCost: float):
+    def setTotalCost(self, totalCost: float): #TODO: change to TimeAmount
         pass
 
     @abstractmethod
-    def setInvestedEffort(self, investedEffort: float):
+    def setInvestedEffort(self, investedEffort: float): #TODO: change to TimeAmount
         pass
 
     @abstractmethod
@@ -86,7 +86,7 @@ class ITaskModel(ABC):
         pass
 
     @abstractmethod
-    def calculateRemainingTime(self) -> int:
+    def calculateRemainingTime(self) -> int: #TODO: change to TimeAmount
         pass
 
     @abstractmethod
