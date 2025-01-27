@@ -62,7 +62,7 @@ class ObsidianTaskProvider(ITaskProvider):
         description = task.getDescription().split("@")[0].strip()
         context = task.getContext()
         start = str(task.getStart())
-        due = datetime.datetime.fromtimestamp(task.getDue() / 1e3).strftime("%Y-%m-%d")
+        due = str(task.getDue())
         severity = task.getSeverity()
         totalCost = task.getTotalCost()
         investedEffort = task.getInvestedEffort()

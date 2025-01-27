@@ -463,7 +463,7 @@ class TelegramReportingService(IReportingService):
 
     async def setDueCommand(self, task: ITaskModel, value: str):
         if value.startswith("+") or value.startswith("-") or value.startswith("today") or value.startswith("tomorrow"):
-            due_timestamp = self.processRelativeTimeSet(TimePoint(datetime.datetime.fromtimestamp(task.getDue() / 1e3)), value)  # TODO: Refactor to use TimePoint
+            due_timestamp = self.processRelativeTimeSet(task.getDue(), value)
             task.setDue(int(due_timestamp.datetime_representation.timestamp() * 1000))
         else:
             due_datetime = datetime.datetime.strptime(value, '%Y-%m-%d')
@@ -532,7 +532,7 @@ class TelegramReportingService(IReportingService):
         taskContext = task.getContext()
         taskSeverity = task.getSeverity()
         taskStartDate : TimePoint = task.getStart()
-        taskDueDate : TimePoint = TimePoint(datetime.datetime.fromtimestamp(task.getDue() / 1e3))
+        taskDueDate : TimePoint = task.getDue()
         taskRemainingCost : TimeAmount = TimeAmount(max(task.getTotalCost(), 0))
         taskEffortInvested = max(task.getInvestedEffort(), 0)
         taskTotalCost = TimeAmount(max(task.getTotalCost(), 0)+taskEffortInvested)

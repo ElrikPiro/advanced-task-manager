@@ -29,8 +29,8 @@ class ObsidianTaskModel(ITaskModel):
     def getStart(self) -> TimePoint:
         return TimePoint(datetime.datetime.fromtimestamp(self._start / 1e3))
 
-    def getDue(self) -> int:
-        return self._due
+    def getDue(self) -> TimePoint:
+        return TimePoint(datetime.datetime.fromtimestamp(self._due / 1e3))
 
     def getSeverity(self) -> float:
         return self._severity
@@ -87,9 +87,9 @@ class ObsidianTaskModel(ITaskModel):
         self._line = line
 
     def calculateRemainingTime(self) -> int:
-        dueDate = self.getDue()
+        dueDate = self.getDue().as_int()
 
-        currentDate = datetime.datetime.now().timestamp() * 1000
+        currentDate = TimePoint.now().as_int()
         d = (dueDate - currentDate) / (datetime.timedelta(days=1).total_seconds() * 1000)
         d = max(0, d)
         d = ceil(d)

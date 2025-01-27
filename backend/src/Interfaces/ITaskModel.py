@@ -26,7 +26,7 @@ class ITaskModel(ABC):
         pass
 
     @abstractmethod
-    def getDue(self) -> int:
+    def getDue(self) -> TimePoint:
         pass
 
     @abstractmethod
