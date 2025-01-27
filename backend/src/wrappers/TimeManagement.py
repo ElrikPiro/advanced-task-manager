@@ -58,6 +58,9 @@ class TimePoint:
     def __add__(self, other : TimeAmount):
         return TimePoint(datetime.datetime.fromtimestamp(self.datetime_representation.timestamp() + other.int_representation/1000))
     
+    def __eq__(self, other):
+        return self.datetime_representation == other.datetime_representation
+    
     def __str__(self):
         fullFormat = self.datetime_representation.strftime("%Y-%m-%d %H:%M:%S")
         shortFormat = self.datetime_representation.strftime("%Y-%m-%d")
@@ -78,6 +81,9 @@ class TimePoint:
     @staticmethod
     def from_string(string: str):
         return TimePoint(datetime.datetime.strptime(string, "%Y-%m-%dT%H:%M"))
+    
+    def as_int(self):
+        return int(self.datetime_representation.timestamp() * 1e3)
     
 
 

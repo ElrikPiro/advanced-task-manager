@@ -425,9 +425,9 @@ class TelegramReportingService(IReportingService):
             await command(message, isLastIteration)
             iteration += 1
 
-    def processRelativeTimeSet(self, current: int, value: str):
+    def processRelativeTimeSet(self, current: TimePoint, value: str) -> TimePoint:
         values = value.split(";")
-        currentTimePoint = TimePoint(datetime.datetime.fromtimestamp(current / 1e3))
+        currentTimePoint = current
         for value in values:
             if value == "now":
                 currentTimePoint = currentTimePoint.now()
@@ -437,7 +437,7 @@ class TelegramReportingService(IReportingService):
                 currentTimePoint = currentTimePoint.tomorrow()
             else:
                 currentTimePoint = currentTimePoint + TimeAmount(value)
-        return int(currentTimePoint.datetime_representation.timestamp() * 1e3)
+        return currentTimePoint
 
     async def setDescriptionCommand(self, task: ITaskModel, value: str):
         task.setDescription(value)
@@ -454,7 +454,7 @@ class TelegramReportingService(IReportingService):
     async def setStartCommand(self, task: ITaskModel, value: str):
         if value.startswith("+") or value.startswith("-") or value.startswith("now") or value.startswith("today") or value.startswith("tomorrow"):
             start_timestamp = self.processRelativeTimeSet(task.getStart(), value)
-            task.setStart(int(start_timestamp))
+            task.setStart(int(start_timestamp.datetime_representation.timestamp() * 1000))
         else:
             start_datetime = datetime.datetime.strptime(value, '%Y-%m-%dT%H:%M')
             start_timestamp = int(start_datetime.timestamp() * 1000)
@@ -463,8 +463,8 @@ class TelegramReportingService(IReportingService):
 
     async def setDueCommand(self, task: ITaskModel, value: str):
         if value.startswith("+") or value.startswith("-") or value.startswith("today") or value.startswith("tomorrow"):
-            due_timestamp = self.processRelativeTimeSet(task.getDue(), value)
-            task.setDue(int(due_timestamp))
+            due_timestamp = self.processRelativeTimeSet(TimePoint(datetime.datetime.fromtimestamp(task.getDue() / 1e3)), value)  # TODO: Refactor to use TimePoint
+            task.setDue(int(due_timestamp.datetime_representation.timestamp() * 1000))
         else:
             due_datetime = datetime.datetime.strptime(value, '%Y-%m-%d')
             due_timestamp = int(due_datetime.timestamp() * 1000)
@@ -531,7 +531,7 @@ class TelegramReportingService(IReportingService):
         taskDescription = task.getDescription()
         taskContext = task.getContext()
         taskSeverity = task.getSeverity()
-        taskStartDate : TimePoint = TimePoint(datetime.datetime.fromtimestamp(task.getStart() / 1e3))
+        taskStartDate : TimePoint = task.getStart()
         taskDueDate : TimePoint = TimePoint(datetime.datetime.fromtimestamp(task.getDue() / 1e3))
         taskRemainingCost : TimeAmount = TimeAmount(max(task.getTotalCost(), 0))
         taskEffortInvested = max(task.getInvestedEffort(), 0)

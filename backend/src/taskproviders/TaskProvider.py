@@ -43,7 +43,7 @@ class TaskProvider(ITaskProvider):
                 self.dict_task_list["tasks"][index] = dict(
                     description=task.getDescription(), 
                     context=task.getContext(), 
-                    start=task.getStart(), 
+                    start=task.getStart().as_int(),
                     due=task.getDue(), 
                     severity=task.getSeverity(), 
                     totalCost=task.getTotalCost(), 
@@ -91,7 +91,7 @@ class TaskProvider(ITaskProvider):
         return dict(
             description=task.getDescription(), 
             context=task.getContext(), 
-            start=task.getStart(), 
+            start=task.getStart().as_int(), 
             due=task.getDue(), 
             severity=task.getSeverity(), 
             totalCost=task.getTotalCost(), 

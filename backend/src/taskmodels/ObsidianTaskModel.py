@@ -1,5 +1,6 @@
 import datetime
 from math import ceil
+from ..wrappers.TimeManagement import TimePoint
 
 from ..Interfaces.ITaskModel import ITaskModel
 
@@ -25,8 +26,8 @@ class ObsidianTaskModel(ITaskModel):
     def getContext(self) -> str:
         return self._context
 
-    def getStart(self) -> int:
-        return self._start
+    def getStart(self) -> TimePoint:
+        return TimePoint(datetime.datetime.fromtimestamp(self._start / 1e3))
 
     def getDue(self) -> int:
         return self._due
