@@ -34,8 +34,8 @@ class TaskModel(ITaskModel):
     def getTotalCost(self) -> TimeAmount:
         return TimeAmount(f"{self._totalCost}p")
 
-    def getInvestedEffort(self) -> float:
-        return self._investedEffort
+    def getInvestedEffort(self) -> TimeAmount:
+        return TimeAmount(f"{self._investedEffort}p")
 
     def getStatus(self) -> str:
         return self._status

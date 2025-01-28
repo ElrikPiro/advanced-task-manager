@@ -38,7 +38,7 @@ class ITaskModel(ABC):
         pass
 
     @abstractmethod
-    def getInvestedEffort(self) -> float: #TODO: change to TimeAmount
+    def getInvestedEffort(self) -> TimeAmount:
         pass
 
     @abstractmethod

@@ -47,7 +47,7 @@ class TaskProvider(ITaskProvider):
                     due=task.getDue().as_int(),
                     severity=task.getSeverity(), 
                     totalCost=task.getTotalCost().as_pomodoros(), 
-                    investedEffort=task.getInvestedEffort(), 
+                    investedEffort=task.getInvestedEffort().as_pomodoros(), 
                     status=task.getStatus(), 
                     calm="True" if task.getCalm() else "False"
                 )
@@ -95,7 +95,7 @@ class TaskProvider(ITaskProvider):
             due=task.getDue(), 
             severity=task.getSeverity(), 
             totalCost=task.getTotalCost().as_pomodoros(), 
-            investedEffort=task.getInvestedEffort(), 
+            investedEffort=task.getInvestedEffort().as_pomodoros(), 
             status=task.getStatus(), 
             calm="True" if task.getCalm() else "False"
         ).__str__()

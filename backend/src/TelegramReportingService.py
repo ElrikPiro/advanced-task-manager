@@ -480,9 +480,9 @@ class TelegramReportingService(IReportingService):
         pass
 
     async def setEffortInvestedCommand(self, task: ITaskModel, value: str):
-        newInvestedEffort = task.getInvestedEffort() + float(value)
+        newInvestedEffort = task.getInvestedEffort() + TimeAmount(value)
         newTotalCost = task.getTotalCost() - TimeAmount(value)
-        task.setInvestedEffort(float(newInvestedEffort))
+        task.setInvestedEffort(newInvestedEffort.as_pomodoros())
         task.setTotalCost(newTotalCost)
         pass
 
@@ -534,7 +534,7 @@ class TelegramReportingService(IReportingService):
         taskStartDate : TimePoint = task.getStart()
         taskDueDate : TimePoint = task.getDue()
         taskRemainingCost : TimeAmount = TimeAmount(f"{max(task.getTotalCost().as_pomodoros(), 0.0)}p")
-        taskEffortInvested = max(task.getInvestedEffort(), 0)
+        taskEffortInvested : float = max(task.getInvestedEffort().as_pomodoros(), 0)
         taskTotalCost = TimeAmount(f"{max(task.getTotalCost().as_pomodoros(), 0.0)+taskEffortInvested}p")
         
         taskInformation = f"Task: {taskDescription}\nContext: {taskContext}\nStart Date: {taskStartDate}\nDue Date: {taskDueDate}\nTotal Cost: {taskTotalCost}\nRemaining: {taskRemainingCost}\nSeverity: {taskSeverity}"
