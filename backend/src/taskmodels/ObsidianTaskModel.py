@@ -59,8 +59,8 @@ class ObsidianTaskModel(ITaskModel):
     def setContext(self, context: str):
         self._context = context
 
-    def setStart(self, start: int):
-        self._start = start
+    def setStart(self, start: TimePoint):
+        self._start = start.as_int()
 
     def setDue(self, due: int):
         self._due = due

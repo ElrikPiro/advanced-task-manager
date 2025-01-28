@@ -454,11 +454,11 @@ class TelegramReportingService(IReportingService):
     async def setStartCommand(self, task: ITaskModel, value: str):
         if value.startswith("+") or value.startswith("-") or value.startswith("now") or value.startswith("today") or value.startswith("tomorrow"):
             start_timestamp = self.processRelativeTimeSet(task.getStart(), value)
-            task.setStart(int(start_timestamp.datetime_representation.timestamp() * 1000))
+            task.setStart(start_timestamp)
         else:
             start_datetime = datetime.datetime.strptime(value, '%Y-%m-%dT%H:%M')
             start_timestamp = int(start_datetime.timestamp() * 1000)
-            task.setStart(int(start_timestamp))
+            task.setStart(start_timestamp)
         pass
 
     async def setDueCommand(self, task: ITaskModel, value: str):
