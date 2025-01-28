@@ -68,7 +68,7 @@ class TimePoint:
         return self.datetime_representation == other.datetime_representation
     
     def __str__(self):
-        fullFormat = self.datetime_representation.strftime("%Y-%m-%d %H:%M:%S")
+        fullFormat = self.datetime_representation.strftime("%Y-%m-%dT%H:%M")
         shortFormat = self.datetime_representation.strftime("%Y-%m-%d")
         return fullFormat if self.datetime_representation.hour > 0 or self.datetime_representation.minute > 0 else shortFormat
     
