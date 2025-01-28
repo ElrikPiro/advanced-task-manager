@@ -45,9 +45,9 @@ class StatisticsService(IStatisticsService):
 
 
         for task in filteredTasks:
-            taskRE = TimeAmount(f"{self.remainingEffortHeuristic.evaluate(task)}")
+            taskRE = TimeAmount(f"{self.remainingEffortHeuristic.evaluate(task)}p")
             taskH = self.mainHeuristic.evaluate(task)
-            taskWL = TimeAmount(f"{task.getTotalCost().as_pomodoros() / task.calculateRemainingTime()}")
+            taskWL = TimeAmount(f"{task.getTotalCost().as_pomodoros() / task.calculateRemainingTime().as_days()}p")
 
             workload += taskWL
             remainingEffort += taskRE if taskRE.as_pomodoros() > 0 else TimeAmount("0.0p")

@@ -71,8 +71,8 @@ class ObsidianTaskModel(ITaskModel):
     def setTotalCost(self, totalCost: TimeAmount):
         self._totalCost = totalCost.as_pomodoros()
 
-    def setInvestedEffort(self, investedEffort: float):
-        self._investedEffort = investedEffort
+    def setInvestedEffort(self, investedEffort: TimeAmount):
+        self._investedEffort = investedEffort.as_pomodoros()
 
     def setStatus(self, status: str):
         self._status = status
@@ -86,14 +86,14 @@ class ObsidianTaskModel(ITaskModel):
     def setLine(self, line: int):
         self._line = line
 
-    def calculateRemainingTime(self) -> int:
+    def calculateRemainingTime(self) -> TimeAmount:
         dueDate = self.getDue().as_int()
 
         currentDate = TimePoint.now().as_int()
         d = (dueDate - currentDate) / (datetime.timedelta(days=1).total_seconds() * 1000)
         d = max(0, d)
         d = ceil(d)
-        return d + 0.5
+        return TimeAmount(f"{d}d")
     
     def __eq__(self, other : ITaskModel):
         return self.getDescription() == other.getDescription() and self.getContext() == other.getContext() and self.getStart() == other.getStart() and self.getDue() == other.getDue() and self.getSeverity() == other.getSeverity() and self.getTotalCost().as_pomodoros() == other.getTotalCost().as_pomodoros() and self.getInvestedEffort().as_pomodoros() == other.getInvestedEffort().as_pomodoros() and self.getStatus() == other.getStatus() and self.getFile() == other.getFile() and self.getLine() == other.getLine() and self.getCalm() == other.getCalm()

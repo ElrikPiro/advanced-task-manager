@@ -45,6 +45,12 @@ class TimeAmount:
         Returns the time amount as a number of pomodoros.
         """
         return ceil((self.int_representation*5) / (25*60*1000))/5
+    
+    def as_days(self) -> int:
+        """
+        Returns the time amount as a number of days.
+        """
+        return int(self.int_representation / 86400000)
 
 class TimePoint:
     """

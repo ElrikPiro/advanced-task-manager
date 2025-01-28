@@ -12,7 +12,7 @@ class HeuristicScheduling(IScheduling):
 
     def schedule(self, task: ITaskModel, param: str) -> None:
         
-        d = task.calculateRemainingTime()
+        d = task.calculateRemainingTime().as_days()
         p = float(self.pomodoroConstProvider.getTaskListAttribute("pomodoros_per_day"))
         r = task.getTotalCost().as_pomodoros()
 

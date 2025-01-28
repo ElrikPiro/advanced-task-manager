@@ -61,8 +61,8 @@ class TaskModel(ITaskModel):
     def setTotalCost(self, totalCost: TimeAmount):
         self._totalCost = totalCost.as_pomodoros()
 
-    def setInvestedEffort(self, investedEffort: float):
-        self._investedEffort = investedEffort
+    def setInvestedEffort(self, investedEffort: TimeAmount):
+        self._investedEffort = investedEffort.as_pomodoros()
 
     def setStatus(self, status: str):
         self._status = status
@@ -70,14 +70,14 @@ class TaskModel(ITaskModel):
     def setCalm(self, calm: bool):
         self._calm = calm
 
-    def calculateRemainingTime(self) -> int:
+    def calculateRemainingTime(self) -> TimeAmount:
         dueDate = self.getDue().as_int()
 
         currentDate = TimePoint.now().as_int()
         d = (dueDate - currentDate) / (datetime.timedelta(days=1).total_seconds() * 1000)
         d = max(0, d)
         d = ceil(d)
-        return d + 0.5
+        return TimeAmount(f"{d}d")
     
     def __eq__(self, other : ITaskModel):
         return self._index == other._index

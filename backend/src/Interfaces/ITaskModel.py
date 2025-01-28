@@ -74,7 +74,7 @@ class ITaskModel(ABC):
         pass
 
     @abstractmethod
-    def setInvestedEffort(self, investedEffort: float): #TODO: change to TimeAmount
+    def setInvestedEffort(self, investedEffort: TimeAmount):
         pass
 
     @abstractmethod
@@ -86,7 +86,7 @@ class ITaskModel(ABC):
         pass
 
     @abstractmethod
-    def calculateRemainingTime(self) -> int: #TODO: change to TimeAmount
+    def calculateRemainingTime(self) -> TimeAmount:
         pass
 
     @abstractmethod

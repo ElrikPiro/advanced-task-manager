@@ -22,7 +22,7 @@ class DaysToThresholdHeuristic(IHeuristic):
         w = 1
         s = task.getSeverity()
         r = task.getTotalCost().as_pomodoros()
-        d = task.calculateRemainingTime()
+        d = task.calculateRemainingTime().as_days()
         h = self.threshold
 
         return d - (r * (p*s*w + h)) / (h*p)

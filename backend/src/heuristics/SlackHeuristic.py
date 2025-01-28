@@ -19,7 +19,7 @@ class SlackHeuristic(IHeuristic):
         w = 1
         s = task.getSeverity()
         r = task.getTotalCost().as_pomodoros()
-        d = task.calculateRemainingTime()
+        d = task.calculateRemainingTime().as_days()
 
         if d < 1:
             return 100

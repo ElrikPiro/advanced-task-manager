@@ -25,7 +25,7 @@ class RemainingEffortHeuristic(IHeuristic):
         w = 1
         s = task.getSeverity()
         r = task.getTotalCost().as_pomodoros()
-        d = task.calculateRemainingTime()
+        d = task.calculateRemainingTime().as_days()
 
         dr = self.desiredH
 
