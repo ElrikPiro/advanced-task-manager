@@ -1,7 +1,6 @@
 import datetime
 from math import ceil
-from ..wrappers.TimeManagement import TimePoint
-
+from ..wrappers.TimeManagement import TimePoint, TimeAmount
 from ..Interfaces.ITaskModel import ITaskModel
 
 class TaskModel(ITaskModel):
@@ -32,8 +31,8 @@ class TaskModel(ITaskModel):
     def getSeverity(self) -> float:
         return self._severity
 
-    def getTotalCost(self) -> float:
-        return self._totalCost
+    def getTotalCost(self) -> TimeAmount:
+        return TimeAmount(f"{self._totalCost}p")
 
     def getInvestedEffort(self) -> float:
         return self._investedEffort
@@ -59,8 +58,8 @@ class TaskModel(ITaskModel):
     def setSeverity(self, severity: float):
         self._severity = severity
 
-    def setTotalCost(self, totalCost: float):
-        self._totalCost = totalCost
+    def setTotalCost(self, totalCost: TimeAmount):
+        self._totalCost = totalCost.as_pomodoros()
 
     def setInvestedEffort(self, investedEffort: float):
         self._investedEffort = investedEffort

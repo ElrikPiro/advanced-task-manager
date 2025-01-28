@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from ..wrappers.TimeManagement import TimePoint
+from ..wrappers.TimeManagement import TimePoint, TimeAmount
 
 # Interface for TaskModel
 # Datatype contains the following fields:
@@ -34,7 +34,7 @@ class ITaskModel(ABC):
         pass
 
     @abstractmethod
-    def getTotalCost(self) -> float: #TODO: change to TimeAmount
+    def getTotalCost(self) -> TimeAmount:
         pass
 
     @abstractmethod
@@ -70,7 +70,7 @@ class ITaskModel(ABC):
         pass
 
     @abstractmethod
-    def setTotalCost(self, totalCost: float): #TODO: change to TimeAmount
+    def setTotalCost(self, totalCost: TimeAmount):
         pass
 
     @abstractmethod

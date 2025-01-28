@@ -64,7 +64,7 @@ class ObsidianTaskProvider(ITaskProvider):
         start = str(task.getStart())
         due = str(task.getDue())
         severity = task.getSeverity()
-        totalCost = task.getTotalCost()
+        totalCost = task.getTotalCost().as_pomodoros()
         investedEffort = task.getInvestedEffort()
         status = task.getStatus()
         calm = "true" if task.getCalm() else "false"

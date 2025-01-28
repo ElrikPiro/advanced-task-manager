@@ -254,7 +254,7 @@ class TelegramReportingService(IReportingService):
             if len(extendedParams) == 3:
                 self._selectedTask = self.taskProvider.createDefaultTask(extendedParams[0])
                 self._selectedTask.setContext(extendedParams[1])
-                self._selectedTask.setTotalCost(TimeAmount(extendedParams[2]).as_pomodoros())
+                self._selectedTask.setTotalCost(TimeAmount(extendedParams[2]))
             else:
                 self._selectedTask = self.taskProvider.createDefaultTask(" ".join(params))
             
@@ -476,14 +476,14 @@ class TelegramReportingService(IReportingService):
         pass
 
     async def setTotalCostCommand(self, task: ITaskModel, value: str):
-        task.setTotalCost(float(value))
+        task.setTotalCost(value)
         pass
 
     async def setEffortInvestedCommand(self, task: ITaskModel, value: str):
         newInvestedEffort = task.getInvestedEffort() + float(value)
-        newTotalCost = task.getTotalCost() - float(value)
+        newTotalCost = task.getTotalCost() - TimeAmount(value)
         task.setInvestedEffort(float(newInvestedEffort))
-        task.setTotalCost(float(newTotalCost))
+        task.setTotalCost(newTotalCost)
         pass
 
     async def setCalmCommand(self, task: ITaskModel, value: str):
@@ -533,9 +533,9 @@ class TelegramReportingService(IReportingService):
         taskSeverity = task.getSeverity()
         taskStartDate : TimePoint = task.getStart()
         taskDueDate : TimePoint = task.getDue()
-        taskRemainingCost : TimeAmount = TimeAmount(max(task.getTotalCost(), 0))
+        taskRemainingCost : TimeAmount = TimeAmount(f"{max(task.getTotalCost().as_pomodoros(), 0.0)}p")
         taskEffortInvested = max(task.getInvestedEffort(), 0)
-        taskTotalCost = TimeAmount(max(task.getTotalCost(), 0)+taskEffortInvested)
+        taskTotalCost = TimeAmount(f"{max(task.getTotalCost().as_pomodoros(), 0.0)+taskEffortInvested}p")
         
         taskInformation = f"Task: {taskDescription}\nContext: {taskContext}\nStart Date: {taskStartDate}\nDue Date: {taskDueDate}\nTotal Cost: {taskTotalCost}\nRemaining: {taskRemainingCost}\nSeverity: {taskSeverity}"
         

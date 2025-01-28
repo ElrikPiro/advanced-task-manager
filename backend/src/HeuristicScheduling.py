@@ -12,13 +12,13 @@ class HeuristicScheduling(IScheduling):
         
         d = task.calculateRemainingTime()
         p = float(self.pomodoroConstProvider.getTaskListAttribute("pomodoros_per_day"))
-        r = task.getTotalCost()
+        r = task.getTotalCost().as_pomodoros()
 
         if param.replace(".", "").isnumeric():
             effortPerDay = float(param)
             severity = 1 / effortPerDay
             optimalDayTo = ceil((r * (p * severity + 1)) / p)
-            task.setDue(task.getStart() + optimalDayTo * 86400 * 1000)
+            task.setDue(task.getStart().as_int() + optimalDayTo * 86400 * 1000)
             task.setSeverity(severity)
         else:
             severity = max((d*p-r)/(p*r), 1)
