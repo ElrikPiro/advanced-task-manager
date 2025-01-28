@@ -62,7 +62,7 @@ class ITaskModel(ABC):
         pass
 
     @abstractmethod
-    def setDue(self, due: int): #TODO: change to TimePoint
+    def setDue(self, due: TimePoint):
         pass
 
     @abstractmethod

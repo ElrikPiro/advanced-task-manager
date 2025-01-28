@@ -52,8 +52,8 @@ class TaskModel(ITaskModel):
     def setStart(self, start: TimePoint):
         self._start = start.as_int()
 
-    def setDue(self, due: int):
-        self._due = due
+    def setDue(self, due: TimePoint):
+        self._due = due.as_int()
 
     def setSeverity(self, severity: float):
         self._severity = severity

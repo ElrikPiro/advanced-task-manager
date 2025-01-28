@@ -1,4 +1,6 @@
 from math import ceil
+
+from .wrappers.TimeManagement import TimeAmount
 from .Interfaces.IScheduling import IScheduling
 from .Interfaces.ITaskModel import ITaskModel
 from .Interfaces.ITaskProvider import ITaskProvider
@@ -18,7 +20,7 @@ class HeuristicScheduling(IScheduling):
             effortPerDay = float(param)
             severity = 1 / effortPerDay
             optimalDayTo = ceil((r * (p * severity + 1)) / p)
-            task.setDue(task.getStart().as_int() + optimalDayTo * 86400 * 1000)
+            task.setDue(task.getStart() + TimeAmount(f"{optimalDayTo}d"))
             task.setSeverity(severity)
         else:
             severity = max((d*p-r)/(p*r), 1)

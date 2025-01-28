@@ -457,18 +457,16 @@ class TelegramReportingService(IReportingService):
             task.setStart(start_timestamp)
         else:
             start_datetime = datetime.datetime.strptime(value, '%Y-%m-%dT%H:%M')
-            start_timestamp = int(start_datetime.timestamp() * 1000)
-            task.setStart(start_timestamp)
+            task.setStart(TimePoint(start_datetime))
         pass
 
     async def setDueCommand(self, task: ITaskModel, value: str):
         if value.startswith("+") or value.startswith("-") or value.startswith("today") or value.startswith("tomorrow"):
             due_timestamp = self.processRelativeTimeSet(task.getDue(), value)
-            task.setDue(int(due_timestamp.datetime_representation.timestamp() * 1000))
+            task.setDue(due_timestamp)
         else:
             due_datetime = datetime.datetime.strptime(value, '%Y-%m-%d')
-            due_timestamp = int(due_datetime.timestamp() * 1000)
-            task.setDue(int(due_timestamp))
+            task.setDue(TimePoint(due_datetime))
         pass
 
     async def setSeverityCommand(self, task: ITaskModel, value: str):
