@@ -1,10 +1,10 @@
 import unittest
 from datetime import datetime, timedelta
-from src.SlackHeuristic import SlackHeuristic
+from src.heuristics.SlackHeuristic import SlackHeuristic
 from src.Interfaces.ITaskModel import ITaskModel
 from unittest import TestCase, mock
 from datetime import datetime, timedelta
-from src.SlackHeuristic import SlackHeuristic
+from src.heuristics.SlackHeuristic import SlackHeuristic
 from src.Interfaces.ITaskModel import ITaskModel
 
 class SlackHeuristicTests(TestCase):

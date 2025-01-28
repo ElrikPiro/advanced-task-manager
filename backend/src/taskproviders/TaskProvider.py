@@ -1,9 +1,9 @@
 import datetime
-from .Interfaces.ITaskProvider import ITaskProvider
-from .Interfaces.ITaskModel import ITaskModel
-from .Interfaces.ITaskJsonProvider import ITaskJsonProvider
-from .Interfaces.IFileBroker import IFileBroker, FileRegistry
-from .TaskModel import TaskModel
+from ..Interfaces.ITaskProvider import ITaskProvider
+from ..Interfaces.ITaskModel import ITaskModel
+from ..Interfaces.ITaskJsonProvider import ITaskJsonProvider
+from ..Interfaces.IFileBroker import IFileBroker, FileRegistry
+from ..taskmodels.TaskModel import TaskModel
 from typing import List
 import json
 
@@ -43,11 +43,11 @@ class TaskProvider(ITaskProvider):
                 self.dict_task_list["tasks"][index] = dict(
                     description=task.getDescription(), 
                     context=task.getContext(), 
-                    start=task.getStart(), 
-                    due=task.getDue(), 
+                    start=task.getStart().as_int(),  
+                    due=task.getDue().as_int(),
                     severity=task.getSeverity(), 
-                    totalCost=task.getTotalCost(), 
-                    investedEffort=task.getInvestedEffort(), 
+                    totalCost=task.getTotalCost().as_pomodoros(), 
+                    investedEffort=task.getInvestedEffort().as_pomodoros(), 
                     status=task.getStatus(), 
                     calm="True" if task.getCalm() else "False"
                 )
@@ -91,11 +91,11 @@ class TaskProvider(ITaskProvider):
         return dict(
             description=task.getDescription(), 
             context=task.getContext(), 
-            start=task.getStart(), 
+            start=task.getStart().as_int(), 
             due=task.getDue(), 
             severity=task.getSeverity(), 
-            totalCost=task.getTotalCost(), 
-            investedEffort=task.getInvestedEffort(), 
+            totalCost=task.getTotalCost().as_pomodoros(), 
+            investedEffort=task.getInvestedEffort().as_pomodoros(), 
             status=task.getStatus(), 
             calm="True" if task.getCalm() else "False"
         ).__str__()

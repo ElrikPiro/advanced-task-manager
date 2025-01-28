@@ -2,11 +2,11 @@ import datetime
 import json
 import threading
 
-from .Interfaces.IFileBroker import IFileBroker, FileRegistry, VaultRegistry
-from .Interfaces.ITaskProvider import ITaskProvider
-from .Interfaces.ITaskModel import ITaskModel
-from .Interfaces.ITaskJsonProvider import ITaskJsonProvider
-from .ObsidianTaskModel import ObsidianTaskModel
+from ..Interfaces.IFileBroker import IFileBroker, FileRegistry, VaultRegistry
+from ..Interfaces.ITaskProvider import ITaskProvider
+from ..Interfaces.ITaskModel import ITaskModel
+from ..Interfaces.ITaskJsonProvider import ITaskJsonProvider
+from ..taskmodels.ObsidianTaskModel import ObsidianTaskModel
 from typing import List
 
 class ObsidianTaskProvider(ITaskProvider):
@@ -61,11 +61,11 @@ class ObsidianTaskProvider(ITaskProvider):
     def saveTask(self, task: ITaskModel):
         description = task.getDescription().split("@")[0].strip()
         context = task.getContext()
-        start = datetime.datetime.fromtimestamp(task.getStart() / 1e3).strftime("%Y-%m-%dT%H:%M")
-        due = datetime.datetime.fromtimestamp(task.getDue() / 1e3).strftime("%Y-%m-%d")
+        start = str(task.getStart())
+        due = str(task.getDue())
         severity = task.getSeverity()
-        totalCost = task.getTotalCost()
-        investedEffort = task.getInvestedEffort()
+        totalCost = task.getTotalCost().as_pomodoros()
+        investedEffort = task.getInvestedEffort().as_pomodoros()
         status = task.getStatus()
         calm = "true" if task.getCalm() else "false"
 

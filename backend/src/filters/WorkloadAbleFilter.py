@@ -1,7 +1,7 @@
 from abc import ABC, abstractmethod
 from typing import List
-from .Interfaces.ITaskModel import ITaskModel
-from .Interfaces.IFilter import IFilter
+from ..Interfaces.ITaskModel import ITaskModel
+from ..Interfaces.IFilter import IFilter
 
 class WorkloadAbleFilter(IFilter):
 
@@ -12,7 +12,7 @@ class WorkloadAbleFilter(IFilter):
         activeTasks = self.activeFilter.filter(tasks)
         workloadAbleTasks = []
         for task in activeTasks:
-            if task.calculateRemainingTime() >= 1.0:
+            if task.calculateRemainingTime().as_days() >= 1.0:
                 workloadAbleTasks.append(task)
         return workloadAbleTasks
 

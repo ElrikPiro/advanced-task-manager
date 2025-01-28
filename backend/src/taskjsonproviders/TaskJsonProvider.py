@@ -1,7 +1,7 @@
 # class interface
 
-from .Interfaces.ITaskJsonProvider import ITaskJsonProvider
-from .Interfaces.IFileBroker import IFileBroker, FileRegistry
+from ..Interfaces.ITaskJsonProvider import ITaskJsonProvider
+from ..Interfaces.IFileBroker import IFileBroker, FileRegistry
 import json
 
 class TaskJsonProvider(ITaskJsonProvider):

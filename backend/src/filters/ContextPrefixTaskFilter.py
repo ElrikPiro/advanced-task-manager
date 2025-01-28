@@ -1,5 +1,5 @@
-from .Interfaces.IFilter import IFilter
-from .Interfaces.ITaskModel import ITaskModel
+from ..Interfaces.IFilter import IFilter
+from ..Interfaces.ITaskModel import ITaskModel
 
 class ContextPrefixTaskFilter(IFilter):
 

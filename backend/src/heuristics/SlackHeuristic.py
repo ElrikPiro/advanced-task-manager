@@ -1,7 +1,7 @@
 from typing import List, Tuple
-from .Interfaces.IHeuristic import IHeuristic
-from .Interfaces.ITaskModel import ITaskModel
-from .Interfaces.ITaskProvider import ITaskProvider
+from ..Interfaces.IHeuristic import IHeuristic
+from ..Interfaces.ITaskModel import ITaskModel
+from ..Interfaces.ITaskProvider import ITaskProvider
 
 class SlackHeuristic(IHeuristic):
 
@@ -18,9 +18,12 @@ class SlackHeuristic(IHeuristic):
         p = pomodorosPerDay
         w = 1
         s = task.getSeverity()
-        r = task.getTotalCost()
-        d = task.calculateRemainingTime()
+        r = task.getTotalCost().as_pomodoros()
+        d = task.calculateRemainingTime().as_days()
 
+        if d < 1:
+            return 100
+        
         try:
             h = (p * w * s * r) / (p * d - r)
             return round(h, 2) if h > 0 else 100
@@ -30,3 +33,6 @@ class SlackHeuristic(IHeuristic):
     def evaluate(self, task: ITaskModel) -> float:
         p = float(self.pomodorosPerDayProvider.getTaskListAttribute("pomodoros_per_day"))
         return self.fastEvaluate(task, p)
+
+    def getComment(self, task: ITaskModel) -> str:
+        return f"{round(self.evaluate(task), 2)}"

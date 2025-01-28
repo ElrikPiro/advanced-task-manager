@@ -1,7 +1,8 @@
 import datetime
 from math import ceil
+from ..wrappers.TimeManagement import TimePoint, TimeAmount
 
-from .Interfaces.ITaskModel import ITaskModel
+from ..Interfaces.ITaskModel import ITaskModel
 
 class ObsidianTaskModel(ITaskModel):
     def __init__(self, description: str, context: str, start: int, due: int, severity: float, totalCost: float, investedEffort: float, status: str, file: str, line: int, calm : str):
@@ -25,20 +26,20 @@ class ObsidianTaskModel(ITaskModel):
     def getContext(self) -> str:
         return self._context
 
-    def getStart(self) -> int:
-        return self._start
+    def getStart(self) -> TimePoint:
+        return TimePoint(datetime.datetime.fromtimestamp(self._start / 1e3))
 
-    def getDue(self) -> int:
-        return self._due
+    def getDue(self) -> TimePoint:
+        return TimePoint(datetime.datetime.fromtimestamp(self._due / 1e3))
 
     def getSeverity(self) -> float:
         return self._severity
 
-    def getTotalCost(self) -> float:
-        return self._totalCost
+    def getTotalCost(self) -> TimeAmount:
+        return TimeAmount(f"{self._totalCost}p")
 
-    def getInvestedEffort(self) -> float:
-        return self._investedEffort
+    def getInvestedEffort(self) -> TimeAmount:
+        return TimeAmount(f"{self._investedEffort}p")
 
     def getStatus(self) -> str:
         return self._status
@@ -58,20 +59,20 @@ class ObsidianTaskModel(ITaskModel):
     def setContext(self, context: str):
         self._context = context
 
-    def setStart(self, start: int):
-        self._start = start
+    def setStart(self, start: TimePoint):
+        self._start = start.as_int()
 
-    def setDue(self, due: int):
-        self._due = due
+    def setDue(self, due: TimePoint):
+        self._due = due.as_int()
 
     def setSeverity(self, severity: float):
         self._severity = severity
 
-    def setTotalCost(self, totalCost: float):
-        self._totalCost = totalCost
+    def setTotalCost(self, totalCost: TimeAmount):
+        self._totalCost = totalCost.as_pomodoros()
 
-    def setInvestedEffort(self, investedEffort: float):
-        self._investedEffort = investedEffort
+    def setInvestedEffort(self, investedEffort: TimeAmount):
+        self._investedEffort = investedEffort.as_pomodoros()
 
     def setStatus(self, status: str):
         self._status = status
@@ -85,14 +86,14 @@ class ObsidianTaskModel(ITaskModel):
     def setLine(self, line: int):
         self._line = line
 
-    def calculateRemainingTime(self) -> int:
-        dueDate = self.getDue()
+    def calculateRemainingTime(self) -> TimeAmount:
+        dueDate = self.getDue().as_int()
 
-        currentDate = datetime.datetime.now().timestamp() * 1000
+        currentDate = TimePoint.now().as_int()
         d = (dueDate - currentDate) / (datetime.timedelta(days=1).total_seconds() * 1000)
         d = max(0, d)
         d = ceil(d)
-        return d + 0.5
+        return TimeAmount(f"{d}d")
     
     def __eq__(self, other : ITaskModel):
-        return self.getDescription() == other.getDescription() and self.getContext() == other.getContext() and self.getStart() == other.getStart() and self.getDue() == other.getDue() and self.getSeverity() == other.getSeverity() and self.getTotalCost() == other.getTotalCost() and self.getInvestedEffort() == other.getInvestedEffort() and self.getStatus() == other.getStatus() and self.getFile() == other.getFile() and self.getLine() == other.getLine() and self.getCalm() == other.getCalm()
+        return self.getDescription() == other.getDescription() and self.getContext() == other.getContext() and self.getStart() == other.getStart() and self.getDue() == other.getDue() and self.getSeverity() == other.getSeverity() and self.getTotalCost().as_pomodoros() == other.getTotalCost().as_pomodoros() and self.getInvestedEffort().as_pomodoros() == other.getInvestedEffort().as_pomodoros() and self.getStatus() == other.getStatus() and self.getFile() == other.getFile() and self.getLine() == other.getLine() and self.getCalm() == other.getCalm()
