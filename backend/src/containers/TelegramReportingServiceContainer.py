@@ -12,7 +12,6 @@ from src.TelegramReportingService import TelegramReportingService
 from src.taskproviders.ObsidianTaskProvider import ObsidianTaskProvider
 from src.taskjsonproviders.ObsidianDataviewTaskJsonProvider import ObsidianDataviewTaskJsonProvider
 from src.heuristics.SlackHeuristic import SlackHeuristic
-from src.heuristics.TomorrowSlackHeuristic import TomorrowSlackHeuristic
 from src.heuristics.RemainingEffortHeuristic import RemainingEffortHeuristic
 from src.filters.ContextPrefixTaskFilter import ContextPrefixTaskFilter
 from src.filters.GtdTaskFilter import GtdTaskFilter
@@ -74,7 +73,7 @@ class TelegramReportingServiceContainer():
         self.container.remainingEffortHeuristic = providers.Factory(RemainingEffortHeuristic, self.container.taskProvider)
         self.container.daysToThresholdHeuristic = providers.Factory(DaysToThresholdHeuristic, self.container.taskProvider)
         self.container.slackHeuristic = providers.Factory(SlackHeuristic, self.container.taskProvider)
-        self.container.tomorrowSlackHeuristic = providers.Factory(TomorrowSlackHeuristic, self.container.taskProvider)
+        self.container.tomorrowSlackHeuristic = providers.Factory(SlackHeuristic, self.container.taskProvider, 1)
 
         ## Heuristic list
         self.container.heuristicList = providers.List(

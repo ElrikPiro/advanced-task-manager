@@ -5,8 +5,9 @@ from ..Interfaces.ITaskProvider import ITaskProvider
 
 class SlackHeuristic(IHeuristic):
 
-    def __init__(self, pomodorosPerDayProvider: ITaskProvider):
+    def __init__(self, pomodorosPerDayProvider: ITaskProvider, daysOffset: int = 0):
         self.pomodorosPerDayProvider = pomodorosPerDayProvider
+        self.daysOffset = daysOffset
 
     def sort(self, tasks: List[ITaskModel]) -> List[Tuple[ITaskModel, float]]:
         pomodorosPerDay = float(self.pomodorosPerDayProvider.getTaskListAttribute("pomodoros_per_day"))
@@ -19,7 +20,7 @@ class SlackHeuristic(IHeuristic):
         w = 1
         s = task.getSeverity()
         r = task.getTotalCost().as_pomodoros()
-        d = task.calculateRemainingTime().as_days()
+        d = task.calculateRemainingTime().as_days() - self.daysOffset
 
         if d < 1:
             return 100
