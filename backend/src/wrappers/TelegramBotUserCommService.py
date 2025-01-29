@@ -38,6 +38,7 @@ class TelegramBotUserCommService(IUserCommService):
             detectedFileType = "json"
             return (result[0].message.chat.id, f"/import {detectedFileType}")
         else:
+            self.offset = result[0].update_id + 1
             return None
 
         
