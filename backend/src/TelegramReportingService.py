@@ -19,17 +19,84 @@ from .Interfaces.IStatisticsService import IStatisticsService
 from .wrappers.interfaces.IUserCommService import IUserCommService
 from .wrappers.TimeManagement import TimeAmount, TimePoint
 
+# ITaskListWrapper.py
+from abc import ABC, abstractmethod
+class ITaskListManager(ABC):
+    pass
+# TaskListWrapper.py
+class TelegramTaskListManager(ITaskListManager):
+    
+    def __init__(self, taskModelList: List[ITaskModel], heuristics : List[Tuple[str, IHeuristic]], filters : List[Tuple[str, IFilter]], tasksPerPage: int = 5):
+        self.__taskModelList = taskModelList
+        self.__selectedTask = None
+        
+        self.__heuristicList = heuristics
+        self.__selectedHeuristic = heuristics[0]
+        
+        self.__filterList = filters
+        self.__selectedFilter = filters[0]
+
+        self.reset_pagination(tasksPerPage)
+    
+    def reset_pagination(self, tasksPerPage: int = 5):
+        self.__taskListPage = 0
+        self.__tasksPerPage = tasksPerPage
+
+    def next_page(self):
+        self.__taskListPage += 1
+    
+    def prior_page(self):
+        if self.__taskListPage > 0:
+            self.__taskListPage -= 1
+    
+    def select_task(self, taskId: int):
+        offset = self.__taskListPage * self.__tasksPerPage
+        if 0 <= taskId < len(self.__taskModelList):
+            self.__selectedTask = self.__taskModelList[taskId + offset]
+        else:
+            self.__selectedTask = None
+
+    def clear_selected_task(self):
+        self.__selectedTask = None
+
+    def render_task_list_str(self, interactive: bool = True) -> str:
+        interactiveId = "/task_" if interactive else ""
+
+        subTaskList = self.__taskModelList[self.__taskListPage * self.__tasksPerPage : (self.__taskListPage + 1) * self.__tasksPerPage]
+        subTaskListDescriptions = [(f"{interactiveId}{i+1} : {task.getDescription()}") for i, task in enumerate(subTaskList)]
+
+        taskListString = "\n".join(subTaskListDescriptions)
+        if interactive:
+            totalPages = (len(self.__taskModelList) + self.__tasksPerPage - 1) // self.__tasksPerPage
+            taskListString += "\n\nPage " + str(self.__taskListPage + 1) + " of " + str(totalPages) + "\n"
+            taskListString += "/next - Next page\n/previous - Previous page"
+            taskListString += "\n\nselected /heuristic : " + self.__selectedHeuristic[0]
+            taskListString += "\nselected /filter : " + self.__selectedFilter[1].getDescription()
+        
+        return taskListString
+    
+
 class TelegramReportingService(IReportingService):
 
     def __init__(self, bot : IUserCommService , taskProvider : ITaskProvider, scheduling : IScheduling, statiticsProvider : IStatisticsService, heuristics : List[Tuple[str, IHeuristic]], filters : List[Tuple[str, IFilter]], categories : list[dict], chatId: int = 0):
+        # Private Attributes
         self.run = True
         self.bot = bot
         self.chatId = chatId
         self.taskProvider = taskProvider
         self.scheduling = scheduling
         self.statiticsProvider = statiticsProvider
-        self._taskListPage = 0
-        self._tasksPerPage = 5
+        
+        self._updateFlag = False
+        self._lastTaskList = self.taskProvider.getTaskList() # TODO: refactor the getTaskList so it returns a TaskListWrapper
+        self._lastRawList = self.taskProvider.getTaskList()
+        self._lastWrapper = TaskListWrapper(self._lastRawList)
+        self._lastRawWrapper = TaskListWrapper(self._lastRawList)
+        
+        self._lastError = "Event loop initialized"
+        self._lock = threading.Lock()
+
+        # TODO: All the following fiels might be moved to a proper TaskListManager Class
         self._selectedTask = None
         self._lastOffset = None
         self._ignoreNextUpdate = False
@@ -41,13 +108,6 @@ class TelegramReportingService(IReportingService):
         self._selectedFilterIndex = 0
 
         self._categories = categories
-
-        self._updateFlag = False
-        self._lastTaskList = self.taskProvider.getTaskList()
-        self._lastRawList = self.taskProvider.getTaskList()
-        
-        self._lastError = "Event loop initialized"
-        self._lock = threading.Lock()
         pass
 
     def dispose(self):
@@ -134,7 +194,7 @@ class TelegramReportingService(IReportingService):
             nextTask = ""
             if len(self._lastTaskList) != 0:
                 nextTask = f"\n\n/task_1 : {self._lastTaskList[0].getDescription()}"
-            self._taskListPage = 0
+            self._lastWrapper.reset_pagination()
             await self.bot.sendMessage(chat_id=self.chatId, text="Task /list updated" + nextTask)
             pass
 
@@ -169,24 +229,26 @@ class TelegramReportingService(IReportingService):
 
     # Each command must be made into an object and injected into this class
     async def listCommand(self, messageText: str = "", expectAnswer: bool = True):
-        self._taskListPage = 0
+        self._lastWrapper.reset_pagination()
         await self.sendTaskList()
 
     async def nextCommand(self, messageText: str = "", expectAnswer: bool = True):
-        self._taskListPage += 1
+        self._lastWrapper.next_page()
         if expectAnswer:
             await self.sendTaskList()
 
     async def previousCommand(self, messageText: str = "", expectAnswer: bool = True):
-        self._taskListPage -= 1
+        self._lastWrapper.prior_page()
         if expectAnswer:
             await self.sendTaskList()
 
     async def selectTaskCommand(self, messageText: str = "", expectAnswer: bool = True):
-        taskId = self._taskListPage * self._tasksPerPage + int(messageText.split("_")[1]) - 1
-        self._selectedTask = self._lastTaskList[taskId]
+        taskId = int(messageText.split("_")[1]) - 1
+        self._lastWrapper.select_task(taskId)
+        
+        selectedTask : ITaskModel = self._lastWrapper.get_selected_task()
         if expectAnswer:
-            await self.sendTaskInformation(self._selectedTask)
+            await self.sendTaskInformation(selectedTask)
 
     async def taskInfoCommand(self, messageText: str = "", expectAnswer: bool = True):
         if self._selectedTask is not None:
@@ -509,19 +571,9 @@ class TelegramReportingService(IReportingService):
             await self.bot.sendMessage(chat_id=self.chatId, text=errorMessage)
 
     async def sendTaskList(self, interactive : bool = True):
-        self._selectedTask = None
-        interactiveId = "/task_" if interactive else ""
+        self._lastWrapper.clear_selected_task()
 
-        subTaskList = self._lastTaskList[self._taskListPage * self._tasksPerPage : (self._taskListPage + 1) * self._tasksPerPage]
-        subTaskListDescriptions = [(f"{interactiveId}{i+1} : {task.getDescription()}") for i, task in enumerate(subTaskList)]
-
-        taskListString = "\n".join(subTaskListDescriptions)
-        if interactive:
-            totalPages = (len(self._lastTaskList) + self._tasksPerPage - 1) // self._tasksPerPage
-            taskListString += "\n\nPage " + str(self._taskListPage + 1) + " of " + str(totalPages) + "\n"
-            taskListString += "/next - Next page\n/previous - Previous page"
-            taskListString += "\n\nselected /heuristic : " + self._heuristicList[self._selectedHeuristicIndex][0]
-            taskListString += "\nselected /filter : " + self._filterList[self._selectedFilterIndex][1].getDescription()
+        taskListString = self._lastWrapper.render_task_list_str(interactive)
 
         await self.bot.sendMessage(chat_id=self.chatId, text=taskListString)
         pass
