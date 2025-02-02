@@ -2,6 +2,7 @@ from dependency_injector import containers, providers
 import telegram
 import os
 
+from src.TelegramTaskListManager import TelegramTaskListManager
 from src.wrappers.TelegramBotUserCommService import TelegramBotUserCommService
 from src.wrappers.ShellUserCommService import ShellUserCommService
 from src.taskproviders.TaskProvider import TaskProvider
@@ -20,8 +21,6 @@ from src.heuristics.DaysToThresholdHeuristic import DaysToThresholdHeuristic
 from src.StatisticsService import StatisticsService
 from src.FileBroker import FileBroker
 from src.filters.WorkloadAbleFilter import WorkloadAbleFilter
-
-from src.Interfaces.IFilter import IFilter
 
 class TelegramReportingServiceContainer():
 
@@ -120,5 +119,8 @@ class TelegramReportingServiceContainer():
         # Statistics service
         self.container.statisticsService = providers.Singleton(StatisticsService, self.container.fileBroker, self.container.workLoadAbleFilter, self.container.remainingEffortHeuristic(1.0), self.container.slackHeuristic)
 
+        # Task Manager
+        self.container.taskListManager = providers.Singleton(TelegramTaskListManager, self.container.taskProvider().getTaskList(), self.container.heuristicList, self.container.filterList, self.container.statisticsService)
+
         # Reporting service
-        self.container.telegramReportingService = providers.Singleton(TelegramReportingService, self.container.userCommService, self.container.taskProvider, self.container.heristicScheduling, self.container.statisticsService, self.container.heuristicList, self.container.filterList, self.container.categories, self.config.chatId)
+        self.container.telegramReportingService = providers.Singleton(TelegramReportingService, self.container.userCommService(), self.container.taskProvider(), self.container.heristicScheduling(), self.container.statisticsService(), self.container.taskListManager(), self.container.categories, self.config.chatId)
