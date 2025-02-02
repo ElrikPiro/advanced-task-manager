@@ -219,14 +219,14 @@ class TelegramTaskListManager(ITaskListManager):
 
     def __render_planned_urgent_tasks(self, agenda_str, urgent_tasks_by_start : List[ITaskModel]):
         if len(urgent_tasks_by_start) > 0:
-            agenda_str += "# Planned Urgent tasks:\n"
+            agenda_str += "# Planned Urgent tasks:"
             last_date : str = None
             for task in urgent_tasks_by_start:
                 current_date = str(task.getStart())
                 if last_date is None or current_date != last_date:
                     last_date = current_date
-                    agenda_str += f"\n## {last_date}"
-                agenda_str += f"\n- {task.getDescription()}"
+                    agenda_str += f"\n\n## {last_date}"
+                agenda_str += f"\n\t- {task.getDescription()}"
             agenda_str += "\n\n"
         return agenda_str
 
