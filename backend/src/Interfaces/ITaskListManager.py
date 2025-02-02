@@ -1,6 +1,8 @@
 from abc import ABC, abstractmethod
 from typing import List
 
+from ..wrappers.TimeManagement import TimePoint
+
 from .ITaskProvider import ITaskProvider
 from .ITaskModel import ITaskModel
 
@@ -79,4 +81,8 @@ class ITaskListManager(ABC):
 
     @abstractmethod
     def render_task_information(self, task: ITaskModel, taskProvider: ITaskProvider, extended: bool) -> str:
+        pass
+
+    @abstractmethod
+    def render_day_agenda(self, date: TimePoint, categories : list[dict]) -> str:
         pass

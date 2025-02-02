@@ -327,10 +327,14 @@ class TelegramReportingService(IReportingService):
             self._taskListManager.selected_task = searchResults[0]
             await self.sendTaskInformation(searchResults[0])
         elif len(searchResults) > 0:
-            taskListString = self._taskListManager.render_task_list_str(False)
+            taskListString = searchResultsManager.render_task_list_str(False)
             await self.bot.sendMessage(chat_id=self.chatId, text=taskListString)
         else:
             await self.bot.sendMessage(chat_id=self.chatId, text="No results found")
+
+    async def agendaCommand(self, messageText: str = "", expectAnswer: bool = True):
+        agenda = self._taskListManager.render_day_agenda(TimePoint.today(), self._categories)
+        await self.bot.sendMessage(chat_id=self.chatId, text=agenda)
 
     async def processMessage(self, messageText: str):
         commands : list[(str, function)] = [
@@ -353,6 +357,7 @@ class TelegramReportingService(IReportingService):
             ("/export", self.exportCommand),
             ("/import", self.importCommand),
             ("/search", self.searchCommand),
+            ("/agenda", self.agendaCommand),
         ]
 
         messageTextLines = messageText.strip().splitlines()
