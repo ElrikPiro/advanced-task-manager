@@ -215,7 +215,7 @@ class TelegramTaskListManager(ITaskListManager):
         agenda_str = self.__render_planned_urgent_tasks(agenda_str, urgent_tasks_by_start)
 
         tasks_with_high_heuristic = self.__filter_high_heuristic_tasks(urgent_tasks)
-        agenda_str = self.__render_high_heuristic_tasks(agenda_str, tasks_with_high_heuristic)
+        agenda_str = self.__render_other_tasks(agenda_str, tasks_with_high_heuristic)
 
         return agenda_str
 
@@ -281,9 +281,9 @@ class TelegramTaskListManager(ITaskListManager):
 
         return high_heuristic_tasks
 
-    def __render_high_heuristic_tasks(self, agenda_str, tasks_with_high_heuristic):
-        if len(tasks_with_high_heuristic) > 0:
+    def __render_other_tasks(self, agenda_str, other_tasks):
+        if len(other_tasks) > 0:
             agenda_str += "# Other tasks:\n"
-            agenda_str += TelegramTaskListManager(tasks_with_high_heuristic, self.__heuristicList, self.__filterList, self.__statistics_service).render_task_list_str(False)
+            agenda_str += TelegramTaskListManager(other_tasks, self.__heuristicList, self.__filterList, self.__statistics_service).render_task_list_str(False)
             agenda_str += "\n\n"
         return agenda_str
