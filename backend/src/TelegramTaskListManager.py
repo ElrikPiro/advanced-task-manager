@@ -98,6 +98,8 @@ class TelegramTaskListManager(ITaskListManager):
             totalPages = (len(task_list) + self.__tasksPerPage - 1) // self.__tasksPerPage
             taskListString += "\n\nPage " + str(self.__taskListPage + 1) + " of " + str(totalPages) + "\n"
             taskListString += "/next - Next page\n/previous - Previous page"
+            taskListString += "\n\n/search [search terms] - Search for tasks"
+            taskListString += "\n/agenda - Show today's agenda"
         
         if len(self.__heuristicList) > 0:
             taskListString += "\n\nselected /heuristic : " + self.__selectedHeuristic[0]
