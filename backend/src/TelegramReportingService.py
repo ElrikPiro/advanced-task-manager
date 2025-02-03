@@ -51,10 +51,7 @@ class TelegramReportingService(IReportingService):
     def onTaskListUpdated(self):
         with self._lock:
             self._updateFlag = True
-            if not self._ignoreNextUpdate:
-                self._taskListManager.update_taskList(self.taskProvider.getTaskList())
-            else:
-                self._ignoreNextUpdate = False
+            self._taskListManager.update_taskList(self.taskProvider.getTaskList())
 
     def listenForEvents(self):
         self.taskProvider.registerTaskListUpdatedCallback(self.onTaskListUpdated)
@@ -106,6 +103,9 @@ class TelegramReportingService(IReportingService):
             if len(filteredList) != 0:
                 nextTask = f"\n\n/task_1 : {filteredList[0].getDescription()}"
             self._taskListManager.reset_pagination()
+            if self._ignoreNextUpdate:
+                self._ignoreNextUpdate = False
+                return
             await self.bot.sendMessage(chat_id=self.chatId, text="Task /list updated" + nextTask)
 
     async def runEventLoop(self):
@@ -208,7 +208,7 @@ class TelegramReportingService(IReportingService):
                 params[1] = "me"
             await self.processSetParam(task, params[0], " ".join(params[1:]) if len(params) > 2 else params[1])
             self.taskProvider.saveTask(task)
-            # self._ignoreNextUpdate = True
+            self._ignoreNextUpdate = True
             if expectAnswer:
                 await self.sendTaskInformation(task)
         else:
