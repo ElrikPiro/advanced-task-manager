@@ -7,13 +7,12 @@ import threading
 import datetime
 
 from time import sleep as sleepSync
-from typing import Tuple, List
+from typing import List
 
-from .Interfaces.IHeuristic import IHeuristic
+from .Interfaces.ITaskListManager import ITaskListManager
 from .Interfaces.IReportingService import IReportingService
 from .Interfaces.ITaskProvider import ITaskProvider
 from .Interfaces.ITaskModel import ITaskModel
-from .Interfaces.IFilter import IFilter
 from .Interfaces.IScheduling import IScheduling
 from .Interfaces.IStatisticsService import IStatisticsService
 from .wrappers.interfaces.IUserCommService import IUserCommService
@@ -21,33 +20,26 @@ from .wrappers.TimeManagement import TimeAmount, TimePoint
 
 class TelegramReportingService(IReportingService):
 
-    def __init__(self, bot : IUserCommService , taskProvider : ITaskProvider, scheduling : IScheduling, statiticsProvider : IStatisticsService, heuristics : List[Tuple[str, IHeuristic]], filters : List[Tuple[str, IFilter]], categories : list[dict], chatId: int = 0):
+    def __init__(self, bot : IUserCommService , taskProvider : ITaskProvider, scheduling : IScheduling, statiticsProvider : IStatisticsService, task_list_manager : ITaskListManager, categories : list[dict], chatId: int = 0):
+        # Private Attributes
         self.run = True
         self.bot = bot
         self.chatId = chatId
         self.taskProvider = taskProvider
         self.scheduling = scheduling
         self.statiticsProvider = statiticsProvider
-        self._taskListPage = 0
-        self._tasksPerPage = 5
-        self._selectedTask = None
-        self._lastOffset = None
-        self._ignoreNextUpdate = False
         
-        self._heuristicList = heuristics
-        self._selectedHeuristicIndex = 0
-
-        self._filterList = filters
-        self._selectedFilterIndex = 0
-
-        self._categories = categories
-
+        self.__lastModelList : List[ITaskModel] = []
         self._updateFlag = False
-        self._lastTaskList = self.taskProvider.getTaskList()
-        self._lastRawList = self.taskProvider.getTaskList()
+        
+        self._taskListManager = task_list_manager
         
         self._lastError = "Event loop initialized"
         self._lock = threading.Lock()
+
+        self._ignoreNextUpdate = False
+        
+        self._categories = categories
         pass
 
     def dispose(self):
@@ -59,13 +51,11 @@ class TelegramReportingService(IReportingService):
     def onTaskListUpdated(self):
         with self._lock:
             self._updateFlag = True
-            if not self._ignoreNextUpdate:
-                self.pullListUpdates()
-            else:
-                self._ignoreNextUpdate = False
+            self._taskListManager.update_taskList(self.taskProvider.getTaskList())
 
     def listenForEvents(self):
         self.taskProvider.registerTaskListUpdatedCallback(self.onTaskListUpdated)
+        self._taskListManager.update_taskList(self.taskProvider.getTaskList())
         errCount = 0
         while self.run:
             try:
@@ -96,47 +86,27 @@ class TelegramReportingService(IReportingService):
                     self.run = False
                 finally:
                     raise e
-
-    def pullListUpdates(self):
-        if not self._updateFlag:
-            return False
-        else:
-            self._updateFlag = False
-            self._lastRawList : List[ITaskModel] = self.taskProvider.getTaskList()
-            if self._selectedTask is not None:
-                lastSelectedTask = self._selectedTask
-                for task in self._lastRawList:
-                    if task.getDescription() == lastSelectedTask.getDescription():
-                        self._selectedTask = task
-                        break
-            return True
     
-    def doFilter(self):
-        newTaskList : List[ITaskModel] = self._lastRawList
-
-        if len(self._filterList) > 0:
-            filter : IFilter = self._filterList[self._selectedFilterIndex][1]
-            newTaskList = filter.filter(newTaskList)
-
-        if len(self._heuristicList) > 0:
-            heuristic : IHeuristic = self._heuristicList[self._selectedHeuristicIndex][1]
-            sortedTaskList : List[Tuple[ITaskModel, float]] = heuristic.sort(newTaskList)
-            newTaskList = [task for task, _ in sortedTaskList]
-
-        if not self.taskProvider.compare(newTaskList, self._lastTaskList):
-            self._lastTaskList = newTaskList
-            return True
-        return False
+    def hasFilteredListChanged(self):
+        filteredList = self._taskListManager.filtered_task_list
+        if self.taskProvider.compare(self._taskListManager.filtered_task_list, self.__lastModelList):
+            return False
+        self.__lastModelList = filteredList
+        return True
+        
 
     async def checkFilteredListChanges(self):
-        if self.chatId != 0 and self.doFilter():
+        if self.chatId != 0 and self.hasFilteredListChanged():
             # Send the updated list
             nextTask = ""
-            if len(self._lastTaskList) != 0:
-                nextTask = f"\n\n/task_1 : {self._lastTaskList[0].getDescription()}"
-            self._taskListPage = 0
+            filteredList = self._taskListManager.filtered_task_list
+            if len(filteredList) != 0:
+                nextTask = f"\n\n/task_1 : {filteredList[0].getDescription()}"
+            self._taskListManager.reset_pagination()
+            if self._ignoreNextUpdate:
+                self._ignoreNextUpdate = False
+                return
             await self.bot.sendMessage(chat_id=self.chatId, text="Task /list updated" + nextTask)
-            pass
 
     async def runEventLoop(self):
 
@@ -169,28 +139,30 @@ class TelegramReportingService(IReportingService):
 
     # Each command must be made into an object and injected into this class
     async def listCommand(self, messageText: str = "", expectAnswer: bool = True):
-        self._taskListPage = 0
+        self._taskListManager.reset_pagination()
         await self.sendTaskList()
 
     async def nextCommand(self, messageText: str = "", expectAnswer: bool = True):
-        self._taskListPage += 1
+        self._taskListManager.next_page()
         if expectAnswer:
             await self.sendTaskList()
 
     async def previousCommand(self, messageText: str = "", expectAnswer: bool = True):
-        self._taskListPage -= 1
+        self._taskListManager.prior_page()
         if expectAnswer:
             await self.sendTaskList()
 
     async def selectTaskCommand(self, messageText: str = "", expectAnswer: bool = True):
-        taskId = self._taskListPage * self._tasksPerPage + int(messageText.split("_")[1]) - 1
-        self._selectedTask = self._lastTaskList[taskId]
+        self._taskListManager.select_task(messageText)
+        
+        selectedTask : ITaskModel = self._taskListManager.selected_task
         if expectAnswer:
-            await self.sendTaskInformation(self._selectedTask)
+            await self.sendTaskInformation(selectedTask)
 
     async def taskInfoCommand(self, messageText: str = "", expectAnswer: bool = True):
-        if self._selectedTask is not None:
-            await self.sendTaskInformation(self._selectedTask, True)
+        selectedTask = self._taskListManager.selected_task
+        if selectedTask is not None:
+            await self.sendTaskInformation(selectedTask, True)
         else:
             await self.bot.sendMessage(chat_id=self.chatId, text="no task selected.")
 
@@ -198,49 +170,45 @@ class TelegramReportingService(IReportingService):
         await self.sendHelp()
 
     async def heuristicListCommand(self, messageText: str = "", expectAnswer: bool = True):
-        heuristicList = "\n".join([f"/heuristic_{i+1} : {heuristic[0]}" for i, heuristic in enumerate(self._heuristicList)])
-        heuristicList += "\n\n/filter - List filter options"
-        await self.bot.sendMessage(chat_id=self.chatId, text=heuristicList)
+        await self.bot.sendMessage(chat_id=self.chatId, text=self._taskListManager.get_heuristic_list())
 
     async def filterListCommand(self, messageText: str = "", expectAnswer: bool = True):
-        filterList = "\n".join([f"/filter_{i+1} : {filter[0]}" for i, filter in enumerate(self._filterList)])
-        filterList += "\n\n/heuristic - List heuristic options"
+        filterList = self._taskListManager.get_filter_list()
         await self.bot.sendMessage(chat_id=self.chatId, text=filterList)
 
     async def heuristicSelectionCommand(self, messageText: str = "", expectAnswer: bool = True):
-        self._selectedHeuristicIndex = int(messageText.split("_")[1]) - 1
-        self.doFilter()
+        self._taskListManager.select_heuristic(messageText)
         if expectAnswer:
             await self.sendTaskList()
 
     async def filterSelectionCommand(self, messageText: str = "", expectAnswer: bool = True):
-        self._selectedFilterIndex = int(messageText.split("_")[1]) - 1
-        self.doFilter()
+        self._taskListManager.select_filter(messageText)
         if expectAnswer:
             await self.sendTaskList()
 
     async def doneCommand(self, messageText: str = "", expectAnswer: bool = True):
-        if self._selectedTask is not None:
-            task = self._selectedTask
+        selected_task = self._taskListManager.selected_task
+        if selected_task is not None:
+            task = selected_task
             task.setStatus("x")
             self.taskProvider.saveTask(task)
             self._ignoreNextUpdate = True
-            self.doFilter()
             if expectAnswer:
                 await self.sendTaskList()
         else:
             await self.bot.sendMessage(chat_id=self.chatId, text="no task selected.")
 
     async def setCommand(self, messageText: str = "", expectAnswer: bool = True):
-        if self._selectedTask is not None:
-            task = self._selectedTask
+        selected_task = self._taskListManager.selected_task
+        if selected_task is not None:
+            task = selected_task
             params = messageText.split(" ")[1:]
             if len(params) < 2:
                 params[0] = "help"
                 params[1] = "me"
             await self.processSetParam(task, params[0], " ".join(params[1:]) if len(params) > 2 else params[1])
             self.taskProvider.saveTask(task)
-            # self._ignoreNextUpdate = True
+            self._ignoreNextUpdate = True
             if expectAnswer:
                 await self.sendTaskInformation(task)
         else:
@@ -252,35 +220,37 @@ class TelegramReportingService(IReportingService):
             extendedParams = " ".join(params).split(";")
             
             if len(extendedParams) == 3:
-                self._selectedTask = self.taskProvider.createDefaultTask(extendedParams[0])
-                self._selectedTask.setContext(extendedParams[1])
-                self._selectedTask.setTotalCost(TimeAmount(extendedParams[2]))
+                selected_task = self.taskProvider.createDefaultTask(extendedParams[0])
+                selected_task.setContext(extendedParams[1])
+                selected_task.setTotalCost(TimeAmount(extendedParams[2]))
             else:
-                self._selectedTask = self.taskProvider.createDefaultTask(" ".join(params))
+                self._taskListManager.selected_task = self.taskProvider.createDefaultTask(" ".join(params))
+                selected_task = self._taskListManager.selected_task
             
-            self.taskProvider.saveTask(self._selectedTask)
+            self.taskProvider.saveTask(selected_task)
             self._ignoreNextUpdate = True
-            self._lastRawList.append(self._selectedTask)
-            self.doFilter()
+            self._taskListManager.add_task(selected_task)
             if expectAnswer:
-                await self.sendTaskInformation(self._selectedTask)
+                await self.sendTaskInformation(selected_task)
         else:
             await self.bot.sendMessage(chat_id=self.chatId, text="no description provided.")
 
     async def scheduleCommand(self, messageText: str = "", expectAnswer: bool = True):
+        selected_task = self._taskListManager.selected_task
         params = messageText.split(" ")[1:]
-        if self._selectedTask is not None:
-            self.scheduling.schedule(self._selectedTask, params.pop() if len(params) > 0 else "")
-            self.taskProvider.saveTask(self._selectedTask)
+        if selected_task is not None:
+            self.scheduling.schedule(selected_task, params.pop() if len(params) > 0 else "")
+            self.taskProvider.saveTask(selected_task)
             if expectAnswer:
-                await self.sendTaskInformation(self._selectedTask)
+                await self.sendTaskInformation(selected_task)
         else:
             await self.bot.sendMessage(chat_id=self.chatId, text="no task provided.")
 
     async def workCommand(self, messageText: str = "", expectAnswer: bool = True):
+        selected_task = self._taskListManager.selected_task
         params = messageText.split(" ")[1:]
-        if self._selectedTask is not None:
-            task = self._selectedTask
+        if selected_task is not None:
+            task = selected_task
             work_units = TimeAmount(" ".join(params[0:]))
             await self.processSetParam(task, "effort_invested", str(work_units.as_pomodoros()))
             self.taskProvider.saveTask(task)
@@ -292,36 +262,7 @@ class TelegramReportingService(IReportingService):
             await self.bot.sendMessage(chat_id=self.chatId, text="no task provided.")
 
     async def statsCommand(self, messageText: str = "", expectAnswer: bool = True):
-        statsMessage = "Work done in the last 7 days:\n"
-        statsMessage += "`|    Date    | Work Done |`\n"
-        statsMessage += "`|------------|-----------|`\n"
-        totalWork : TimeAmount = TimeAmount("0")
-        for i in range(7):
-            date : TimePoint = TimePoint.today() + TimeAmount(f"-{i}d")
-            workDone : TimeAmount = self.statiticsProvider.getWorkDone(date)
-            totalWork += workDone
-            statsMessage += f"`| {date} |    {round(workDone.as_pomodoros(), 1)}    |`\n"
-        # add average work done per day
-        statsMessage += "`|------------|-----------|`\n"
-        statsMessage += f"`|   Average  |    {round(totalWork.as_pomodoros()/7, 1)}    |`\n"
-        statsMessage += "`|------------|-----------|`\n\n"
-
-        statsMessage += "Workload statistics:\n"
-        workloadStats = self.statiticsProvider.getWorkloadStats(self._lastRawList)
-        workload = workloadStats[0]
-        remEffort = workloadStats[1]
-        heuristicValue = workloadStats[2]
-        heuristicName = workloadStats[3]
-        offender = workloadStats[4]
-        offenderMax = workloadStats[5]
-
-        statsMessage += f"`current workload: {workload} per day`\n"
-        statsMessage += f"    `max Offender: '{offender}' with {offenderMax} per day`\n"
-        statsMessage += f"`total remaining effort: {remEffort}`\n"
-        statsMessage += f"`max {heuristicName}: {heuristicValue}`\n\n"
-        statsMessage += "/list - return back to the task list"
-
-        await self.bot.sendMessage(chat_id=self.chatId, text=statsMessage, parse_mode="Markdown")
+        await self.bot.sendMessage(chat_id=self.chatId, text=self._taskListManager.get_list_stats(), parse_mode="Markdown")
 
     async def snoozeCommand(self, messageText: str = "", expectAnswer: bool = True):
         params = messageText.split(" ")[1:]
@@ -371,26 +312,29 @@ class TelegramReportingService(IReportingService):
 
         # get the imported data
         self.taskProvider.importTasks(selectedFormat)
-        self._lastRawList = self.taskProvider.getTaskList()
+        self._taskListManager.update_taskList(self.taskProvider.getTaskList())
         await self.bot.sendMessage(chat_id=self.chatId, text=f"{selectedFormat} file imported", parse_mode="Markdown")
         await self.listCommand(messageText, expectAnswer)
 
     async def searchCommand(self, messageText: str = "", expectAnswer: bool = True):
-        searchResults = []
+        # getting results
         searchTerms = messageText.split(" ")[1:]
-        for task in self._lastRawList:
-            for term in searchTerms:
-                if term.lower() in task.getDescription().lower():
-                    searchResults.append(task)
-                    break
+        searchResultsManager = self._taskListManager.search_tasks(searchTerms)
+        searchResults = searchResultsManager.filtered_task_list
+        
+        # processing results
         if len(searchResults) == 1:
-            self._selectedTask = searchResults[0]
-            await self.sendTaskInformation(self._selectedTask)
+            self._taskListManager.selected_task = searchResults[0]
+            await self.sendTaskInformation(searchResults[0])
         elif len(searchResults) > 0:
-            self._lastTaskList = searchResults
-            await self.sendTaskList(False)
+            taskListString = searchResultsManager.render_task_list_str(False)
+            await self.bot.sendMessage(chat_id=self.chatId, text=taskListString)
         else:
             await self.bot.sendMessage(chat_id=self.chatId, text="No results found")
+
+    async def agendaCommand(self, messageText: str = "", expectAnswer: bool = True):
+        agenda = self._taskListManager.render_day_agenda(TimePoint.today(), self._categories)
+        await self.bot.sendMessage(chat_id=self.chatId, text=agenda)
 
     async def processMessage(self, messageText: str):
         commands : list[(str, function)] = [
@@ -413,6 +357,7 @@ class TelegramReportingService(IReportingService):
             ("/export", self.exportCommand),
             ("/import", self.importCommand),
             ("/search", self.searchCommand),
+            ("/agenda", self.agendaCommand),
         ]
 
         messageTextLines = messageText.strip().splitlines()
@@ -509,48 +454,14 @@ class TelegramReportingService(IReportingService):
             await self.bot.sendMessage(chat_id=self.chatId, text=errorMessage)
 
     async def sendTaskList(self, interactive : bool = True):
-        self._selectedTask = None
-        interactiveId = "/task_" if interactive else ""
+        self._taskListManager.clear_selected_task()
 
-        subTaskList = self._lastTaskList[self._taskListPage * self._tasksPerPage : (self._taskListPage + 1) * self._tasksPerPage]
-        subTaskListDescriptions = [(f"{interactiveId}{i+1} : {task.getDescription()}") for i, task in enumerate(subTaskList)]
-
-        taskListString = "\n".join(subTaskListDescriptions)
-        if interactive:
-            totalPages = (len(self._lastTaskList) + self._tasksPerPage - 1) // self._tasksPerPage
-            taskListString += "\n\nPage " + str(self._taskListPage + 1) + " of " + str(totalPages) + "\n"
-            taskListString += "/next - Next page\n/previous - Previous page"
-            taskListString += "\n\nselected /heuristic : " + self._heuristicList[self._selectedHeuristicIndex][0]
-            taskListString += "\nselected /filter : " + self._filterList[self._selectedFilterIndex][1].getDescription()
+        taskListString = self._taskListManager.render_task_list_str(interactive)
 
         await self.bot.sendMessage(chat_id=self.chatId, text=taskListString)
         pass
 
     async def sendTaskInformation(self, task: ITaskModel, extended : bool = False):
-        taskDescription = task.getDescription()
-        taskContext = task.getContext()
-        taskSeverity = task.getSeverity()
-        taskStartDate : TimePoint = task.getStart()
-        taskDueDate : TimePoint = task.getDue()
-        taskRemainingCost : TimeAmount = TimeAmount(f"{max(task.getTotalCost().as_pomodoros(), 0.0)}p")
-        taskEffortInvested : float = max(task.getInvestedEffort().as_pomodoros(), 0)
-        taskTotalCost = TimeAmount(f"{max(task.getTotalCost().as_pomodoros(), 0.0)+taskEffortInvested}p")
-        
-        taskInformation = f"Task: {taskDescription}\nContext: {taskContext}\nStart Date: {taskStartDate}\nDue Date: {taskDueDate}\nTotal Cost: {taskTotalCost}\nRemaining: {taskRemainingCost}\nSeverity: {taskSeverity}"
-        
-        if extended:
-            for i, heuristic in enumerate(self._heuristicList):
-                heuristicName, heuristicInstance = heuristic
-                taskInformation += f"\n{heuristicName} : " + heuristicInstance.getComment(task)
-            
-            taskInformation += f"\n\n<b>Metadata:</b><code>{self.taskProvider.getTaskMetadata(task)}</code>"
-
-        taskInformation += "\n\n/list - Return to list"
-        taskInformation += "\n/done - Mark task as done"
-        taskInformation += "\n/set [param] [value] - Set task parameter"
-        taskInformation += "\n\tparameters: description, context, start, due, severity, total\\_cost, effort\\_invested, calm"
-        taskInformation += "\n/work [work_units] - invest work units in the task"
-        taskInformation += "\n/snooze - snooze the task for 5 minutes"
-        taskInformation += "\n/info - Show extended information"
+        taskInformation = self._taskListManager.render_task_information(task, self.taskProvider, extended)
 
         await self.bot.sendMessage(chat_id=self.chatId, text=taskInformation, parse_mode="HTML")

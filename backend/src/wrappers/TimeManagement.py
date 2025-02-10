@@ -119,6 +119,8 @@ def _convert_time_string_to_miliseconds(value: str) -> int:
         modifier *= 7 * 24 * 60 * 60
     elif value.endswith("p"):
         modifier *= 25 * 60
+    elif value.endswith("s"):
+        modifier *= 1
     else: # no letter at the end, assume pomodoros
         value += "p"
         modifier *= 25 * 60
