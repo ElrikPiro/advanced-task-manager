@@ -91,6 +91,9 @@ class TimePoint:
     def as_int(self):
         return int(self.datetime_representation.timestamp() * 1e3)
     
+    def strip_time(self):
+        return TimePoint(self.datetime_representation.replace(hour=0, minute=0, second=0, microsecond=0))
+    
 
 
 
