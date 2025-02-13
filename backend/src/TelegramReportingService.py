@@ -220,7 +220,8 @@ class TelegramReportingService(IReportingService):
             extendedParams = " ".join(params).split(";")
             
             if len(extendedParams) == 3:
-                selected_task = self.taskProvider.createDefaultTask(extendedParams[0])
+                self._taskListManager.selected_task = self.taskProvider.createDefaultTask(extendedParams[0])
+                selected_task = self._taskListManager.selected_task
                 selected_task.setContext(extendedParams[1])
                 selected_task.setTotalCost(TimeAmount(extendedParams[2]))
             else:
