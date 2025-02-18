@@ -420,7 +420,8 @@ class TelegramReportingService(IReportingService):
         pass
 
     async def setTotalCostCommand(self, task: ITaskModel, value: str):
-        task.setTotalCost(value)
+        timeAmount = TimeAmount(value)
+        task.setTotalCost(timeAmount)
         pass
 
     async def setEffortInvestedCommand(self, task: ITaskModel, value: str):
