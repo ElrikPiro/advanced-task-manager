@@ -26,7 +26,7 @@ class TaskModel(ITaskModel):
         return TimePoint(datetime.datetime.fromtimestamp(self._start / 1e3))
 
     def getDue(self) -> TimePoint:
-        return TimePoint(datetime.datetime.fromtimestamp(self._due / 1e3))
+        return TimePoint(datetime.datetime.fromtimestamp(self._due / 1e3)).strip_time()
 
     def getSeverity(self) -> float:
         return self._severity
