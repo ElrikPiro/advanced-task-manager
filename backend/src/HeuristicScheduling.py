@@ -5,13 +5,14 @@ from .Interfaces.IScheduling import IScheduling
 from .Interfaces.ITaskModel import ITaskModel
 from .Interfaces.ITaskProvider import ITaskProvider
 
+
 class HeuristicScheduling(IScheduling):
-    
-    def __init__(self, pomodoroConstProvider : ITaskProvider):
+
+    def __init__(self, pomodoroConstProvider: ITaskProvider):
         self.pomodoroConstProvider = pomodoroConstProvider
 
     def schedule(self, task: ITaskModel, param: str) -> None:
-        
+
         d = task.calculateRemainingTime().as_days()
         p = float(self.pomodoroConstProvider.getTaskListAttribute("pomodoros_per_day"))
         r = task.getTotalCost().as_pomodoros()
@@ -23,5 +24,5 @@ class HeuristicScheduling(IScheduling):
             task.setDue(task.getStart() + TimeAmount(f"{optimalDayTo}d"))
             task.setSeverity(severity)
         else:
-            severity = max((d*p-r)/(p*r), 1)
+            severity = max((d * p - r) / (p * r), 1)
             task.setSeverity(severity)

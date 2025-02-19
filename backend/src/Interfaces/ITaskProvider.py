@@ -3,6 +3,7 @@ from typing import List
 
 from src.Interfaces.ITaskModel import ITaskModel
 
+
 class ITaskProvider(ABC):
 
     @abstractmethod
@@ -30,15 +31,15 @@ class ITaskProvider(ABC):
         pass
 
     @abstractmethod
-    def compare(self, listA : list[ITaskModel], listB : list[ITaskModel]) -> bool:
+    def compare(self, listA: list[ITaskModel], listB: list[ITaskModel]) -> bool:
         pass
 
     @abstractmethod
-    def exportTasks(self, selectedFormat : str) -> bytearray:
+    def exportTasks(self, selectedFormat: str) -> bytearray:
         pass
 
     @abstractmethod
-    def importTasks(self, selectedFormat : str):
+    def importTasks(self, selectedFormat: str):
         pass
 
     @abstractmethod

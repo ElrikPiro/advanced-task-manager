@@ -1,7 +1,6 @@
 from abc import ABC, abstractmethod
 from enum import Enum
-import json
-import os
+
 
 # Enumeration of files that can be read
 class FileRegistry(Enum):
@@ -11,8 +10,10 @@ class FileRegistry(Enum):
     OBSIDIAN_TASKS_MD = 4
     LAST_RECEIVED_FILE = 5
 
+
 class VaultRegistry(Enum):
     OBSIDIAN = 1
+
 
 class IFileBroker(ABC):
 

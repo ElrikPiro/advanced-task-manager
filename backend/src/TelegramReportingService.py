@@ -7,7 +7,7 @@ import threading
 import datetime
 
 from time import sleep as sleepSync
-from typing import List
+from typing import List, Coroutine, Any
 
 from .Interfaces.ITaskListManager import ITaskListManager
 from .Interfaces.IReportingService import IReportingService
@@ -18,9 +18,10 @@ from .Interfaces.IStatisticsService import IStatisticsService
 from .wrappers.interfaces.IUserCommService import IUserCommService
 from .wrappers.TimeManagement import TimeAmount, TimePoint
 
+
 class TelegramReportingService(IReportingService):
 
-    def __init__(self, bot : IUserCommService , taskProvider : ITaskProvider, scheduling : IScheduling, statiticsProvider : IStatisticsService, task_list_manager : ITaskListManager, categories : list[dict], chatId: int = 0):
+    def __init__(self, bot: IUserCommService, taskProvider: ITaskProvider, scheduling: IScheduling, statiticsProvider: IStatisticsService, task_list_manager: ITaskListManager, categories: list[dict], chatId: int = 0):
         # Private Attributes
         self.run = True
         self.bot = bot
@@ -28,17 +29,17 @@ class TelegramReportingService(IReportingService):
         self.taskProvider = taskProvider
         self.scheduling = scheduling
         self.statiticsProvider = statiticsProvider
-        
-        self.__lastModelList : List[ITaskModel] = []
+
+        self.__lastModelList: List[ITaskModel] = []
         self._updateFlag = False
-        
+
         self._taskListManager = task_list_manager
-        
+
         self._lastError = "Event loop initialized"
         self._lock = threading.Lock()
 
         self._ignoreNextUpdate = False
-        
+
         self._categories = categories
         pass
 
@@ -70,7 +71,6 @@ class TelegramReportingService(IReportingService):
                     print("stopping container")
                     self.run = False
                     break
-            
 
     async def _listenForEvents(self):
         await self.bot.initialize()
@@ -86,14 +86,13 @@ class TelegramReportingService(IReportingService):
                     self.run = False
                 finally:
                     raise e
-    
+
     def hasFilteredListChanged(self):
         filteredList = self._taskListManager.filtered_task_list
         if self.taskProvider.compare(self._taskListManager.filtered_task_list, self.__lastModelList):
             return False
         self.__lastModelList = filteredList
         return True
-        
 
     async def checkFilteredListChanges(self):
         if self.chatId != 0 and self.hasFilteredListChanged():
@@ -101,7 +100,7 @@ class TelegramReportingService(IReportingService):
             nextTask = ""
             filteredList = self._taskListManager.filtered_task_list
             if len(filteredList) != 0:
-                nextTask = f"\n\n/task_1 : {filteredList[0].getDescription()}"
+                nextTask = f"\n\n/task_1: {filteredList[0].getDescription()}"
             self._taskListManager.reset_pagination()
             if self._ignoreNextUpdate:
                 self._ignoreNextUpdate = False
@@ -117,11 +116,11 @@ class TelegramReportingService(IReportingService):
 
         # Reads every message received by the bot
         result = await self.bot.getMessageUpdates()
-            
+
         with self._lock:
-            if result == None:
+            if result is None:
                 return
-            
+
             if self.chatId == 0:
                 self.chatId = result[0]
             elif result[0] == int(self.chatId):
@@ -154,8 +153,8 @@ class TelegramReportingService(IReportingService):
 
     async def selectTaskCommand(self, messageText: str = "", expectAnswer: bool = True):
         self._taskListManager.select_task(messageText)
-        
-        selectedTask : ITaskModel = self._taskListManager.selected_task
+
+        selectedTask: ITaskModel = self._taskListManager.selected_task
         if expectAnswer:
             await self.sendTaskInformation(selectedTask)
 
@@ -218,7 +217,7 @@ class TelegramReportingService(IReportingService):
         params = messageText.split(" ")[1:]
         if len(params) > 0:
             extendedParams = " ".join(params).split(";")
-            
+
             if len(extendedParams) == 3:
                 self._taskListManager.selected_task = self.taskProvider.createDefaultTask(extendedParams[0])
                 selected_task = self._taskListManager.selected_task
@@ -227,7 +226,7 @@ class TelegramReportingService(IReportingService):
             else:
                 self._taskListManager.selected_task = self.taskProvider.createDefaultTask(" ".join(params))
                 selected_task = self._taskListManager.selected_task
-            
+
             self.taskProvider.saveTask(selected_task)
             self._ignoreNextUpdate = True
             self._taskListManager.add_task(selected_task)
@@ -276,11 +275,11 @@ class TelegramReportingService(IReportingService):
         await self.setCommand(startParams)
 
     async def exportCommand(self, messageText: str = "", expectAnswer: bool = True):
-        formatIds : dict = {
+        formatIds: dict = {
             "json": "json",
-            #TODO: "ical": "ical"
+            # TODO: "ical": "ical"
         }
-        
+
         messageArgs = messageText.split(" ")
 
         # message text contains the format of the export [json, ical]
@@ -291,15 +290,15 @@ class TelegramReportingService(IReportingService):
             selectedFormat = "json"
 
         # get the exported data
-        exportData : bytearray = self.taskProvider.exportTasks(selectedFormat)
+        exportData: bytearray = self.taskProvider.exportTasks(selectedFormat)
 
         # send the exported data
         await self.bot.sendFile(chat_id=self.chatId, data=exportData)
 
     async def importCommand(self, messageText: str = "", expectAnswer: bool = True):
-        formatIds : dict = {
+        formatIds: dict = {
             "json": "json",
-            #TODO: "ical": "ical"
+            # TODO: "ical": "ical"
         }
 
         messageArgs = messageText.split(" ")
@@ -322,7 +321,7 @@ class TelegramReportingService(IReportingService):
         searchTerms = messageText.split(" ")[1:]
         searchResultsManager = self._taskListManager.search_tasks(searchTerms)
         searchResults = searchResultsManager.filtered_task_list
-        
+
         # processing results
         if len(searchResults) == 1:
             self._taskListManager.selected_task = searchResults[0]
@@ -338,7 +337,7 @@ class TelegramReportingService(IReportingService):
         await self.bot.sendMessage(chat_id=self.chatId, text=agenda)
 
     async def processMessage(self, messageText: str):
-        commands : list[(str, function)] = [
+        commands: list[(str, Coroutine[Any, Any, None])] = [
             ("/list", self.listCommand),
             ("/next", self.nextCommand),
             ("/previous", self.previousCommand),
@@ -437,7 +436,7 @@ class TelegramReportingService(IReportingService):
 
     async def processSetParam(self, task: ITaskModel, param: str, value: str):
 
-        commands : list[(str, function)] = [
+        commands: list[(str, Coroutine[Any, Any, None])] = [
             ("description", self.setDescriptionCommand),
             ("context", self.setContextCommand),
             ("start", self.setStartCommand),
@@ -455,7 +454,7 @@ class TelegramReportingService(IReportingService):
             errorMessage = f"Invalid parameter {param}\nvalid parameters would be: description, context, start, due, severity, total_cost, effort_invested, calm"
             await self.bot.sendMessage(chat_id=self.chatId, text=errorMessage)
 
-    async def sendTaskList(self, interactive : bool = True):
+    async def sendTaskList(self, interactive: bool = True):
         self._taskListManager.clear_selected_task()
 
         taskListString = self._taskListManager.render_task_list_str(interactive)
@@ -463,7 +462,7 @@ class TelegramReportingService(IReportingService):
         await self.bot.sendMessage(chat_id=self.chatId, text=taskListString)
         pass
 
-    async def sendTaskInformation(self, task: ITaskModel, extended : bool = False):
+    async def sendTaskInformation(self, task: ITaskModel, extended: bool = False):
         taskInformation = self._taskListManager.render_task_information(task, self.taskProvider, extended)
 
         await self.bot.sendMessage(chat_id=self.chatId, text=taskInformation, parse_mode="HTML")

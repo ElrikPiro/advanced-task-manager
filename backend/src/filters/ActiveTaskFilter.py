@@ -3,37 +3,39 @@ from ..wrappers.TimeManagement import TimePoint
 from ..Interfaces.IFilter import IFilter
 from ..Interfaces.ITaskModel import ITaskModel
 
-def filter(tasks : list[ITaskModel], invert : bool) -> list:
-        retval = []
 
-        for task in tasks:
-            startTime = task.getStart().datetime_representation
-            currentTime = TimePoint.now().datetime_representation
-            status = task.getStatus()
+def filter(tasks: list[ITaskModel], invert: bool) -> list:
+    retval = []
 
-            isTaskActived = (startTime.timestamp() <= currentTime.timestamp()) ^ invert
+    for task in tasks:
+        startTime = task.getStart().datetime_representation
+        currentTime = TimePoint.now().datetime_representation
+        status = task.getStatus()
 
-            # if the task start time is before the current time, it is an active task
-            if isTaskActived and status == " ":
-                retval.append(task)
-            else:
-                continue
+        isTaskActived = (startTime.timestamp() <= currentTime.timestamp()) ^ invert
 
-        return retval
+        # if the task start time is before the current time, it is an active task
+        if isTaskActived and status == " ":
+            retval.append(task)
+        else:
+            continue
+
+    return retval
+
 
 class ActiveTaskFilter(IFilter):
 
-    def filter(self, tasks : list[ITaskModel]) -> list:
+    def filter(self, tasks: list[ITaskModel]) -> list:
         return filter(tasks, False)
-    
+
     def getDescription(self) -> str:
         return "Active tasks"
-    
+
+
 class InactiveTaskFilter(IFilter):
 
-    def filter(self, tasks : list[ITaskModel]) -> list:
+    def filter(self, tasks: list[ITaskModel]) -> list:
         return filter(tasks, True)
-    
+
     def getDescription(self) -> str:
         return "Inactive tasks"
-    

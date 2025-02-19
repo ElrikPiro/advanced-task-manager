@@ -3,6 +3,7 @@ from ..Interfaces.IHeuristic import IHeuristic
 from ..Interfaces.ITaskModel import ITaskModel
 from ..Interfaces.ITaskProvider import ITaskProvider
 
+
 class SlackHeuristic(IHeuristic):
 
     def __init__(self, pomodorosPerDayProvider: ITaskProvider, daysOffset: int = 0):
@@ -15,7 +16,7 @@ class SlackHeuristic(IHeuristic):
         retval.sort(key=lambda x: x[1], reverse=True)
         return retval
 
-    def fastEvaluate(self, task: ITaskModel, pomodorosPerDay : float) -> float:
+    def fastEvaluate(self, task: ITaskModel, pomodorosPerDay: float) -> float:
         p = pomodorosPerDay
         w = 1
         s = task.getSeverity()
@@ -24,7 +25,7 @@ class SlackHeuristic(IHeuristic):
 
         if d < 1:
             return 100
-        
+
         try:
             h = (p * w * s * r) / (p * d - r)
             return round(h, 2) if h > 0 else 100

@@ -3,18 +3,19 @@ from math import ceil
 from ..wrappers.TimeManagement import TimePoint, TimeAmount
 from ..Interfaces.ITaskModel import ITaskModel
 
+
 class TaskModel(ITaskModel):
-    def __init__(self, description: str, context: str, start: int, due: int, severity: float, totalCost: float, investedEffort: float, status: str, calm : str, index : int):
-        self._description : str = description
-        self._context : str = context
-        self._start : int = int(start)
-        self._due : int = int(due)
-        self._severity : float = float(severity)
-        self._totalCost : float = float(totalCost)
-        self._investedEffort : float = float(investedEffort)
-        self._status : str = status
-        self._calm : bool = True if calm.upper().startswith("TRUE") else False
-        self._index : int = index
+    def __init__(self, description: str, context: str, start: int, due: int, severity: float, totalCost: float, investedEffort: float, status: str, calm: str, index: int):
+        self._description: str = description
+        self._context: str = context
+        self._start: int = int(start)
+        self._due: int = int(due)
+        self._severity: float = float(severity)
+        self._totalCost: float = float(totalCost)
+        self._investedEffort: float = float(investedEffort)
+        self._status: str = status
+        self._calm: bool = True if calm.upper().startswith("TRUE") else False
+        self._index: int = index
 
     def getDescription(self) -> str:
         return f"{self._description}"
@@ -39,7 +40,7 @@ class TaskModel(ITaskModel):
 
     def getStatus(self) -> str:
         return self._status
-    
+
     def getCalm(self) -> bool:
         return self._calm
 
@@ -82,6 +83,6 @@ class TaskModel(ITaskModel):
         d = max(0, d)
         d = ceil(d)
         return TimeAmount(f"{d}d")
-    
-    def __eq__(self, other : ITaskModel):
+
+    def __eq__(self, other: ITaskModel):
         return self._index == other._index
