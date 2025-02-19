@@ -1,9 +1,9 @@
-import datetime
 from math import ceil
 from typing import List, Tuple
 from ..Interfaces.IHeuristic import IHeuristic
 from ..Interfaces.ITaskModel import ITaskModel
 from ..Interfaces.ITaskProvider import ITaskProvider
+
 
 class DaysToThresholdHeuristic(IHeuristic):
 
@@ -17,7 +17,7 @@ class DaysToThresholdHeuristic(IHeuristic):
         retval.sort(key=lambda x: x[1], reverse=True)
         return retval
 
-    def fastEvaluate(self, task: ITaskModel, pomodorosPerDay : float) -> float:
+    def fastEvaluate(self, task: ITaskModel, pomodorosPerDay: float) -> float:
         p = pomodorosPerDay
         w = 1
         s = task.getSeverity()
@@ -25,7 +25,7 @@ class DaysToThresholdHeuristic(IHeuristic):
         d = task.calculateRemainingTime().as_days()
         h = self.threshold
 
-        return d - (r * (p*s*w + h)) / (h*p)
+        return d - (r * (p * s * w + h)) / (h * p)
 
     def evaluate(self, task: ITaskModel) -> float:
         p = float(self.pomodorosPerDayProvider.getTaskListAttribute("pomodoros_per_day"))

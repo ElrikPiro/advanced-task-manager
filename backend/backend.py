@@ -1,5 +1,3 @@
-from os import getenv, _exit
-
 from src.containers.TelegramReportingServiceContainer import TelegramReportingServiceContainer
 
 if __name__ == '__main__':
@@ -11,5 +9,3 @@ if __name__ == '__main__':
     print("Exiting the program")
     service.dispose()
     exit(0)
-    
-    

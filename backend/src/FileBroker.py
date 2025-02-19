@@ -11,24 +11,24 @@ class FileBroker(IFileBroker):
             FileRegistry.STANDALONE_TASKS_JSON: {
                 "path": os.path.join(jsonPath, "tasks.json"),
                 "default": defaultTaskJson
-                },
+            },
             FileRegistry.STATISTICS_JSON: {
                 "path": os.path.join(jsonPath, "statistics.json"),
                 "default": '{}'
-                },
+            },
             FileRegistry.OBSIDIAN_TASKS_JSON: {
                 "path": os.path.join(appdata, "obsidian", "tareas.json"),
                 "default": defaultTaskJson
-                },
+            },
             FileRegistry.OBSIDIAN_TASKS_MD: {
                 "path": os.path.join(vaultPath, "ObsidianTaskProvider.md"),
                 # TODO: this file should be defined as a configuration variable
                 "default": f"# Task list{os.linesep}{os.linesep}"
-                },
+            },
             FileRegistry.LAST_RECEIVED_FILE: {
                 "path": os.path.join(jsonPath, "import.dat"),
                 "default": defaultTaskJson
-                },
+            },
         }
 
         self.vaultPaths: dict[VaultRegistry, str] = {

@@ -6,8 +6,9 @@ from ..wrappers.TimeManagement import TimePoint
 from .ITaskProvider import ITaskProvider
 from .ITaskModel import ITaskModel
 
+
 class ITaskListManager(ABC):
-    
+
     @property
     @abstractmethod
     def filtered_task_list(self) -> List[ITaskModel]:
@@ -84,5 +85,5 @@ class ITaskListManager(ABC):
         pass
 
     @abstractmethod
-    def render_day_agenda(self, date: TimePoint, categories : list[dict]) -> str:
+    def render_day_agenda(self, date: TimePoint, categories: list[dict]) -> str:
         pass

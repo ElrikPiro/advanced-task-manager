@@ -1,6 +1,7 @@
 from abc import ABC, abstractmethod
 from ..wrappers.TimeManagement import TimePoint, TimeAmount
 
+
 # Interface for TaskModel
 # Datatype contains the following fields:
 # - description: str
@@ -92,4 +93,3 @@ class ITaskModel(ABC):
     @abstractmethod
     def __eq__(self, other):
         pass
-

@@ -4,9 +4,10 @@ from ..Interfaces.ITaskModel import ITaskModel
 from ..Interfaces.ITaskProvider import ITaskProvider
 from src.wrappers.TimeManagement import TimeAmount
 
+
 class RemainingEffortHeuristic(IHeuristic):
 
-    def __init__(self, pomodorosPerDayProvider: ITaskProvider, desiredH : float):
+    def __init__(self, pomodorosPerDayProvider: ITaskProvider, desiredH: float):
         self.pomodorosPerDayProvider = pomodorosPerDayProvider
         self.desiredH = desiredH
 
@@ -19,8 +20,8 @@ class RemainingEffortHeuristic(IHeuristic):
     def evaluate(self, task: ITaskModel) -> float:
         p = float(self.pomodorosPerDayProvider.getTaskListAttribute("pomodoros_per_day"))
         return self.fastEvaluate(task, p)
-    
-    def fastEvaluate(self, task: ITaskModel, pomodorosPerDay : float) -> float:
+
+    def fastEvaluate(self, task: ITaskModel, pomodorosPerDay: float) -> float:
         p = pomodorosPerDay
         w = 1
         s = task.getSeverity()
@@ -29,7 +30,7 @@ class RemainingEffortHeuristic(IHeuristic):
 
         dr = self.desiredH
 
-        return r - ((dr * d * p) / (p*s*w + dr))
+        return r - ((dr * d * p) / (p * s * w + dr))
 
     def getComment(self, task: ITaskModel) -> str:
         remaining_effort = self.evaluate(task)

@@ -1,6 +1,5 @@
 from dependency_injector import containers, providers
 import telegram
-import os
 
 from src.TelegramTaskListManager import TelegramTaskListManager
 from src.wrappers.TelegramBotUserCommService import TelegramBotUserCommService
@@ -22,6 +21,7 @@ from src.StatisticsService import StatisticsService
 from src.FileBroker import FileBroker
 from src.filters.WorkloadAbleFilter import WorkloadAbleFilter
 
+
 class TelegramReportingServiceContainer():
 
     def __init__(self):
@@ -30,7 +30,7 @@ class TelegramReportingServiceContainer():
 
         # Configuration
         self.config.mode.from_env("APP_MODE", as_=str, required=True)
-        configMode : int = int(self.config.mode())
+        configMode: int = int(self.config.mode())
         telegramMode = configMode >= 0
         obsidianMode = configMode == 1
 
@@ -45,8 +45,9 @@ class TelegramReportingServiceContainer():
 
         ## Configuration file
         self.config.jsonConfig.from_json("config.json", required=True)
-        
-        self.container.categories : list[dict] = self.config.jsonConfig.categories()
+
+        categoriesConfigOption = self.config.jsonConfig.categories()
+        self.container.categories = list[dict](categoriesConfigOption)
 
         # External services
 
@@ -56,10 +57,10 @@ class TelegramReportingServiceContainer():
         # Data providers
         self.container.fileBroker = providers.Singleton(FileBroker, self.config.jsonPath, self.config.appdata, self.config.vaultPath)
 
-        ## User communication services
+        # User communication services
         self.container.shellUserCommService = providers.Singleton(ShellUserCommService, self.config.chatId)
         self.container.telegramUserCommService = providers.Singleton(TelegramBotUserCommService, self.container.bot, self.container.fileBroker)
-        
+
         self.container.userCommService = self.container.telegramUserCommService if telegramMode else self.container.shellUserCommService
 
         if obsidianMode:
@@ -84,9 +85,9 @@ class TelegramReportingServiceContainer():
 
         # Filters
         self.container.activeFilter = providers.Singleton(ActiveTaskFilter)
-        
+
         self.container.contextPrefixTaskFilter = providers.Factory(ContextPrefixTaskFilter, self.container.activeFilter)
-        
+
         self.container.orderedHeuristics = providers.List(
             (self.container.tomorrowSlackHeuristic(), 100.0),
             (self.container.slackHeuristic(), 10.0),
@@ -115,7 +116,7 @@ class TelegramReportingServiceContainer():
 
         # Scheduling algorithm
         self.container.heristicScheduling = providers.Singleton(HeuristicScheduling, self.container.taskProvider())
-        
+
         # Statistics service
         self.container.statisticsService = providers.Singleton(StatisticsService, self.container.fileBroker, self.container.workLoadAbleFilter, self.container.remainingEffortHeuristic(1.0), self.container.slackHeuristic)
 

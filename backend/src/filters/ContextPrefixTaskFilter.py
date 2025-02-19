@@ -1,15 +1,16 @@
 from ..Interfaces.IFilter import IFilter
 from ..Interfaces.ITaskModel import ITaskModel
 
+
 class ContextPrefixTaskFilter(IFilter):
 
-    def __init__(self, prefilter : IFilter, prefix: str):
+    def __init__(self, prefilter: IFilter, prefix: str):
         self.prefix = prefix
         self.prefilter = prefilter
         pass
 
-    def filter(self, tasks : list[ITaskModel]) -> list:
-        preTasks = self.prefilter.filter(tasks) if self.prefilter != None else tasks
+    def filter(self, tasks: list[ITaskModel]) -> list:
+        preTasks = self.prefilter.filter(tasks) if self.prefilter is not None else tasks
         retval = []
 
         for task in preTasks:
@@ -19,6 +20,6 @@ class ContextPrefixTaskFilter(IFilter):
                 continue
 
         return retval
-    
+
     def getDescription(self) -> str:
         return "Tasks with context starting with " + self.prefix
