@@ -1,5 +1,5 @@
 # Use the official Python 3.9 image as the base image
-FROM python:3.9
+FROM python:3.11
 EXPOSE 1710
 
 # Set the working directory in the container
