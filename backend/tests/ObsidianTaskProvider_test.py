@@ -1,9 +1,9 @@
 import json
 import unittest
 from unittest.mock import MagicMock
-from backend.src.taskproviders.ObsidianTaskProvider import ObsidianTaskProvider
-from backend.src.Interfaces.ITaskJsonProvider import ITaskJsonProvider
-from backend.src.Interfaces.IFileBroker import IFileBroker
+from src.taskproviders.ObsidianTaskProvider import ObsidianTaskProvider
+from src.Interfaces.ITaskJsonProvider import ITaskJsonProvider
+from src.Interfaces.IFileBroker import IFileBroker
 
 
 class TestObsidianTaskProvider(unittest.TestCase):
