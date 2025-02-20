@@ -1,8 +1,8 @@
 import unittest
 import os
 from unittest.mock import patch, mock_open
-from backend.src.FileBroker import FileBroker
-from backend.src.Interfaces.IFileBroker import FileRegistry
+from src.FileBroker import FileBroker
+from src.Interfaces.IFileBroker import FileRegistry
 
 
 class TestFileBroker(unittest.TestCase):

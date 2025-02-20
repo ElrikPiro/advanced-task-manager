@@ -1,7 +1,7 @@
 from abc import ABC, abstractmethod
 from typing import List
 
-from src.Interfaces.ITaskModel import ITaskModel
+from .ITaskModel import ITaskModel
 
 
 class ITaskProvider(ABC):
