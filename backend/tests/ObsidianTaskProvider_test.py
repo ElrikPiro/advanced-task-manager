@@ -62,7 +62,7 @@ class TestObsidianTaskProvider(unittest.TestCase):
             text = task["taskText"]
             _file = task["file"]
             _line = task["line"]
-        
+
             retval["tasks"].append({
                 "description": f"{text} @ '{_file.split(slash).pop().split(dot)[0]}:{_line}'",
                 "context": task["track"],
