@@ -11,30 +11,33 @@ from typing import List
 
 
 class ObsidianTaskProvider(ITaskProvider):
-    def __init__(self, taskJsonProvider: ITaskJsonProvider, fileBroker: IFileBroker):
+    def __init__(self, taskJsonProvider: ITaskJsonProvider, fileBroker: IFileBroker, disableThreading: bool = False):
         self.TaskJsonProvider = taskJsonProvider
         self.fileBroker = fileBroker
-        self.service = threading.Thread(target=self._serviceThread)
         self.serviceRunning = True
-        self.service.start()
         self.lastJson: dict = {}
         self.lastTaskList: List[ITaskModel] = []
         self.onTaskListUpdatedCallbacks: list[callable] = []
+        self.__disableThreading = disableThreading
+        if not self.__disableThreading:
+            self.service = threading.Thread(target=self.__serviceThread)
+            self.service.start()
 
     def dispose(self):
-        self.serviceRunning = False
-        self.service.join()
+        if not self.__disableThreading:
+            self.serviceRunning = False
+            self.service.join()
 
-    def _serviceThread(self):
+    def __serviceThread(self):
         while self.serviceRunning:
-            newTaskList = self._getTaskList()
+            newTaskList = self.__getTaskList()
             if not self.compare(self.lastTaskList, newTaskList):
                 self.lastTaskList = newTaskList
                 for callback in self.onTaskListUpdatedCallbacks:
                     callback()
             threading.Event().wait(10)
 
-    def _getTaskList(self) -> List[ITaskModel]:
+    def __getTaskList(self) -> List[ITaskModel]:
         obsidianJson: dict = self.TaskJsonProvider.getJson()
         if obsidianJson == self.lastJson:
             return self.lastTaskList
@@ -133,8 +136,8 @@ class ObsidianTaskProvider(ITaskProvider):
         return True
 
     def _exportJson(self) -> bytearray:
-        jsonData = self.TaskJsonProvider.getJson()
-        jsonStr = json.dumps(jsonData, indent=4)
+        taskList = self.__getTaskList()
+        jsonStr = self.__generateExportJson(taskList)
         return bytearray(jsonStr, "utf-8")
 
     def exportTasks(self, selectedFormat: str) -> bytearray:
@@ -146,3 +149,23 @@ class ObsidianTaskProvider(ITaskProvider):
 
     def importTasks(self, selectedFormat: str):
         raise NotImplementedError("Importing tasks is not supported for ObsidianTaskProvider")
+
+    def __generateExportJson(self, taskList: List[ITaskModel]) -> str:
+        tasks = []
+        for task in taskList:
+            taskDict = {
+                "description": task.getDescription(),
+                "context": task.getContext(),
+                "start": task.getStart().as_int(),
+                "due": task.getDue().as_int(),
+                "severity": task.getSeverity(),
+                "totalCost": task.getTotalCost().as_pomodoros(),
+                "investedEffort": task.getInvestedEffort().as_pomodoros(),
+                "status": task.getStatus(),
+                "calm": task.getCalm()
+            }
+            tasks.append(taskDict)
+        return json.dumps({
+            "tasks": tasks, 
+            "pomodoros_per_day": self.getTaskListAttribute("pomodoros_per_day")
+        }, indent=4)
