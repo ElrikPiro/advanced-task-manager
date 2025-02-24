@@ -10,3 +10,5 @@ compose-debug.yaml
 tasks.json
 import.dat
 .vscode/
+backend/build/
+backend/dist/
