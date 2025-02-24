@@ -41,6 +41,7 @@ class FileBroker(IFileBroker):
                 return file.read()
         except FileNotFoundError:
             print(f"File not found: {self.filePaths[fileRegistry]['path']}")
+            self.__createFile(fileRegistry)
             return self.filePaths[fileRegistry]["default"]
 
     def writeFileContent(self,
@@ -54,7 +55,12 @@ class FileBroker(IFileBroker):
                 return json.load(file)
         except FileNotFoundError:
             print(f"File not found: {self.filePaths[fileRegistry]['path']}")
+            self.__createFile(fileRegistry)
             return json.loads(self.filePaths[fileRegistry]["default"])
+
+    def __createFile(self, fileRegistry: FileRegistry) -> None:
+        with open(self.filePaths[fileRegistry]["path"], 'w+') as file:
+            file.write(self.filePaths[fileRegistry]["default"])
 
     def writeFileContentJson(self,
                              fileRegistry: FileRegistry,

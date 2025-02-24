@@ -24,27 +24,37 @@ from src.filters.WorkloadAbleFilter import WorkloadAbleFilter
 
 class TelegramReportingServiceContainer():
 
+    # tries to get a configuration value from the environment, if not present
+    # then it will try to get it from the json configuration file
+    def tryGetConfig(self, key: str, required: bool = False, default: str = None) -> str:
+        value = self.config.mode.from_env(key, as_=str, required=False, default=None)
+        if value is None:
+            value = self.config.jsonConfig[key]()
+        if value is None and required:
+            raise ValueError(f"Configuration value {key} is required")
+        elif value is None:
+            return default
+        return value
+
     def __init__(self):
         self.container = containers.DynamicContainer()
         self.config = providers.Configuration()
 
         # Configuration
-        self.config.mode.from_env("APP_MODE", as_=str, required=True)
-        configMode: int = int(self.config.mode())
+        self.config.jsonConfig.from_json("config.json", required=True)
+
+        # Configuration values
+        configMode: int = int(self.tryGetConfig("APP_MODE", True))
         telegramMode = configMode >= 0
         obsidianMode = configMode == 1
 
-        ## Environment variables
-        self.config.jsonPath.from_env("JSON_PATH", as_=str, required=True)
+        jsonPath = self.tryGetConfig("JSON_PATH", True)
 
-        self.config.token.from_env("TELEGRAM_BOT_TOKEN", as_=str, required=telegramMode, default="NULL_TOKEN")
-        self.config.chatId.from_env("TELEGRAM_CHAT_ID", as_=str, required=telegramMode, default="NULL_CHAT_ID")
+        token = self.tryGetConfig("TELEGRAM_BOT_TOKEN", telegramMode, default="NULL_TOKEN")
+        chatId = self.tryGetConfig("TELEGRAM_CHAT_ID", telegramMode, default="0")
 
-        self.config.appdata.from_env("APPDATA", as_=str, required=obsidianMode, default="NULL_APPDATA")
-        self.config.vaultPath.from_env("OBSIDIAN_VAULT_PATH", as_=str, required=obsidianMode, default="NULL_VAULT_PATH")
-
-        ## Configuration file
-        self.config.jsonConfig.from_json("config.json", required=True)
+        appdata = self.tryGetConfig("APPDATA", obsidianMode, default="NULL_APPDATA")
+        vaultPath = self.tryGetConfig("OBSIDIAN_VAULT_PATH", obsidianMode, default="NULL_VAULT_PATH")
 
         categoriesConfigOption = self.config.jsonConfig.categories()
         self.container.categories = list[dict](categoriesConfigOption)
@@ -52,13 +62,13 @@ class TelegramReportingServiceContainer():
         # External services
 
         ## Telegram bots
-        self.container.bot = providers.Singleton(telegram.Bot, token=self.config.token)
+        self.container.bot = providers.Singleton(telegram.Bot, token=token)
 
         # Data providers
-        self.container.fileBroker = providers.Singleton(FileBroker, self.config.jsonPath, self.config.appdata, self.config.vaultPath)
+        self.container.fileBroker = providers.Singleton(FileBroker, jsonPath, appdata, vaultPath)
 
         # User communication services
-        self.container.shellUserCommService = providers.Singleton(ShellUserCommService, self.config.chatId)
+        self.container.shellUserCommService = providers.Singleton(ShellUserCommService, chatId)
         self.container.telegramUserCommService = providers.Singleton(TelegramBotUserCommService, self.container.bot, self.container.fileBroker)
 
         self.container.userCommService = self.container.telegramUserCommService if telegramMode else self.container.shellUserCommService
@@ -124,4 +134,4 @@ class TelegramReportingServiceContainer():
         self.container.taskListManager = providers.Singleton(TelegramTaskListManager, self.container.taskProvider().getTaskList(), self.container.heuristicList, self.container.filterList, self.container.statisticsService)
 
         # Reporting service
-        self.container.telegramReportingService = providers.Singleton(TelegramReportingService, self.container.userCommService(), self.container.taskProvider(), self.container.heristicScheduling(), self.container.statisticsService(), self.container.taskListManager(), self.container.categories, self.config.chatId)
+        self.container.telegramReportingService = providers.Singleton(TelegramReportingService, self.container.userCommService(), self.container.taskProvider(), self.container.heristicScheduling(), self.container.statisticsService(), self.container.taskListManager(), self.container.categories, chatId)

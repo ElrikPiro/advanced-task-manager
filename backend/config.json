@@ -28,5 +28,11 @@
             "prefix": "outdoor",
             "description": "Outdoor dynamic tasks"
         }
-    ]
+    ],
+    "APP_MODE": -1,
+    "JSON_PATH": ".",
+    "APPDATA": ".",
+    "TELEGRAM_BOT_TOKEN": "",
+    "TELEGRAM_CHAT_ID": "0",
+    "OBSIDIAN_VAULT_PATH": ""
 }
