@@ -62,9 +62,9 @@ jobs:
 
       - name: Copy default config
         run: |
-          cp backend/config.json dist/backend/config.json
+          cp backend/config.json backend/dist/windows/config.json
 
       - uses: actions/upload-artifact@v4
         with:
           name: Task-Manager x64-windows
-          path: dist/backend/
+          path: backend/dist/windows/
