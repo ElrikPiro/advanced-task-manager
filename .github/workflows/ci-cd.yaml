@@ -63,9 +63,8 @@ jobs:
       - name: Copy default config
         run: |
           cp backend/config.json backend/dist/backend/config.json
-          pip install -r requirements.txt
 
       - uses: actions/upload-artifact@v4
         with:
           name: Task-Manager x64-windows
-          path: backend/dist/backend/ # or path/to/artifact
+          path: dist/backend/
