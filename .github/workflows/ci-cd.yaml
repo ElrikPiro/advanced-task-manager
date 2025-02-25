@@ -54,7 +54,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v2
-      
+
       - name: PyInstaller Windows
         uses: JackMcKew/pyinstaller-action-windows@main
         with:
@@ -67,4 +67,4 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: Task-Manager x64-windows
-          path: backend/dist/windows/
+          path: backend/dist/windows/backend
