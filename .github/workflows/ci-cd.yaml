@@ -55,10 +55,16 @@ jobs:
     steps:
       - uses: actions/checkout@v2
 
+      - name: Copy default config
+        run: |
+          cp requirements.txt backend/requirements.txt
+
       - name: PyInstaller Windows
         uses: JackMcKew/pyinstaller-action-windows@main
         with:
           path: backend
+          spec: backend.spec
+          requirements: requirements.txt
 
       - name: Copy default config
         run: |
