@@ -4,9 +4,25 @@
 
 Elrikpiro's Advanced Task Manager is a tool designed to help users manage and automate their tasks efficiently. It integrates with Telegram to send notifications and updates about task statuses directly to your chat. This project aims to streamline task management and improve productivity by providing a user-friendly interface and robust automation features.
 
-## Usage
+## Before starting
 
-To use Elrikpiro's Advanced Task Manager, follow these steps:
+### Configure the config.json file
+`APP_MODE` 
+- 0: single user JSON mode, which persists tasks on a single json file. 
+- 1: single user OBSIDIAN mode, which loads the tasks from the Obsidian vault. *This feature is incomplete as it depends on the DataviewJs Plugin and requires to add several scripts to your vault and leaving it running on the background.*
+- -1: single user JSON mode (debug), it will print the tasks on the console instead of sending them to Telegram. Requires interactive shell as it expects to interact with the user via stdin.
+
+In case you want to use telegram, `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID` should be replaced with your Telegram bot token and chat ID, respectively. You can obtain these values by creating a new bot using the [BotFather](https://core.telegram.org/bots#6-botfather) and sending a message to the bot to get the chat ID.
+
+## Usage (Python 3.11)
+
+run `python backend.py` in the backend folder
+
+## Usage (Win64 Binaries)
+
+unzip the archive and double click the executable, a console window will open and apply the settings contained at config.json
+
+## Usage (Docker)
 
 ### Clone this repository
 ```bash
@@ -14,15 +30,7 @@ git clone https://github.com/ElrikPiro/advanced-task-manager.git
 ```
 
 ### Configure the compose.yaml
-
-`<YOUR_TELEGRAM_BOT_TOKEN>` and `<YOUR TELEGRAM_CHAT_ID>` should be replaced with your Telegram bot token and chat ID, respectively. You can obtain these values by creating a new bot using the [BotFather](https://core.telegram.org/bots#6-botfather) and sending a message to the bot to get the chat ID.
-
 `TZ` should be replaced with your timezone. You can find a list of valid timezones [here](https://en.wikipedia.org/wiki/List_of_tz_database_time_zones).
-
-`APP_MODE` 
-- 0: single user JSON mode, which persists tasks on a single json file. 
-- 1: single user OBSIDIAN mode, which loads the tasks from the Obsidian vault. *This feature is incomplete as it depends on the DataviewJs Plugin and requires to add several scripts to your vault and leaving it running on the background.*
-- -1: single user JSON mode (debug), it will print the tasks on the console instead of sending them to Telegram. Requires interactive shell as it expects to interact with the user via stdin.
 
 Edit the `compose.yaml` file to configure the application settings:
 
@@ -40,10 +48,6 @@ services:
       dockerfile: Dockerfile
     restart: always
     environment:
-      - TELEGRAM_BOT_TOKEN=<YOUR_TELEGRAM_BOT_TOKEN>
-      - TELEGRAM_CHAT_ID=<YOUR_TELEGRAM_CHAT_ID>
-      - JSON_PATH=/app/data/data.json
-      - APP_MODE=0
       - TZ=Europe/Madrid
     volumes:
       - .:/app/data/

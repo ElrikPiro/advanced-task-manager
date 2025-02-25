@@ -6,10 +6,6 @@ services:
       dockerfile: Dockerfile
     restart: always
     environment:
-      - TELEGRAM_BOT_TOKEN=<YOUR_TELEGRAM_BOT_TOKEN>
-      - TELEGRAM_CHAT_ID=<YOUR_TELEGRAM_CHAT_ID>
-      - JSON_PATH=/app/data/data.json
-      - APP_MODE=0
       - TZ=Europe/Madrid
     volumes:
       - .:/app/data/
