@@ -37,7 +37,7 @@ class TestObsidianTaskProvider(unittest.TestCase):
                     "taskText": "Task 1",
                     "track": "track 1",
                     "starts": "1741906800000",
-                    "due": "1741824000000",
+                    "due": "1741820400000",
                     "severity": "1",
                     "total_cost": "1",
                     "effort_invested": "1",
