@@ -1,6 +1,7 @@
 import json
 import unittest
 from unittest.mock import MagicMock
+from src.wrappers.TimeManagement import TimePoint
 from src.taskproviders.ObsidianTaskProvider import ObsidianTaskProvider
 from src.Interfaces.ITaskJsonProvider import ITaskJsonProvider
 from src.Interfaces.IFileBroker import IFileBroker
@@ -37,7 +38,7 @@ class TestObsidianTaskProvider(unittest.TestCase):
                     "taskText": "Task 1",
                     "track": "track 1",
                     "starts": "1741906800000",
-                    "due": "1741820400000",
+                    "due": TimePoint.today().as_int(),
                     "severity": "1",
                     "total_cost": "1",
                     "effort_invested": "1",
