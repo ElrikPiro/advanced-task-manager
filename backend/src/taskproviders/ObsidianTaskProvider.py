@@ -59,7 +59,7 @@ class ObsidianTaskProvider(ITaskProvider):
     def getTaskListAttribute(self, string: str) -> str:
         return self.TaskJsonProvider.getJson()[string]
 
-    def saveTask(self, task: ITaskModel):
+    def _getTaskLine(self, task: ITaskModel) -> str:
         description = task.getDescription().split("@")[0].strip()
         context = task.getContext()
         start = str(task.getStart())
@@ -70,7 +70,10 @@ class ObsidianTaskProvider(ITaskProvider):
         status = task.getStatus()
         calm = "true" if task.getCalm() else "false"
 
-        taskLine = f"- [{status}] {description} [track:: {context}], [starts:: {start}], [due:: {due}], [severity:: {severity}], [remaining_cost:: {totalCost+investedEffort}], [invested:: {investedEffort}], [calm:: {calm}]\n"
+        return f"- [{status}] {description} [track:: {context}], [starts:: {start}], [due:: {due}], [severity:: {severity}], [remaining_cost:: {totalCost+investedEffort}], [invested:: {investedEffort}], [calm:: {calm}]\n"
+
+    def saveTask(self, task: ITaskModel):
+        taskLine = self._getTaskLine(task)
 
         file = ""
         lineNumber = -1
@@ -80,14 +83,16 @@ class ObsidianTaskProvider(ITaskProvider):
 
             numLines = 1
             for line in lines:
-                if line.find("- [x]") == -1:
+                if line.find("- [x]") == -1 and len(line) > 0:
                     newLines.append(line)
                     numLines += 1
             newLines.append(taskLine)
 
             # TODO: this constant must be changed to be get from a config value
-            task.setFile("ObsidianTaskProvider.md")
-            task.setLine(numLines - 1)
+            if isinstance(task, ObsidianTaskModel):
+                task.setFile("ObsidianTaskProvider.md")
+                task.setLine(numLines - 1)
+
             self.fileBroker.writeFileContent(FileRegistry.OBSIDIAN_TASKS_MD, "\n".join(newLines))
         else:
             ObsidianTask: ObsidianTaskModel = task
