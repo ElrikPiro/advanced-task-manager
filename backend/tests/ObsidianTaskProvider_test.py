@@ -1,10 +1,12 @@
 import json
 import unittest
 from unittest.mock import MagicMock
-from src.wrappers.TimeManagement import TimePoint
+from src.wrappers.TimeManagement import TimePoint, TimeAmount
 from src.taskproviders.ObsidianTaskProvider import ObsidianTaskProvider
 from src.Interfaces.ITaskJsonProvider import ITaskJsonProvider
-from src.Interfaces.IFileBroker import IFileBroker
+from src.Interfaces.IFileBroker import FileRegistry, IFileBroker, VaultRegistry
+from src.Interfaces.ITaskModel import ITaskModel
+from src.taskmodels.ObsidianTaskModel import ObsidianTaskModel
 
 
 class TestObsidianTaskProvider(unittest.TestCase):
@@ -29,6 +31,64 @@ class TestObsidianTaskProvider(unittest.TestCase):
         # Assert
         self.assertEqual(testClass.lastJson, currentTaskJson)
         self.assertEqual(retval, self.fromObsidianToGenericJsonDumps(currentTaskJson))
+        pass
+
+    def test_saveTask_WhenTaskHasNoFiledata_CleanAndSave(self):
+        # Arrange
+        task = MagicMock(spec=ITaskModel)
+        task.getDescription.return_value = "mock task @ mockFile:1"
+        task.getContext.return_value = "mockContext"
+        task.getStart.return_value = TimePoint.today()
+        task.getDue.return_value = TimePoint.today()
+        task.getSeverity.return_value = 1.0
+        task.getTotalCost.return_value = TimeAmount("1p")
+        task.getInvestedEffort.return_value = TimeAmount("0p")
+        task.getStatus.return_value = " "
+        task.getCalm.return_value = True
+
+        self.mockFileBroker.readFileContent.return_value = "- [x]\n\n- [ ] dummy"
+
+        # Act
+        testClass = self.provider
+        testClass.saveTask(task)
+
+        # Assert
+        taskLine = testClass._getTaskLine(task)
+        self.mockFileBroker.writeFileContent.assert_called_once_with(
+            FileRegistry.OBSIDIAN_TASKS_MD,
+            "\n".join(["- [ ] dummy", taskLine])
+        )
+        pass
+
+    def test_saveTask_WhenTaskHasFiledata_Overwrite(self):
+        # Arrange
+        task = MagicMock(spec=ObsidianTaskModel)
+        task.getDescription.return_value = "mock task @ mockFile:1"
+        task.getContext.return_value = "mockContext"
+        task.getStart.return_value = TimePoint.today()
+        task.getDue.return_value = TimePoint.today()
+        task.getSeverity.return_value = 1.0
+        task.getTotalCost.return_value = TimeAmount("1p")
+        task.getInvestedEffort.return_value = TimeAmount("0p")
+        task.getStatus.return_value = " "
+        task.getCalm.return_value = True
+        task.getFile.return_value = "mockFile"
+        task.getLine.return_value = 2
+
+        self.mockFileBroker.getVaultFileLines.return_value = ["- [x]", "", "- [ ] dummy"]
+
+        # Act
+        testClass = self.provider
+        testClass.saveTask(task)
+
+        # Assert
+        taskLine = testClass._getTaskLine(task)
+        self.mockFileBroker.writeVaultFileLines.assert_called_once_with(
+            VaultRegistry.OBSIDIAN,
+            "mockFile",
+            ["- [x]", "", taskLine]
+        )
+
         pass
 
     def GetCurrentTaskJson(self) -> dict:

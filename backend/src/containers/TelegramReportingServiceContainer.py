@@ -28,7 +28,7 @@ class TelegramReportingServiceContainer():
     # then it will try to get it from the json configuration file
     def tryGetConfig(self, key: str, required: bool = False, default: str = None) -> str:
         self.config.query.from_env(key, as_=str, required=False, default=None)
-        value = self.config.query()
+        value = None if self.config.query() == "None" else self.config.query()
         if value is None:
             value = self.config.jsonConfig[key]()
         if value is None and required:
