@@ -1,3 +1,5 @@
+import json
+import os
 from dependency_injector import containers, providers
 import telegram
 
@@ -37,19 +39,108 @@ class TelegramReportingServiceContainer():
             return default
         return value
 
+    def createDefaultConfig(self):
+        # create a dict with the default config for categories
+        defaultConfig = {
+            "categories": [
+                {
+                    "prefix": "alert",
+                    "description": "Alert and events"
+                },
+                {
+                    "prefix": "billable",
+                    "description": "Tasks that generate income"
+                },
+                {
+                    "prefix": "indoor",
+                    "description": "Indoor dynamic tasks"
+                },
+                {
+                    "prefix": "aux_device",
+                    "description": "Lightweight digital/analogic tasks"
+                },
+                {
+                    "prefix": "bujo",
+                    "description": "Bullet journal tasks"
+                },
+                {
+                    "prefix": "workstation",
+                    "description": "Heavyweight digital tasks"
+                },
+                {
+                    "prefix": "outdoor",
+                    "description": "Outdoor dynamic tasks"
+                }
+            ],
+        }
+
+        # ask the user for an app mode
+        appMode = None
+        while appMode not in ["-2", "-1", "0", "1"]:
+            print("Please select an app mode:")
+            print("\t-2 - Console mode (obsidian plugin)")
+            print("\t-1 - Console mode")
+            print("\t 0 - Telegram bot")
+            print("\t 1 - Obsidian plugin")
+            appMode = input("App mode: ")
+        defaultConfig["APP_MODE"] = appMode
+
+        if appMode in ["-2", "-1", "0"]:
+            # ask the user for a json path
+            jsonPath = input("Please enter the task json file directory: ")
+            while not os.path.exists(jsonPath):
+                print("The directory does not exist, using current directory")
+                jsonPath = "."
+            defaultConfig["JSON_PATH"] = jsonPath
+
+        if appMode in ["0", "1"]:
+            # ask the user for a telegram bot token
+            telegramToken = input("Please enter the telegram bot token: ")
+            defaultConfig["TELEGRAM_BOT_TOKEN"] = telegramToken
+
+            # ask the user for a telegram chat id
+            telegramChatId = input("Please enter the telegram chat id: ")
+            defaultConfig["TELEGRAM_CHAT_ID"] = telegramChatId
+
+        # if os not windows
+        if os.name != "nt":
+            # ask the user for an appdata path
+            appdata = input("Please enter the appdata directory: ")
+            while not os.path.exists(appdata):
+                print("The directory does not exist, using current directory")
+                appdata = "."
+            defaultConfig["APPDATA"] = appdata
+
+        if appMode in ["-2", "1"]:
+            # ask the user for a vault path
+            vaultPath = input("Please enter the obsidian vault directory: ")
+            while not os.path.exists(vaultPath):
+                print("The directory does not exist, using current directory")
+                vaultPath = "."
+            defaultConfig["OBSIDIAN_VAULT_PATH"] = vaultPath
+
+        # write the default config to the config.json file in disk
+        json.dump(defaultConfig, open("config.json", "w"), indent=4)
+
     def __init__(self):
         self.container = containers.DynamicContainer()
         self.config = providers.Configuration()
 
         # Configuration
-        self.config.jsonConfig.from_json("config.json", required=True)
+        try:
+            self.config.jsonConfig.from_json("config.json", required=True)
+        except Exception as e:
+            print(f"Error reading config.json: {e}")
+            print("Creating a default configuration")
+            self.createDefaultConfig()
+            self.config.jsonConfig.from_json("config.json", required=True)
 
         # Configuration values
-        configMode: int = int(self.tryGetConfig("APP_MODE", True))
-        telegramMode = configMode >= 0
-        obsidianMode = configMode == 1
+        configMode: int = int(self.tryGetConfig("APP_MODE", required=True))
+        telegramMode = configMode in [0, 1]
+        obsidianMode = configMode in [-2, 1]
 
-        jsonPath = self.tryGetConfig("JSON_PATH", True)
+        jsonPath = self.tryGetConfig("JSON_PATH", required=True)
 
         token = self.tryGetConfig("TELEGRAM_BOT_TOKEN", telegramMode, default="NULL_TOKEN")
         chatId = self.tryGetConfig("TELEGRAM_CHAT_ID", telegramMode, default="0")
