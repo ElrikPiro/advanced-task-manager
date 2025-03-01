@@ -13,3 +13,4 @@ import.dat
 backend/build/
 backend/dist/
 config.json
+.coverage
