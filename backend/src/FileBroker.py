@@ -89,6 +89,7 @@ class FileBroker(IFileBroker):
         for root, _, filenames in os.walk(self.vaultPaths[vaultRegistry]):
             for filename in filenames:
                 file_path = os.path.join(root, filename)
+                file_path = file_path[len(self.vaultPaths[vaultRegistry]):]
                 last_mod_time = os.path.getmtime(file_path)
                 files.append((file_path, last_mod_time))
         return files

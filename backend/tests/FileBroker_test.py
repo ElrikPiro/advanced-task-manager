@@ -68,9 +68,9 @@ class TestFileBroker(unittest.TestCase):
         mock_getmtime.side_effect = [1000.0, 2000.0, 3000.0]
 
         expected_files = [
-            (os.path.join(fakePath, "file1.txt"), 1000.0),
-            (os.path.join(fakePath, "file2.txt"), 2000.0),
-            (os.path.join(fakePath, "subdir", "file3.txt"), 3000.0)
+            (os.path.join("file1.txt"), 1000.0),
+            (os.path.join("file2.txt"), 2000.0),
+            (os.path.join("subdir", "file3.txt"), 3000.0)
         ]
 
         files = self.fileBroker.getVaultFiles(VaultRegistry.OBSIDIAN)
