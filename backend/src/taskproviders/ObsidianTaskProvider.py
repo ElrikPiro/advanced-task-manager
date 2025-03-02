@@ -115,7 +115,6 @@ class ObsidianTaskProvider(ITaskProvider):
         calm = "False"
 
         task = ObsidianTaskModel(description, "workstation", starts, due, 1, severity, invested, status, "", -1, calm)
-        self.saveTask(task)
         return task
 
     def getTaskMetadata(self, task: ITaskModel) -> str:
