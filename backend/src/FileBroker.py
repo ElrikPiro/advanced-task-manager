@@ -82,3 +82,13 @@ class FileBroker(IFileBroker):
         filePath = os.path.join(self.vaultPaths[vaultRegistry], relativePath)
         with open(filePath, "w") as file:
             file.writelines(lines)
+
+    # Get all files in vauld directory and subdirectories, returns a tuple with the path and the last modification time
+    def getVaultFiles(self, vaultRegistry: VaultRegistry) -> list[tuple[str, float]]:
+        files = []
+        for root, _, filenames in os.walk(self.vaultPaths[vaultRegistry]):
+            for filename in filenames:
+                file_path = os.path.join(root, filename)
+                last_mod_time = os.path.getmtime(file_path)
+                files.append((file_path, last_mod_time))
+        return files
