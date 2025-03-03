@@ -49,7 +49,8 @@ class ObsidianTaskProvider(ITaskProvider):
             try:
                 obsidianTask = ObsidianTaskModel(task["taskText"], task["track"], task["starts"], task["due"], task["severity"], task["total_cost"], task["effort_invested"], task["status"], task["file"], task["line"], task["calm"])
                 taskList.append(obsidianTask)
-            except Exception:
+            except Exception as e:
+                print(f"Error while reading task: {e}")
                 continue
         return taskList
 
