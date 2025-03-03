@@ -24,7 +24,7 @@ class TestFileBroker(unittest.TestCase):
             )
             self.assertEqual(readcontent, "data")
             filePath = os.path.join(self.jsonPath, "tasks.json")
-            mock_file.assert_called_once_with(filePath, "r")
+            mock_file.assert_called_once_with(filePath, "r", errors="ignore")
 
     def test_readFileContent_WhenFileIsNotFound_ThenCreateFileAndReturnDefaultContent(self):
         with patch.object(self.fileBroker, '_FileBroker__createFile', return_value=None):
@@ -41,7 +41,7 @@ class TestFileBroker(unittest.TestCase):
             )
             self.assertEqual(readcontent, {"key": "value"})
             filePath = os.path.join(self.jsonPath, "tasks.json")
-            mock_file.assert_called_once_with(filePath, "r")
+            mock_file.assert_called_once_with(filePath, "r", errors="ignore")
 
     def test_readFileContentJson_WhenFileIsNotFound_ThenCreateFileAndReturnDefaultContent(self):
         with patch.object(self.fileBroker, '_FileBroker__createFile', return_value=None):
@@ -82,6 +82,20 @@ class TestFileBroker(unittest.TestCase):
 
         files = self.fileBroker.getVaultFiles(VaultRegistry.OBSIDIAN)
         self.assertEqual(files, [])
+
+    @patch("builtins.open", new_callable=mock_open, read_data="line1\nline2\nline3\n")
+    def test_getVaultFileLines_WhenFileExists_ThenReturnFileLines(self, mock_file):
+        lines = self.fileBroker.getVaultFileLines(VaultRegistry.OBSIDIAN, "testfile.md")
+        self.assertEqual(lines, ["line1\n", "line2\n", "line3\n"])
+        filePath = os.path.join(self.vaultPath, "testfile.md")
+        mock_file.assert_called_once_with(filePath, "r", errors="ignore")
+
+    @patch("builtins.open", side_effect=FileNotFoundError)
+    def test_getVaultFileLines_WhenFileDoesNotExist_ThenRaiseFileNotFoundError(self, mock_file):
+        with self.assertRaises(FileNotFoundError):
+            self.fileBroker.getVaultFileLines(VaultRegistry.OBSIDIAN, "nonexistentfile.md")
+        filePath = os.path.join(self.vaultPath, "nonexistentfile.md")
+        mock_file.assert_called_once_with(filePath, "r", errors="ignore")
 
 
 if __name__ == "__main__":
