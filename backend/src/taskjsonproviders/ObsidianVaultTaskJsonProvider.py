@@ -76,14 +76,14 @@ class ObsidianVaultTaskJsonProvider(ITaskJsonProvider):
                 value = splittedLine[-1].strip()
                 header[key] = value
         return header
-    
+
     def __getFileTaskLines(self, file: list[str], fileHeader: dict) -> list[(int, str)]:
         taskLines = []
         for i in range(len(file)):
             if file[i].strip().startswith("- [ ]"):
                 taskLines.append((i, file[i]))
         return taskLines
-        
+
     def __getDefaultTaskDict(self) -> dict:
         return {
             "taskText": "",
@@ -142,5 +142,3 @@ class ObsidianVaultTaskJsonProvider(ITaskJsonProvider):
             pass
 
         return taskDict
-
-
