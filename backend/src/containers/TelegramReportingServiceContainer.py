@@ -3,6 +3,7 @@ import os
 from dependency_injector import containers, providers
 import telegram
 
+from src.taskjsonproviders.ObsidianVaultTaskJsonProvider import ObsidianVaultTaskJsonProvider
 from src.TelegramTaskListManager import TelegramTaskListManager
 from src.wrappers.TelegramBotUserCommService import TelegramBotUserCommService
 from src.wrappers.ShellUserCommService import ShellUserCommService
