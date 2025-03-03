@@ -23,6 +23,7 @@ class ObsidianVaultTaskJsonProvider(ITaskJsonProvider):
         if mtime <= self._lastMtime:
             return self._lastJson
 
+        self._lastJson = {"tasks": [], "pomodoros_per_day": "2"}
         # get a list for all files that have been modified since the last check
         modifiedFiles = vaultFiles
 
