@@ -135,7 +135,7 @@ class ObsidianVaultTaskJsonProvider(ITaskJsonProvider):
             taskDict["starts"] = str(TimePoint.from_string(taskDict["starts"]).as_int())
             taskDict["due"] = str(TimePoint.from_string(taskDict["due"]).as_int())
             taskDict["valid"] = "True" if taskDict.get("track") is not None else "False"
-            taskDict["total_cost"] = taskDict["remaining_cost"]
+            taskDict["total_cost"] = str(float(taskDict["remaining_cost"]) - float(taskDict["invested"]))
             taskDict["effort_invested"] = taskDict["invested"]
         except Exception:
             taskDict["valid"] = "False"

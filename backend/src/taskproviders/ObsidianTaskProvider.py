@@ -58,7 +58,10 @@ class ObsidianTaskProvider(ITaskProvider):
         return self.lastTaskList
 
     def getTaskListAttribute(self, string: str) -> str:
-        return self.TaskJsonProvider.getJson()[string]
+        try:
+            return self.lastJson[string]
+        except Exception:
+            return self.TaskJsonProvider.getJson()[string]
 
     def _getTaskLine(self, task: ITaskModel) -> str:
         description = task.getDescription().split("@")[0].strip()

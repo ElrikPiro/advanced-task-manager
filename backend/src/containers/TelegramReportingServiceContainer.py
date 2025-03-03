@@ -13,7 +13,6 @@ from src.HeuristicScheduling import HeuristicScheduling
 from src.filters.ActiveTaskFilter import ActiveTaskFilter
 from src.TelegramReportingService import TelegramReportingService
 from src.taskproviders.ObsidianTaskProvider import ObsidianTaskProvider
-from src.taskjsonproviders.ObsidianDataviewTaskJsonProvider import ObsidianDataviewTaskJsonProvider
 from src.heuristics.SlackHeuristic import SlackHeuristic
 from src.heuristics.RemainingEffortHeuristic import RemainingEffortHeuristic
 from src.filters.ContextPrefixTaskFilter import ContextPrefixTaskFilter
@@ -167,7 +166,7 @@ class TelegramReportingServiceContainer():
         self.container.userCommService = self.container.telegramUserCommService if telegramMode else self.container.shellUserCommService
 
         if obsidianMode:
-            self.container.taskJsonProvider = providers.Singleton(ObsidianDataviewTaskJsonProvider, self.container.fileBroker)
+            self.container.taskJsonProvider = providers.Singleton(ObsidianVaultTaskJsonProvider, self.container.fileBroker)
             self.container.taskProvider = providers.Singleton(ObsidianTaskProvider, self.container.taskJsonProvider, self.container.fileBroker)
         else:
             self.container.taskJsonProvider = providers.Singleton(TaskJsonProvider, self.container.fileBroker)
