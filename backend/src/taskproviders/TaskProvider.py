@@ -83,7 +83,6 @@ class TaskProvider(ITaskProvider):
 
         task = self.createTaskFromDict(default_task, len(self.dict_task_list["tasks"]))
         self.dict_task_list["tasks"].append(default_task)
-        self.saveTask(task)
 
         return task
 

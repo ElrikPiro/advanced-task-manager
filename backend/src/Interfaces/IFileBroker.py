@@ -40,3 +40,7 @@ class IFileBroker(ABC):
     @abstractmethod
     def writeVaultFileLines(self, vaultRegistry: VaultRegistry, relativePath: str, lines: list[str]) -> None:
         pass
+
+    @abstractmethod
+    def getVaultFiles(self, vaultRegistry: VaultRegistry) -> list[tuple[str, float]]:
+        pass

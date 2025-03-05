@@ -49,7 +49,8 @@ class ObsidianTaskProvider(ITaskProvider):
             try:
                 obsidianTask = ObsidianTaskModel(task["taskText"], task["track"], task["starts"], task["due"], task["severity"], task["total_cost"], task["effort_invested"], task["status"], task["file"], task["line"], task["calm"])
                 taskList.append(obsidianTask)
-            except Exception:
+            except Exception as e:
+                print(f"Error while reading task: {e}")
                 continue
         return taskList
 
@@ -57,7 +58,10 @@ class ObsidianTaskProvider(ITaskProvider):
         return self.lastTaskList
 
     def getTaskListAttribute(self, string: str) -> str:
-        return self.TaskJsonProvider.getJson()[string]
+        try:
+            return self.lastJson[string]
+        except Exception:
+            return self.TaskJsonProvider.getJson()[string]
 
     def _getTaskLine(self, task: ITaskModel) -> str:
         description = task.getDescription().split("@")[0].strip()
@@ -115,7 +119,6 @@ class ObsidianTaskProvider(ITaskProvider):
         calm = "False"
 
         task = ObsidianTaskModel(description, "workstation", starts, due, 1, severity, invested, status, "", -1, calm)
-        self.saveTask(task)
         return task
 
     def getTaskMetadata(self, task: ITaskModel) -> str:

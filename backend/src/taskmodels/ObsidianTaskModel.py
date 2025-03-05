@@ -12,7 +12,7 @@ class ObsidianTaskModel(TaskModel):
         self._totalCost: float = float(totalCost)
         self._investedEffort: float = float(investedEffort)
         self._status: str = status
-        self._file: str = file
+        self._file: str = "/".join(file.split("\\"))
         self._line: int = int(line)
         self._calm: bool = True if calm.upper().startswith("TRUE") else False
 
@@ -33,7 +33,7 @@ class ObsidianTaskModel(TaskModel):
         return self._line
 
     def setFile(self, file: str):
-        self._file = file
+        self._file = "/".join(file.split("\\"))
 
     def setLine(self, line: int):
         self._line = line

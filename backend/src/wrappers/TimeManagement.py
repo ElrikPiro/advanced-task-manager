@@ -90,7 +90,10 @@ class TimePoint:
 
     @staticmethod
     def from_string(string: str):
-        return TimePoint(datetime.datetime.strptime(string, "%Y-%m-%dT%H:%M"))
+        try:
+            return TimePoint(datetime.datetime.strptime(string, "%Y-%m-%dT%H:%M"))
+        except ValueError:
+            return TimePoint(datetime.datetime.strptime(string, "%Y-%m-%d"))
 
     def as_int(self):
         return int(self.datetime_representation.timestamp() * 1e3)

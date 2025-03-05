@@ -1,0 +1,84 @@
+import unittest
+from src.taskmodels.ObsidianTaskModel import ObsidianTaskModel
+
+
+class TestObsidianTaskModel(unittest.TestCase):
+
+    def setUp(self):
+        self.task = ObsidianTaskModel(
+            description="Test Task",
+            context="Test Context",
+            start=1,
+            due=2,
+            severity=3.0,
+            totalCost=4.0,
+            investedEffort=5.0,
+            status="Pending",
+            file="test_file.md",
+            line=10,
+            calm="True"
+        )
+
+    def test_getDescription(self):
+        expected_description = "Test Task @ 'test_file:10'"
+        self.assertEqual(self.task.getDescription(), expected_description)
+
+    def test_getDescription_withLinuxSubdirectory(self):
+        self.task.setFile("subdirectory/test_file.md")
+        expected_description = "Test Task @ 'test_file:10'"
+        self.assertEqual(self.task.getDescription(), expected_description)
+
+    def test_getDescription_withWindowsSubdirectory(self):
+        self.task.setFile("subdirectory\\test_file.md")
+        expected_description = "Test Task @ 'test_file:10'"
+        self.assertEqual(self.task.getDescription(), expected_description)
+
+    def test_getFile(self):
+        self.assertEqual(self.task.getFile(), "test_file.md")
+
+    def test_getLine(self):
+        self.assertEqual(self.task.getLine(), 10)
+
+    def test_setFile(self):
+        self.task.setFile("new_file.md")
+        self.assertEqual(self.task.getFile(), "new_file.md")
+
+    def test_setLine(self):
+        self.task.setLine(20)
+        self.assertEqual(self.task.getLine(), 20)
+
+    def test_eq(self):
+        other_task = ObsidianTaskModel(
+            description="Test Task",
+            context="Test Context",
+            start=1,
+            due=2,
+            severity=3.0,
+            totalCost=4.0,
+            investedEffort=5.0,
+            status="Pending",
+            file="test_file.md",
+            line=10,
+            calm="True"
+        )
+        self.assertTrue(self.task == other_task)
+
+    def test_not_eq(self):
+        other_task = ObsidianTaskModel(
+            description="Different Task",
+            context="Different Context",
+            start=1,
+            due=2,
+            severity=3.0,
+            totalCost=4.0,
+            investedEffort=5.0,
+            status="Pending",
+            file="test_file.md",
+            line=10,
+            calm="True"
+        )
+        self.assertFalse(self.task == other_task)
+
+
+if __name__ == '__main__':
+    unittest.main()

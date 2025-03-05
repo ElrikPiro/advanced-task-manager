@@ -37,7 +37,7 @@ class FileBroker(IFileBroker):
 
     def readFileContent(self, fileRegistry: FileRegistry) -> str:
         try:
-            with open(self.filePaths[fileRegistry]["path"], "r") as file:
+            with open(self.filePaths[fileRegistry]["path"], "r", errors="ignore") as file:
                 return file.read()
         except FileNotFoundError:
             print(f"File not found: {self.filePaths[fileRegistry]['path']}")
@@ -51,7 +51,7 @@ class FileBroker(IFileBroker):
 
     def readFileContentJson(self, fileRegistry: FileRegistry) -> dict:
         try:
-            with open(self.filePaths[fileRegistry]["path"], "r") as file:
+            with open(self.filePaths[fileRegistry]["path"], "r", errors="ignore") as file:
                 return json.load(file)
         except FileNotFoundError:
             print(f"File not found: {self.filePaths[fileRegistry]['path']}")
@@ -72,7 +72,7 @@ class FileBroker(IFileBroker):
                           vaultRegistry: VaultRegistry,
                           relativePath: str) -> list[str]:
         filePath = os.path.join(self.vaultPaths[vaultRegistry], relativePath)
-        with open(filePath, "r") as file:
+        with open(filePath, "r", errors="ignore") as file:
             return file.readlines()
 
     def writeVaultFileLines(self,
@@ -82,3 +82,14 @@ class FileBroker(IFileBroker):
         filePath = os.path.join(self.vaultPaths[vaultRegistry], relativePath)
         with open(filePath, "w") as file:
             file.writelines(lines)
+
+    # Get all files in vauld directory and subdirectories, returns a tuple with the path and the last modification time
+    def getVaultFiles(self, vaultRegistry: VaultRegistry) -> list[tuple[str, float]]:
+        files = []
+        for root, _, filenames in os.walk(self.vaultPaths[vaultRegistry]):
+            for filename in filenames:
+                full_file_path = os.path.join(root, filename)
+                file_path = full_file_path[len(self.vaultPaths[vaultRegistry]):]
+                last_mod_time = os.path.getmtime(full_file_path)
+                files.append((file_path, last_mod_time))
+        return files
