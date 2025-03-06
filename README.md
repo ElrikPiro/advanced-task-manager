@@ -7,12 +7,37 @@ Elrikpiro's Advanced Task Manager is a tool designed to help users manage and au
 ## Before starting
 
 ### Configure the config.json file
-`APP_MODE` 
-- 0: single user JSON mode, which persists tasks on a single json file. 
-- 1: single user OBSIDIAN mode, which loads the tasks from the Obsidian vault. *This feature is incomplete as it depends on the DataviewJs Plugin and requires to add several scripts to your vault and leaving it running on the background.*
-- -1: single user JSON mode (debug), it will print the tasks on the console instead of sending them to Telegram. Requires interactive shell as it expects to interact with the user via stdin.
+The first time the application is running it will ask you a few questions about your preferences:
 
-In case you want to use telegram, `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID` should be replaced with your Telegram bot token and chat ID, respectively. You can obtain these values by creating a new bot using the [BotFather](https://core.telegram.org/bots#6-botfather) and sending a message to the bot to get the chat ID.
+#### App Mode
+
+**JSON file** : The application will save your tasks in a single JSON file, this is the most simple and easy to configure.
+**Markdown vault** : The application will scan a given directory and subdirectories for markdown files and query for tasks in them. This feature is still experimental.
+**cmd** : Means that the application will interact with the user by using a command console.
+**telegram** : Means that the application will interact with the user by using a telegram bot. (Bot credentials should be provided)
+
+Note: by now Markdown vault mode will only show tasks that have the following strings that start with '- [ ]' and contain '[track:: (category)]', '[start:: (date in YYYY-MM-DD format)]' and '[due:: (date in YYYY-MM-DD format)]'. It is projected to add some configurability on these matters to ease up it's use.
+
+#### Data files directory
+
+It will ask you for a directory to save your data files, uses the current directory by default.
+
+#### Telegram credentials
+
+If a telegram mode is selected, it will ask for a telegram bot token, if you don't know how, please check the section `Getting Ready>Obtain your bot token` from this site: https://core.telegram.org/bots/tutorial.
+
+It will also ask you for a telegram chat Id, you can get it by following this tutorial: https://www.wikihow.com/Know-Chat-ID-on-Telegram-on-Android
+
+#### Markdown vault directory
+
+If a Markdown vault mode is selected, the application will need a directory (and subdirectory) to scan markdown (.md) files to. 
+
+> [!note]
+> Several markdown editors like Logseq or Obsidian allow users to create templates that combined with this functionability, would create a consistent TODO-list for tasks with any given periodicity.
+
+#### Finally
+
+A file called `config.json` will be created with a basic set of task categories/contexts, you can modify this file to reconfigure your task manager or delete it so the application will prompt you again on the next start.
 
 ## Usage (Python 3.11)
 
@@ -34,9 +59,14 @@ git clone https://github.com/ElrikPiro/advanced-task-manager.git
 
 Edit the `compose.yaml` file to configure the application settings:
 
+### Configure your config.json
+
+Use the tutorial above or modify the example.
+
 #### Examples
 
 ##### Single User JSON example
+compose.yaml
 ```yaml
 version: '3.8'
 
@@ -53,6 +83,45 @@ services:
       - .:/app/data/
 ```
 
+config.json
+```json
+{
+    "categories": [
+        {
+            "prefix": "alert",
+            "description": "Alert and events"
+        },
+        {
+            "prefix": "billable",
+            "description": "Tasks that generate income"
+        },
+        {
+            "prefix": "indoor",
+            "description": "Indoor dynamic tasks"
+        },
+        {
+            "prefix": "aux_device",
+            "description": "Lightweight digital/analogic tasks"
+        },
+        {
+            "prefix": "bujo",
+            "description": "Bullet journal tasks"
+        },
+        {
+            "prefix": "workstation",
+            "description": "Heavyweight digital tasks"
+        },
+        {
+            "prefix": "outdoor",
+            "description": "Outdoor dynamic tasks"
+        }
+    ],
+    "APP_MODE": 3,
+    "JSON_PATH": ".",
+    "TELEGRAM_BOT_TOKEN": "<Your telegram bot token>",
+    "TELEGRAM_CHAT_ID": "<Your telegram user id>",
+}
+```
 
 ### Build the Docker image
 ```bash
