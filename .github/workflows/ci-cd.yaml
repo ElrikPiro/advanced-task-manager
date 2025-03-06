@@ -66,10 +66,6 @@ jobs:
           spec: backend.spec
           requirements: requirements.txt
 
-      - name: Copy default config
-        run: |
-          cp backend/config.json backend/dist/windows/backend/config.json
-
       - uses: actions/upload-artifact@v4
         with:
           name: Task-Manager x64-windows
