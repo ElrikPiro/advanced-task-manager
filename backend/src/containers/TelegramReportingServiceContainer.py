@@ -76,24 +76,23 @@ class TelegramReportingServiceContainer():
 
         # ask the user for an app mode
         appMode = None
-        while appMode not in ["-2", "-1", "0", "1"]:
+        while appMode not in ["1", "2", "3", "4"]:
             print("Please select an app mode:")
-            print("\t-2 - Console mode (obsidian plugin)")
-            print("\t-1 - Console mode")
-            print("\t 0 - Telegram bot")
-            print("\t 1 - Obsidian plugin")
+            print("\t1 - Obsidian (cmd)")
+            print("\t2 - JSON file (cmd)")
+            print("\t3 - JSON file (telegram)")
+            print("\t4 - Obsidian (telegram)")
             appMode = input("App mode: ")
         defaultConfig["APP_MODE"] = appMode
 
-        if appMode in ["-2", "-1", "0"]:
-            # ask the user for a json path
-            jsonPath = input("Please enter the task json file directory: ")
-            while not os.path.exists(jsonPath):
-                print("The directory does not exist, using current directory")
-                jsonPath = "."
-            defaultConfig["JSON_PATH"] = jsonPath
+        # ask the user for a json path
+        jsonPath = input("Please enter the directory for saving data files: ")
+        while not os.path.exists(jsonPath):
+            print("That directory does not exist, using current directory")
+            jsonPath = "."
+        defaultConfig["JSON_PATH"] = jsonPath
 
-        if appMode in ["0", "1"]:
+        if appMode in ["3", "4"]:
             # ask the user for a telegram bot token
             telegramToken = input("Please enter the telegram bot token: ")
             defaultConfig["TELEGRAM_BOT_TOKEN"] = telegramToken
@@ -104,16 +103,12 @@ class TelegramReportingServiceContainer():
 
         # if os not windows
         if os.name != "nt":
-            # ask the user for an appdata path
-            appdata = input("Please enter the appdata directory: ")
-            while not os.path.exists(appdata):
-                print("The directory does not exist, using current directory")
-                appdata = "."
-            defaultConfig["APPDATA"] = appdata
+            # we keeping this for legacy reasons
+            defaultConfig["APPDATA"] = jsonPath
 
-        if appMode in ["-2", "1"]:
+        if appMode in ["1", "4"]:
             # ask the user for a vault path
-            vaultPath = input("Please enter the obsidian vault directory: ")
+            vaultPath = input("Please enter the markdown vault directory: ")
             while not os.path.exists(vaultPath):
                 print("The directory does not exist, using current directory")
                 vaultPath = "."
@@ -137,8 +132,8 @@ class TelegramReportingServiceContainer():
 
         # Configuration values
         configMode: int = int(self.tryGetConfig("APP_MODE", required=True))
-        telegramMode = configMode in [0, 1]
-        obsidianMode = configMode in [-2, 1]
+        telegramMode = configMode in [3, 4]
+        obsidianMode = configMode in [1, 4]
 
         jsonPath = self.tryGetConfig("JSON_PATH", required=True)
 
