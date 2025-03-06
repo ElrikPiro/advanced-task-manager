@@ -103,16 +103,12 @@ class TelegramReportingServiceContainer():
 
         # if os not windows
         if os.name != "nt":
-            # ask the user for an appdata path
-            appdata = input("Please enter the appdata directory: ")
-            while not os.path.exists(appdata):
-                print("The directory does not exist, using current directory")
-                appdata = "."
-            defaultConfig["APPDATA"] = appdata
+            # we keeping this for legacy reasons
+            defaultConfig["APPDATA"] = jsonPath
 
         if appMode in ["1", "4"]:
             # ask the user for a vault path
-            vaultPath = input("Please enter the obsidian vault directory: ")
+            vaultPath = input("Please enter the markdown vault directory: ")
             while not os.path.exists(vaultPath):
                 print("The directory does not exist, using current directory")
                 vaultPath = "."
