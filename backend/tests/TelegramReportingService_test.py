@@ -49,7 +49,7 @@ class TestTelegramReportingService(unittest.TestCase):
 
         # Assert
         self.bot.sendMessage.assert_called_once_with(
-            chat_id=123456789, 
+            chat_id=123456789,
             text="Invalid project command"
         )
 
@@ -64,7 +64,7 @@ class TestTelegramReportingService(unittest.TestCase):
         # Assert
         self.projectManager.process_command.assert_called_once_with("list", [])
         self.bot.sendMessage.assert_called_once_with(
-            chat_id=123456789, 
+            chat_id=123456789,
             text="Project list response"
         )
 
@@ -79,7 +79,7 @@ class TestTelegramReportingService(unittest.TestCase):
         # Assert
         self.projectManager.process_command.assert_called_once_with("cat", ["test_project"])
         self.bot.sendMessage.assert_called_once_with(
-            chat_id=123456789, 
+            chat_id=123456789,
             text="Project created"
         )
 
