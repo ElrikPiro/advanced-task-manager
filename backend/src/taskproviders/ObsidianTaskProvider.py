@@ -103,8 +103,12 @@ class ObsidianTaskProvider(ITaskProvider):
             file = ObsidianTask.getFile()
             lineNumber = ObsidianTask.getLine()
             fileLines = self.fileBroker.getVaultFileLines(VaultRegistry.OBSIDIAN, file)
-            lineOfInterest = fileLines[lineNumber]
-            fileLines[lineNumber] = lineOfInterest.split("- [")[0] + taskLine
+            if lineNumber >= len(fileLines):
+                lineNumber = len(fileLines)
+                fileLines.append(taskLine)
+            else:
+                lineOfInterest = fileLines[lineNumber]
+                fileLines[lineNumber] = lineOfInterest.split("- [")[0] + taskLine
             self.fileBroker.writeVaultFileLines(VaultRegistry.OBSIDIAN, file, fileLines)
 
     def createDefaultTask(self, description: str):

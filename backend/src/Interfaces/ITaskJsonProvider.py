@@ -2,6 +2,12 @@
 
 from abc import ABC, abstractmethod
 
+VALID_PROJECT_STATUS = [
+    "open",
+    "closed",
+    "on-hold",
+]
+
 
 class ITaskJsonProvider(ABC):
 

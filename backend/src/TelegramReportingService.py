@@ -1,5 +1,5 @@
 """
-TelegramReportingService.py
+TelegramReportingService
 """
 
 import asyncio
@@ -9,6 +9,7 @@ import datetime
 from time import sleep as sleepSync
 from typing import List, Coroutine, Any
 
+from .Interfaces.IProjectManager import IProjectManager, ProjectCommands
 from .Interfaces.ITaskListManager import ITaskListManager
 from .Interfaces.IReportingService import IReportingService
 from .Interfaces.ITaskProvider import ITaskProvider
@@ -21,7 +22,7 @@ from .wrappers.TimeManagement import TimeAmount, TimePoint
 
 class TelegramReportingService(IReportingService):
 
-    def __init__(self, bot: IUserCommService, taskProvider: ITaskProvider, scheduling: IScheduling, statiticsProvider: IStatisticsService, task_list_manager: ITaskListManager, categories: list[dict], chatId: int = 0):
+    def __init__(self, bot: IUserCommService, taskProvider: ITaskProvider, scheduling: IScheduling, statiticsProvider: IStatisticsService, task_list_manager: ITaskListManager, categories: list[dict], projectManager: IProjectManager, chatId: int = 0):
         # Private Attributes
         self.run = True
         self.bot = bot
@@ -29,6 +30,7 @@ class TelegramReportingService(IReportingService):
         self.taskProvider = taskProvider
         self.scheduling = scheduling
         self.statiticsProvider = statiticsProvider
+        self.__projectManager = projectManager
 
         self.__lastModelList: List[ITaskModel] = []
         self._updateFlag = False
@@ -336,6 +338,21 @@ class TelegramReportingService(IReportingService):
         agenda = self._taskListManager.render_day_agenda(TimePoint.today(), self._categories)
         await self.bot.sendMessage(chat_id=self.chatId, text=agenda)
 
+    async def projectCommand(self, messageText: str = "", expectAnswer: bool = True):
+        SUPPORTED_COMMANDS = ProjectCommands.values()
+        messageArgs = messageText.split(" ")
+        if len(messageArgs) < 2:
+            await self.bot.sendMessage(chat_id=self.chatId, text="No project command provided")
+            return
+
+        command = messageArgs[1]
+        if command not in SUPPORTED_COMMANDS:
+            await self.bot.sendMessage(chat_id=self.chatId, text="Invalid project command")
+            return
+
+        response = self.__projectManager.process_command(command, messageArgs[2:])
+        await self.bot.sendMessage(chat_id=self.chatId, text=response)
+
     async def processMessage(self, messageText: str):
         commands: list[(str, Coroutine[Any, Any, None])] = [
             ("/list", self.listCommand),
@@ -358,6 +375,7 @@ class TelegramReportingService(IReportingService):
             ("/import", self.importCommand),
             ("/search", self.searchCommand),
             ("/agenda", self.agendaCommand),
+            ("/project", self.projectCommand)
         ]
 
         messageTextLines = messageText.strip().splitlines()

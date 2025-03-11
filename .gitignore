@@ -14,5 +14,5 @@ backend/build/
 backend/dist/
 config.json
 .coverage
-backend/tests/obsidianSanity_test.py
+backend/tests/private/*
 .venv/

@@ -91,6 +91,35 @@ class TestObsidianTaskProvider(unittest.TestCase):
 
         pass
 
+    def test_saveTask_whenTryingToWriteToNonExistentLine_addsTaskToTheEnd(self):
+        # Arrange
+        task = MagicMock(spec=ObsidianTaskModel)
+        task.getDescription.return_value = "mock task @ mockFile:1"
+        task.getContext.return_value = "mockContext"
+        task.getStart.return_value = TimePoint.today()
+        task.getDue.return_value = TimePoint.today()
+        task.getSeverity.return_value = 1.0
+        task.getTotalCost.return_value = TimeAmount("1p")
+        task.getInvestedEffort.return_value = TimeAmount("0p")
+        task.getStatus.return_value = " "
+        task.getCalm.return_value = True
+        task.getFile.return_value = "mockFile"
+        task.getLine.return_value = 10  # Line number beyond file content length
+
+        self.mockFileBroker.getVaultFileLines.return_value = ["- [x]", "", "- [ ] dummy"]  # Only 3 lines in file
+
+        # Act
+        testClass = self.provider
+        testClass.saveTask(task)
+
+        # Assert
+        taskLine = testClass._getTaskLine(task)
+        self.mockFileBroker.writeVaultFileLines.assert_called_once_with(
+            VaultRegistry.OBSIDIAN,
+            "mockFile",
+            ["- [x]", "", "- [ ] dummy", taskLine]  # Task added at the end
+        )
+
     def GetCurrentTaskJson(self) -> dict:
         return {
             "tasks": [
