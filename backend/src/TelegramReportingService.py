@@ -1,5 +1,5 @@
 """
-TelegramReportingService.py
+TelegramReportingService
 """
 
 import asyncio
