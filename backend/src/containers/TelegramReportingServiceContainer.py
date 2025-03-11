@@ -22,6 +22,7 @@ from src.heuristics.DaysToThresholdHeuristic import DaysToThresholdHeuristic
 from src.StatisticsService import StatisticsService
 from src.FileBroker import FileBroker
 from src.filters.WorkloadAbleFilter import WorkloadAbleFilter
+from src.ProjectManager import JsonProjectManager, ObsidianProjectManager
 
 
 class TelegramReportingServiceContainer():
@@ -220,5 +221,11 @@ class TelegramReportingServiceContainer():
         # Task Manager
         self.container.taskListManager = providers.Singleton(TelegramTaskListManager, self.container.taskProvider().getTaskList(), self.container.heuristicList, self.container.filterList, self.container.statisticsService)
 
+        # Project Manager
+        if obsidianMode:
+            self.container.projectManager = providers.Singleton(ObsidianProjectManager, self.container.taskProvider, self.container.fileBroker)
+        else:
+            self.container.projectManager = providers.Singleton(JsonProjectManager, self.container.taskJsonProvider)
+
         # Reporting service
-        self.container.telegramReportingService = providers.Singleton(TelegramReportingService, self.container.userCommService(), self.container.taskProvider(), self.container.heristicScheduling(), self.container.statisticsService(), self.container.taskListManager(), self.container.categories, chatId)
+        self.container.telegramReportingService = providers.Singleton(TelegramReportingService, self.container.userCommService(), self.container.taskProvider(), self.container.heristicScheduling(), self.container.statisticsService(), self.container.taskListManager(), self.container.categories, self.container.projectManager, chatId)

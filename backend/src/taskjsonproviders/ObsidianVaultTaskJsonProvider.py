@@ -1,12 +1,6 @@
 from ..wrappers.TimeManagement import TimePoint
-from ..Interfaces.ITaskJsonProvider import ITaskJsonProvider
+from ..Interfaces.ITaskJsonProvider import ITaskJsonProvider, VALID_PROJECT_STATUS
 from ..Interfaces.IFileBroker import IFileBroker, VaultRegistry
-
-VALID_PROJECT_STATUS = [
-    "open",
-    "closed",
-    "on-hold",
-]
 
 
 class ObsidianVaultTaskJsonProvider(ITaskJsonProvider):
@@ -55,11 +49,12 @@ class ObsidianVaultTaskJsonProvider(ITaskJsonProvider):
             status = fileHeader["project"]
             element = {
                 "name": fileName,
-                "status": status
+                "status": status,
+                "path": file[0]
             }
             self.__lastProjectList.append(element)
 
-            if len(taskLines) == 0:
+            if len(taskLines) == 0 and status == "open":
                 taskDict = self.__getTaskDictFromLine(
                     "- [ ] Define next action [track::alert]",
                     file[0], str(len(fileContent)),
