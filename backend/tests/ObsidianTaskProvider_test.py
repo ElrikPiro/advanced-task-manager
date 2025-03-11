@@ -168,6 +168,5 @@ class TestObsidianTaskProvider(unittest.TestCase):
         return bytearray(json.dumps(retval, indent=4), "utf-8").decode("utf-8")
 
 
-
 if __name__ == '__main__':
     unittest.main()
