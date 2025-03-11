@@ -12,6 +12,7 @@ class ProjectCommands(Enum):
     OPEN = "open"
     CLOSE = "close"
     HOLD = "hold"
+    HELP = "help"
 
     @classmethod
     def values(cls) -> List[str]:

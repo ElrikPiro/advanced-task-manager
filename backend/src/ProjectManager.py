@@ -25,7 +25,8 @@ class ObsidianProjectManager(IProjectManager):
             ProjectCommands.REMOVE.value: self._remove_project_line,
             ProjectCommands.OPEN.value: self._open_project,
             ProjectCommands.CLOSE.value: self._close_project,
-            ProjectCommands.HOLD.value: self._hold_project
+            ProjectCommands.HOLD.value: self._hold_project,
+            ProjectCommands.HELP.value: self._get_help
         }
 
     def process_command(self, command: str, messageArgs: List[str]) -> str:
@@ -41,7 +42,7 @@ class ObsidianProjectManager(IProjectManager):
         else:
             return self._get_help()
 
-    def _get_help(self) -> str:
+    def _get_help(self, messageArgs: List[str]) -> str:
         """
         Get the help message for the project manager.
 
