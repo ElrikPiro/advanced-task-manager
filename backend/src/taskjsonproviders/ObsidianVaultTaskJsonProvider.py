@@ -2,6 +2,12 @@ from ..wrappers.TimeManagement import TimePoint
 from ..Interfaces.ITaskJsonProvider import ITaskJsonProvider
 from ..Interfaces.IFileBroker import IFileBroker, VaultRegistry
 
+VALID_PROJECT_STATUS = [
+    "open",
+    "closed",
+    "on-hold",
+]
+
 
 class ObsidianVaultTaskJsonProvider(ITaskJsonProvider):
 
@@ -9,6 +15,7 @@ class ObsidianVaultTaskJsonProvider(ITaskJsonProvider):
         self.__fileBroker = fileBroker
         self._lastJson = {"tasks": [], "pomodoros_per_day": "2"}
         self._lastJsonList: list = []
+        self.__lastProjectList: list = []
         self._lastMtime = 0.0
 
     def getJson(self) -> dict:
@@ -24,37 +31,57 @@ class ObsidianVaultTaskJsonProvider(ITaskJsonProvider):
             return self._lastJson
 
         self._lastJson = {"tasks": [], "pomodoros_per_day": "2"}
-        # get a list for all files that have been modified since the last check
-        modifiedFiles = vaultFiles
-
-        # delete all tasks from the last json that are in the modified files
         self._lastJsonList = []
+        self.__lastProjectList = []
 
         # add all tasks from the modified files to the last json
-        for file in modifiedFiles:
+        for file in vaultFiles:
             try:
-                fileContent = self.__fileBroker.getVaultFileLines(VaultRegistry.OBSIDIAN, file[0])
-                fileHeader = self.__getFileHeader(fileContent)
-                taskLines = self.__getFileTaskLines(fileContent, fileHeader)
-                for lineNum, line in taskLines:
-                    taskDict = self.__getTaskDictFromLine(line, file[0], lineNum, fileHeader)
-                    if taskDict["valid"] == "False":
-                        continue
-                    # check if there is a task with the same file and line in the last json
-                    # if so, update the task, otherwise append it
-                    found = False
-                    for i in range(len(self._lastJsonList)):
-                        if self._lastJsonList[i]["file"] == taskDict["file"] and self._lastJsonList[i]["line"] == taskDict["line"]:
-                            self._lastJsonList[i] = taskDict
-                            found = True
-                            break
-                    if not found:
-                        self._lastJsonList.append(taskDict)
+                self.__process_task_file(file)
             except Exception as e:
                 print(f"Error while reading file {file[0]}: {e}")
         self._lastMtime = mtime
         self._lastJson["tasks"] = self._lastJsonList
+        self._lastJson["projects"] = self.__lastProjectList
         return self._lastJson
+
+    def __process_task_file(self, file: tuple[str, float]):
+        fileContent = self.__fileBroker.getVaultFileLines(VaultRegistry.OBSIDIAN, file[0])
+        fileHeader = self.__getFileHeader(fileContent)
+        taskLines = self.__getFileTaskLines(fileContent, fileHeader)
+
+        if "project" in fileHeader and fileHeader["project"] in VALID_PROJECT_STATUS:
+            fileName = file[0].replace("\\", "/").split("/")[-1].split(".md")[0]
+            status = fileHeader["project"]
+            element = {
+                "name": fileName,
+                "status": status
+            }
+            self.__lastProjectList.append(element)
+
+            if len(taskLines) == 0:
+                taskDict = self.__getTaskDictFromLine(
+                    "- [ ] Define next action [track::alert]",
+                    file[0], str(len(fileContent)),
+                    fileHeader
+                )
+                self.__update_or_append_task(taskDict)
+
+        for lineNum, line in taskLines:
+            taskDict = self.__getTaskDictFromLine(line, file[0], lineNum, fileHeader)
+            if taskDict["valid"] == "False":
+                continue
+            self.__update_or_append_task(taskDict)
+
+    def __update_or_append_task(self, taskDict):
+        found = False
+        for i in range(len(self._lastJsonList)):
+            if self._lastJsonList[i]["file"] == taskDict["file"] and self._lastJsonList[i]["line"] == taskDict["line"]:
+                self._lastJsonList[i] = taskDict
+                found = True
+                break
+        if not found:
+            self._lastJsonList.append(taskDict)
 
     def saveJson(self, json: dict):
         # do nothing
