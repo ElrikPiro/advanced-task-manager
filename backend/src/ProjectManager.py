@@ -42,7 +42,7 @@ class ObsidianProjectManager(IProjectManager):
         else:
             return self._get_help()
 
-    def _get_help(self, messageArgs: List[str]) -> str:
+    def _get_help(self, messageArgs: List[str] = []) -> str:
         """
         Get the help message for the project manager.
 
