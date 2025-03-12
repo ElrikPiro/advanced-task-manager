@@ -11,10 +11,10 @@ The first time the application is running it will ask you a few questions about 
 
 #### App Mode
 
-**JSON file** : The application will save your tasks in a single JSON file, this is the most simple and easy to configure.
-**Markdown vault** : The application will scan a given directory and subdirectories for markdown files and query for tasks in them. This feature is still experimental.
-**cmd** : Means that the application will interact with the user by using a command console.
-**telegram** : Means that the application will interact with the user by using a telegram bot. (Bot credentials should be provided)
+- **JSON file** : The application will save your tasks in a single JSON file, this is the most simple and easy to configure.
+- **Markdown vault** : The application will scan a given directory and subdirectories for markdown files and query for tasks in them. This feature is still experimental.
+- **cmd** : Means that the application will interact with the user by using a command console.
+- **telegram** : Means that the application will interact with the user by using a telegram bot. (Bot credentials should be provided)
 
 Note: by now Markdown vault mode will only show tasks that have the following strings that start with '- [ ]' and contain '[track:: (category)]', '[start:: (date in YYYY-MM-DD format)]' and '[due:: (date in YYYY-MM-DD format)]'. It is projected to add some configurability on these matters to ease up it's use.
 
