@@ -21,7 +21,7 @@ class TestObsidianProjectManager(unittest.TestCase):
     def test_get_help(self):
         # Test _get_help method
         help_message = self.project_manager._get_help()
-        self.assertIn("Available commands:", help_message)
+        self.assertIn("# Projects Command Manual", help_message)
         for cmd in ProjectCommands.values():
             self.assertIn(cmd, help_message)
 
@@ -42,7 +42,7 @@ class TestObsidianProjectManager(unittest.TestCase):
         result = self.project_manager.process_command("invalid_command", [])
 
         # Should return help message
-        self.assertIn("Available commands:", result)
+        self.assertIn("# Projects Command Manual", result)
 
     def test_list_projects_valid_status(self):
         # Setup mock data

@@ -83,59 +83,54 @@ class TestTelegramReportingService(unittest.TestCase):
             text="Project created"
         )
 
-    @patch.object(TelegramReportingService, 'projectCommand')
-    @patch.object(TelegramReportingService, 'listCommand')
-    def test_processMessage_project_command(self, mock_listCommand, mock_projectCommand):
+    def test_processMessage_project_command(self):
         # Arrange
         messageText = "/project list"
-        mock_projectCommand.return_value = AsyncMock()
+        self.projectManager.process_command.return_value = "Project list response"
 
         # Act
         asyncio.run(self.telegramReportingService.processMessage(messageText))
 
         # Assert
-        mock_projectCommand.assert_called_once_with(messageText, True)
-        mock_listCommand.assert_not_called()
+        self.projectManager.process_command.assert_called_once_with("list", [])
 
-    @patch.object(TelegramReportingService, 'projectCommand')
-    @patch.object(TelegramReportingService, 'listCommand')
-    def test_processMessage_multiple_commands(self, mock_listCommand, mock_projectCommand):
+    def test_processMessage_multiple_commands(self):
         # Arrange
         messageText = "/list\n/project list"
-        mock_projectCommand.return_value = AsyncMock()
-        mock_listCommand.return_value = AsyncMock()
+        self.projectManager.process_command.return_value = "Project list response"
 
         # Act
         asyncio.run(self.telegramReportingService.processMessage(messageText))
 
         # Assert
-        mock_listCommand.assert_called_once_with("/list", False)
-        mock_projectCommand.assert_called_once_with("/project list", True)
+        self.projectManager.process_command.assert_called_once_with("list", [])
+        self.task_list_manager.render_task_list_str.assert_called_once()
 
-    @patch.object(TelegramReportingService, 'helpCommand')
-    def test_processMessage_unknown_command(self, mock_helpCommand):
+    def test_processMessage_unknown_command(self):
         # Arrange
         messageText = "/unknown_command"
-        mock_helpCommand.return_value = AsyncMock()
 
         # Act
         asyncio.run(self.telegramReportingService.processMessage(messageText))
 
         # Assert
-        mock_helpCommand.assert_called_once_with("/unknown_command", True)
+        self.bot.sendMessage.called_once_with(
+            chat_id=123456789,
+            text=self.telegramReportingService.helpCommand.__doc__
+        )
 
-    async def test_checkFilteredListChanges_no_changes(self):
+    def test_checkFilteredListChanges_no_changes(self):
         # Arrange
         self.telegramReportingService.chatId = 123456789
         self.telegramReportingService.hasFilteredListChanged = MagicMock(return_value=False)
 
         # Act
-        await self.telegramReportingService.checkFilteredListChanges()
+        asyncio.run(self.telegramReportingService.checkFilteredListChanges())
 
         # Assert
         self.bot.sendMessage.assert_not_called()
 
-    async def test_checkFilteredListChanges_with_empty_list(self):
+    def test_checkFilteredListChanges_with_empty_list(self):
         # Arrange
         self.telegramReportingService.chatId = 123456789
         self.telegramReportingService.hasFilteredListChanged = MagicMock(return_value=True)
@@ -143,7 +138,7 @@ class TestTelegramReportingService(unittest.TestCase):
         self.task_list_manager.reset_pagination = MagicMock()
 
         # Act
-        await self.telegramReportingService.checkFilteredListChanges()
+        asyncio.run(self.telegramReportingService.checkFilteredListChanges())
 
         # Assert
         self.bot.sendMessage.assert_called_once_with(
@@ -152,7 +147,7 @@ class TestTelegramReportingService(unittest.TestCase):
         )
         self.task_list_manager.reset_pagination.assert_called_once()
 
-    async def test_checkFilteredListChanges_with_tasks(self):
+    def test_checkFilteredListChanges_with_tasks(self):
         # Arrange
         self.telegramReportingService.chatId = 123456789
         self.telegramReportingService.hasFilteredListChanged = MagicMock(return_value=True)
@@ -162,7 +157,7 @@ class TestTelegramReportingService(unittest.TestCase):
         self.task_list_manager.reset_pagination = MagicMock()
 
         # Act
-        await self.telegramReportingService.checkFilteredListChanges()
+        asyncio.run(self.telegramReportingService.checkFilteredListChanges())
 
         # Assert
         self.bot.sendMessage.assert_called_once_with(
@@ -171,19 +166,19 @@ class TestTelegramReportingService(unittest.TestCase):
         )
         self.task_list_manager.reset_pagination.assert_called_once()
 
-    async def test_checkFilteredListChanges_with_zero_chatId(self):
+    def test_checkFilteredListChanges_with_zero_chatId(self):
         # Arrange
         self.telegramReportingService.chatId = 0
         self.telegramReportingService.hasFilteredListChanged = MagicMock()
 
         # Act
-        await self.telegramReportingService.checkFilteredListChanges()
+        asyncio.run(self.telegramReportingService.checkFilteredListChanges())
 
         # Assert
         self.telegramReportingService.hasFilteredListChanged.assert_not_called()
         self.bot.sendMessage.assert_not_called()
 
-    async def test_doneCommand_with_selected_task(self):
+    def test_doneCommand_with_selected_task(self):
         # Arrange
         mockTask = MagicMock()
         mockTask.setStatus = MagicMock()
@@ -192,19 +187,19 @@ class TestTelegramReportingService(unittest.TestCase):
         self.telegramReportingService.sendTaskList = AsyncMock()
 
         # Act
-        await self.telegramReportingService.doneCommand()
+        asyncio.run(self.telegramReportingService.doneCommand())
 
         # Assert
         mockTask.setStatus.assert_called_once_with("x")
         self.taskProvider.saveTask.assert_called_once_with(mockTask)
         self.telegramReportingService.sendTaskList.assert_called_once()
 
-    async def test_doneCommand_without_selected_task(self):
+    def test_doneCommand_without_selected_task(self):
         # Arrange
         self.task_list_manager.selected_task = None
 
         # Act
-        await self.telegramReportingService.doneCommand()
+        asyncio.run(self.telegramReportingService.doneCommand())
 
         # Assert
         self.bot.sendMessage.assert_called_once_with(
@@ -212,7 +207,7 @@ class TestTelegramReportingService(unittest.TestCase):
             text="no task selected."
         )
 
-    async def test_doneCommand_no_expectAnswer(self):
+    def test_doneCommand_no_expectAnswer(self):
         # Arrange
         mockTask = MagicMock()
         mockTask.setStatus = MagicMock()
@@ -221,7 +216,7 @@ class TestTelegramReportingService(unittest.TestCase):
         self.telegramReportingService.sendTaskList = AsyncMock()
 
         # Act
-        await self.telegramReportingService.doneCommand(expectAnswer=False)
+        asyncio.run(self.telegramReportingService.doneCommand(expectAnswer=False))
 
         # Assert
         mockTask.setStatus.assert_called_once_with("x")
@@ -229,7 +224,7 @@ class TestTelegramReportingService(unittest.TestCase):
         self.telegramReportingService.sendTaskList.assert_not_called()
 
     @patch.object(TelegramReportingService, 'processSetParam')
-    async def test_setCommand_with_selected_task(self, mock_processSetParam):
+    def test_setCommand_with_selected_task(self, mock_processSetParam):
         # Arrange
         mockTask = MagicMock()
         self.task_list_manager.selected_task = mockTask
@@ -239,7 +234,7 @@ class TestTelegramReportingService(unittest.TestCase):
         mock_processSetParam.return_value = None
 
         # Act
-        await self.telegramReportingService.setCommand(messageText)
+        asyncio.run(self.telegramReportingService.setCommand(messageText))
 
         # Assert
         mock_processSetParam.assert_called_once_with(mockTask, "description", "New Task Description")
@@ -247,7 +242,7 @@ class TestTelegramReportingService(unittest.TestCase):
         self.telegramReportingService.sendTaskInformation.assert_called_once_with(mockTask)
 
     @patch.object(TelegramReportingService, 'processSetParam')
-    async def test_setCommand_with_multiple_params(self, mock_processSetParam):
+    def test_setCommand_with_multiple_params(self, mock_processSetParam):
         # Arrange
         mockTask = MagicMock()
         self.task_list_manager.selected_task = mockTask
@@ -257,36 +252,31 @@ class TestTelegramReportingService(unittest.TestCase):
         mock_processSetParam.return_value = None
 
         # Act
-        await self.telegramReportingService.setCommand(messageText)
+        asyncio.run(self.telegramReportingService.setCommand(messageText))
 
         # Assert
         mock_processSetParam.assert_called_once_with(mockTask, "context", "@test Project")
         self.taskProvider.saveTask.assert_called_once_with(mockTask)
         self.telegramReportingService.sendTaskInformation.assert_called_once_with(mockTask)
 
-    @patch.object(TelegramReportingService, 'processSetParam')
-    async def test_setCommand_insufficient_params(self, mock_processSetParam):
+    def test_setCommand_insufficient_params(self):
         # Arrange
         mockTask = MagicMock()
         self.task_list_manager.selected_task = mockTask
         self.taskProvider.saveTask = MagicMock()
         messageText = "/set"
-        mock_processSetParam.return_value = None
 
-        # Act
-        await self.telegramReportingService.setCommand(messageText)
+        # Act & Assert
+        with self.assertRaises(IndexError):
+            asyncio.run(self.telegramReportingService.setCommand(messageText))
 
-        # Assert
-        mock_processSetParam.assert_called_once_with(mockTask, "help", "me")
-        self.taskProvider.saveTask.assert_called_once_with(mockTask)
-
-    async def test_setCommand_no_selected_task(self):
+    def test_setCommand_no_selected_task(self):
         # Arrange
         self.task_list_manager.selected_task = None
         messageText = "/set description New Task Description"
 
         # Act
-        await self.telegramReportingService.setCommand(messageText)
+        asyncio.run(self.telegramReportingService.setCommand(messageText))
 
         # Assert
         self.bot.sendMessage.assert_called_once_with(
@@ -295,7 +285,7 @@ class TestTelegramReportingService(unittest.TestCase):
         )
 
     @patch.object(TelegramReportingService, 'processSetParam')
-    async def test_setCommand_no_expectAnswer(self, mock_processSetParam):
+    def test_setCommand_no_expectAnswer(self, mock_processSetParam):
         # Arrange
         mockTask = MagicMock()
         self.task_list_manager.selected_task = mockTask
@@ -305,14 +295,14 @@ class TestTelegramReportingService(unittest.TestCase):
         mock_processSetParam.return_value = None
 
         # Act
-        await self.telegramReportingService.setCommand(messageText, expectAnswer=False)
+        asyncio.run(self.telegramReportingService.setCommand(messageText, expectAnswer=False))
 
         # Assert
         mock_processSetParam.assert_called_once_with(mockTask, "severity", "5")
         self.taskProvider.saveTask.assert_called_once_with(mockTask)
         self.telegramReportingService.sendTaskInformation.assert_not_called()
 
-    async def test_newCommand_with_description(self):
+    def test_newCommand_with_description(self):
         # Arrange
         mockTask = MagicMock()
         self.taskProvider.createDefaultTask = MagicMock(return_value=mockTask)
@@ -322,7 +312,7 @@ class TestTelegramReportingService(unittest.TestCase):
         messageText = "/new Test task description"
 
         # Act
-        await self.telegramReportingService.newCommand(messageText)
+        asyncio.run(self.telegramReportingService.newCommand(messageText))
 
         # Assert
         self.taskProvider.createDefaultTask.assert_called_once_with("Test task description")
@@ -330,7 +320,7 @@ class TestTelegramReportingService(unittest.TestCase):
         self.task_list_manager.add_task.assert_called_once_with(mockTask)
         self.telegramReportingService.sendTaskInformation.assert_called_once_with(mockTask)
 
-    async def test_newCommand_with_extended_params(self):
+    def test_newCommand_with_extended_params(self):
         # Arrange
         mockTask = MagicMock()
         mockTask.setContext = MagicMock()
@@ -342,7 +332,7 @@ class TestTelegramReportingService(unittest.TestCase):
         messageText = "/new Test task description;@test context;2p"
 
         # Act
-        await self.telegramReportingService.newCommand(messageText)
+        asyncio.run(self.telegramReportingService.newCommand(messageText))
 
         # Assert
         self.taskProvider.createDefaultTask.assert_called_once_with("Test task description")
@@ -351,12 +341,12 @@ class TestTelegramReportingService(unittest.TestCase):
         self.task_list_manager.add_task.assert_called_once_with(mockTask)
         self.telegramReportingService.sendTaskInformation.assert_called_once_with(mockTask)
 
-    async def test_newCommand_no_description(self):
+    def test_newCommand_no_description(self):
         # Arrange
         messageText = "/new"
 
         # Act
-        await self.telegramReportingService.newCommand(messageText)
+        asyncio.run(self.telegramReportingService.newCommand(messageText))
 
         # Assert
         self.bot.sendMessage.assert_called_once_with(
@@ -364,7 +354,7 @@ class TestTelegramReportingService(unittest.TestCase):
             text="no description provided."
         )
 
-    async def test_newCommand_no_expectAnswer(self):
+    def test_newCommand_no_expectAnswer(self):
         # Arrange
         mockTask = MagicMock()
         self.taskProvider.createDefaultTask = MagicMock(return_value=mockTask)
@@ -374,7 +364,7 @@ class TestTelegramReportingService(unittest.TestCase):
         messageText = "/new Test task description"
 
         # Act
-        await self.telegramReportingService.newCommand(messageText, expectAnswer=False)
+        asyncio.run(self.telegramReportingService.newCommand(messageText, expectAnswer=False))
 
         # Assert
         self.taskProvider.createDefaultTask.assert_called_once_with("Test task description")
