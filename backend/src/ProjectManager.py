@@ -5,6 +5,29 @@ from .Interfaces.ITaskProvider import ITaskProvider
 from .Interfaces.IFileBroker import IFileBroker, VaultRegistry
 
 
+def stripDoc(docstring: str) -> str:
+    """
+    Strip the leading whitespace from the docstring.
+
+    Args:
+        docstring (str): The docstring
+    Returns:
+        str: The docstring without leading whitespace
+    """
+    sanitizedDocstring = docstring.strip()
+    if not sanitizedDocstring:
+        return sanitizedDocstring
+
+    lines = docstring.splitlines()
+    indent = len(docstring)
+    for line in lines[1:]:
+        stripped = line.lstrip()
+        if stripped:
+            indent = min(indent, len(line) - len(stripped))
+
+    return "\n".join(line[indent:] for line in lines)
+
+
 class ObsidianProjectManager(IProjectManager):
     """
     Implementation of the project manager interface.
@@ -36,22 +59,54 @@ class ObsidianProjectManager(IProjectManager):
         Args:
             command (str): The command to process.
             messageArgs (List[str]): Arguments for the command.
+        Returns:
+            str: The result of the command
         """
         if command in ProjectCommands.values():
-            return self.commands[command](messageArgs)
+            return self.commands.get(command, self._get_help)(messageArgs)
         else:
             return self._get_help()
 
     def _get_help(self, messageArgs: List[str] = []) -> str:
         """
-        Get the help message for the project manager.
+        # Projects Command Manual
+        This manual provides a list of commands that can be used to manage projects.
+        Project management is done through the Markdown vault. Projects are stored in the vault as markdown files.
+        These files must have a frontmatter with a 'project' attribute that specifies the project status.
+        The project status can be 'open', 'closed', or 'hold'.
 
-        Returns:
-            str: The help message.
+        Following the Get Things Done (GTD) methodology, projects are defined as outcomes that require more than one task to complete.
+        Each project file should have a title, a description, and at least one task, defined as "next action".
+        **In case no tasks are defined in an open project, the Markdown json provider will automatically define a virtual task to remind the user to define the next action.**
+
+        send /projects help <command> to get more information about a specific command.
+
+        ## Commands
+        - list [status] - List all projects with the specified status.
+        - cat <project_name> - Get the contents of a project.
+        - edit <project_name> <line_number> <new_content> - Edit a line in a project.
+        - add <project_name> <line_number> <new_content> - Add a new line to a project.
+        - remove <project_name> <line_number> - Remove a line from a project.
+        - open <project_name> - Open a project or create a new one.
+        - close <project_name> - Close a project.
+        - hold <project_name> - Put a project on hold.
         """
-        return "Available commands: " + ", ".join(ProjectCommands.values())
+        if len(messageArgs) > 0:
+            command = messageArgs[0]
+            if command in ProjectCommands.values():
+                return stripDoc(self.commands[command].__doc__)
+            else:
+                return f"Command {command} not found"
+        return stripDoc(self._get_help.__doc__)
 
     def _list_projects(self, messageArgs: List[str]) -> str:
+        """
+        # Command: list [status]
+        List all projects with the specified status.
+        If no status is provided, lists all open projects.
+
+        Valid statuses are: `open`, `closed` and `on-hold`.
+        """
         retval: list[str] = []
         if len(messageArgs) == 0:
             messageArgs.append("open")
@@ -72,7 +127,10 @@ class ObsidianProjectManager(IProjectManager):
 
     def _cat_project(self, messageArgs: List[str]) -> str:
         """
-        gets the content of a project file
+        # Command: cat <project_name>
+        Get the contents of a project.
+
+        Projects are stored in the vault as markdown files and this command will show them as they are stored. Line numbers are prepended to each line for reference.
         """
         if len(messageArgs) == 0:
             return "No project name provided"
@@ -94,8 +152,10 @@ class ObsidianProjectManager(IProjectManager):
 
     def _edit_project_line(self, messageArgs: List[str]) -> str:
         """
-        Edits a line in a project file.
-        Format: edit project_name line_number new_content
+        # Command: edit <project_name> <line_number> <new_content>
+        Edit a line in a project.
+
+        The command will replace the content of the line with the new content provided.
         """
         if len(messageArgs) < 3:
             return "Format: edit project_name line_number new_content"
@@ -127,8 +187,10 @@ class ObsidianProjectManager(IProjectManager):
 
     def _add_project_line(self, messageArgs: List[str]) -> str:
         """
-        Adds a new line in a project file at the specified position.
-        Format: add project_name line_number new_content
+        # Command: add <project_name> <line_number> <new_content>
+        Add a new line to a project.
+
+        The command will insert the new content at the specified line number.
         """
         if len(messageArgs) < 3:
             return "Format: add project_name line_number new_content"
@@ -160,8 +222,10 @@ class ObsidianProjectManager(IProjectManager):
 
     def _remove_project_line(self, messageArgs: List[str]) -> str:
         """
-        Removes a line from a project file.
-        Format: remove project_name line_number
+        # Command: remove <project_name> <line_number>
+        Remove a line from a project.
+
+        The command will remove the line at the specified line number.
         """
         if len(messageArgs) < 2:
             return "Format: remove project_name line_number"
@@ -243,9 +307,10 @@ class ObsidianProjectManager(IProjectManager):
 
     def _open_project(self, messageArgs: List[str]) -> str:
         """
-        Opens a project by setting its status to 'open'.
-        If the project doesn't exist, it creates a new project file.
-        Format: open project_name
+        # Command: open <project_name>
+        Open a project or create a new one.
+
+        If the project doesn't exist, a new project will be created.
         """
         if len(messageArgs) == 0:
             return "Format: open project_name"
@@ -277,8 +342,10 @@ class ObsidianProjectManager(IProjectManager):
 
     def _close_project(self, messageArgs: List[str]) -> str:
         """
-        Closes a project by setting its status to 'closed'.
-        Format: close project_name
+        # Command: close <project_name>
+        Close a project.
+
+        The project status will be set to 'closed'.
         """
         if len(messageArgs) == 0:
             return "Format: close project_name"
@@ -287,8 +354,10 @@ class ObsidianProjectManager(IProjectManager):
 
     def _hold_project(self, messageArgs: List[str]) -> str:
         """
-        Puts a project on hold by setting its status to 'hold'.
-        Format: hold project_name
+        # Command: hold <project_name>
+        Put a project on hold.
+
+        The project status will be set to 'hold'.
         """
         if len(messageArgs) == 0:
             return "Format: hold project_name"
