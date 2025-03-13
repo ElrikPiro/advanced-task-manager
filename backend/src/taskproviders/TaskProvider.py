@@ -1,4 +1,5 @@
 import datetime
+import threading
 from ..Interfaces.ITaskProvider import ITaskProvider
 from ..Interfaces.ITaskModel import ITaskModel
 from ..Interfaces.ITaskJsonProvider import ITaskJsonProvider
@@ -10,25 +11,44 @@ import json
 
 class TaskProvider(ITaskProvider):
 
-    def __init__(self, task_json_provider: ITaskJsonProvider, fileBroker: IFileBroker):
+    def __init__(self, task_json_provider: ITaskJsonProvider, fileBroker: IFileBroker, disableThreading: bool = False):
         self.taskJsonProvider = task_json_provider
         self.fileBroker = fileBroker
         self.dict_task_list = self.taskJsonProvider.getJson()
-        self.taskJsonProvider.onTaskListUpdatedCallbacks = []
+        self.onTaskListUpdatedCallbacks: list[callable] = []
+        self.__disableThreading = disableThreading
+        if not self.__disableThreading:
+            self.serviceRunning = True
+            self.service = threading.Thread(target=self.__serviceThread)
+            self.service.start()
 
     def dispose(self):
-        pass
+        if not self.__disableThreading:
+            self.serviceRunning = False
+            self.service.join()
+
+    def __serviceThread(self):
+        while self.serviceRunning:
+            for callback in self.onTaskListUpdatedCallbacks:
+                callback()
+            threading.Event().wait(10)
 
     def getTaskList(self) -> List[ITaskModel]:
+        newTaskJson = self.taskJsonProvider.getJson()
+        self.dict_task_list = dict(newTaskJson)
+        self.dict_task_list["tasks"] = []
         task_list = []
         index = 0
-        for task in self.dict_task_list["tasks"]:
+        for task in newTaskJson["tasks"]:
+            if task["status"] == "x":
+                continue
             task_list.append(self.createTaskFromDict(task, index))
+            self.dict_task_list["tasks"].append(task)
             index += 1
         return task_list
 
     def createTaskFromDict(self, dict_task: dict, index: int) -> ITaskModel:
-        return TaskModel(index=index, description=dict_task["description"], context=dict_task["context"], start=dict_task["start"], due=dict_task["due"], severity=dict_task["severity"], totalCost=dict_task["totalCost"], investedEffort=dict_task["investedEffort"], status=dict_task["status"], calm=dict_task["calm"])
+        return TaskModel(index=index, description=dict_task["description"], context=dict_task["context"], start=dict_task["start"], due=dict_task["due"], severity=dict_task["severity"], totalCost=dict_task["totalCost"], investedEffort=dict_task["investedEffort"], status=dict_task["status"], calm=dict_task["calm"], project=dict_task.get("project", ""))
 
     def getTaskListAttribute(self, string: str) -> str:
         try:
@@ -42,7 +62,7 @@ class TaskProvider(ITaskProvider):
         for index in range(len(task_list)):
             if task_list[index] == task:
                 self.dict_task_list["tasks"][index] = dict(
-                    description=task.getDescription(),
+                    description=task.getDescription().split(" @ ")[0].strip(),
                     context=task.getContext(),
                     start=task.getStart().as_int(),
                     due=task.getDue().as_int(),
@@ -50,13 +70,12 @@ class TaskProvider(ITaskProvider):
                     totalCost=task.getTotalCost().as_pomodoros(),
                     investedEffort=task.getInvestedEffort().as_pomodoros(),
                     status=task.getStatus(),
-                    calm="True" if task.getCalm() else "False"
+                    calm="True" if task.getCalm() else "False",
+                    project=task.getProject()
                 )
                 break
 
         self.taskJsonProvider.saveJson(self.dict_task_list)
-        for callback in self.taskJsonProvider.onTaskListUpdatedCallbacks:
-            callback()
 
     def createDefaultTask(self, description: str) -> ITaskModel:
         starts = int(datetime.datetime.now().timestamp() * 1e3)
@@ -78,7 +97,8 @@ class TaskProvider(ITaskProvider):
             totalCost=1.0,
             investedEffort=invested,
             status=status,
-            calm=calm
+            calm=calm,
+            project=""
         )
 
         task = self.createTaskFromDict(default_task, len(self.dict_task_list["tasks"]))
@@ -101,7 +121,7 @@ class TaskProvider(ITaskProvider):
         ).__str__()
 
     def registerTaskListUpdatedCallback(self, callback):
-        # self.taskJsonProvider.onTaskListUpdatedCallbacks.append(callback)
+        self.onTaskListUpdatedCallbacks.append(callback)
         pass
 
     def compare(self, list_a: list[ITaskModel], list_b: list[ITaskModel]) -> bool:

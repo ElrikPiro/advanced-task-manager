@@ -51,6 +51,10 @@ class ITaskModel(ABC):
         pass
 
     @abstractmethod
+    def getProject(self) -> str:
+        pass
+
+    @abstractmethod
     def setDescription(self, description: str):
         pass
 
