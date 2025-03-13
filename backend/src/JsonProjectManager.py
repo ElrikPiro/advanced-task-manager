@@ -168,16 +168,16 @@ class JsonProjectManager(IProjectManager):
 
     def _open_project(self, messageArgs: List[str]) -> str:
         """
-        # Command: open <project_name> <description>
+        # Command: open <project_name> (<description>)
         Open a project or create a new one.
 
         If the project doesn't exist, a new project will be created.
         """
-        if len(messageArgs) < 2:
-            return "Format: open project_name description"
+        if len(messageArgs) < 1:
+            return "Format: open project_name (optional_description)"
 
         project_name = messageArgs[0].replace("_", " ")
-        project_description = " ".join(messageArgs[1:])
+        project_description = " ".join(messageArgs[1:] if len(messageArgs) > 1 else [])
         projectList = self.__taskListProvider.getJson().get("projects", [])
         projectListFiltered = [project for project in projectList if project["name"] == project_name]
 

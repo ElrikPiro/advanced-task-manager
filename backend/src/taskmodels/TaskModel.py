@@ -5,7 +5,7 @@ from ..Interfaces.ITaskModel import ITaskModel
 
 
 class TaskModel(ITaskModel):
-    def __init__(self, description: str, context: str, start: int, due: int, severity: float, totalCost: float, investedEffort: float, status: str, calm: str, index: int):
+    def __init__(self, description: str, context: str, start: int, due: int, severity: float, totalCost: float, investedEffort: float, status: str, calm: str, project: str, index: int):
         self._description: str = description
         self._context: str = context
         self._start: int = int(start)
@@ -15,10 +15,11 @@ class TaskModel(ITaskModel):
         self._investedEffort: float = float(investedEffort)
         self._status: str = status
         self._calm: bool = True if calm.upper().startswith("TRUE") else False
+        self._project: str = project
         self._index: int = index
 
     def getDescription(self) -> str:
-        return f"{self._description}"
+        return f"{self._description}{'' if self._project == '' else f' @ {self._project}'}"
 
     def getContext(self) -> str:
         return self._context
@@ -43,6 +44,9 @@ class TaskModel(ITaskModel):
 
     def getCalm(self) -> bool:
         return self._calm
+
+    def getProject(self):
+        return self._project
 
     def setDescription(self, description: str):
         self._description = description
