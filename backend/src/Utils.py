@@ -12,10 +12,13 @@ def stripDoc(docstring: str) -> str:
         return sanitizedDocstring
 
     lines = docstring.splitlines()
+    if len(lines) == 1:
+        return sanitizedDocstring
+
     indent = len(docstring)
     for line in lines[1:]:
         stripped = line.lstrip()
         if stripped:
             indent = min(indent, len(line) - len(stripped))
 
-    return "\n".join(line[indent:] for line in lines)
+    return lines[0].strip() + "\n" + "\n".join(line[indent:] for line in lines[1:])
