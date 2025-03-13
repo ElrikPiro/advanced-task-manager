@@ -7,7 +7,7 @@ import threading
 import datetime
 
 from time import sleep as sleepSync
-from typing import List, Coroutine, Any
+from typing import List, Coroutine, Any, Tuple
 
 from .Interfaces.IProjectManager import IProjectManager, ProjectCommands
 from .Interfaces.ITaskListManager import ITaskListManager
@@ -41,6 +41,30 @@ class TelegramReportingService(IReportingService):
         self._lock = threading.Lock()
 
         self._categories = categories
+
+        self.commands: List[Tuple[str, Coroutine[Any, Any, None]]] = [
+            ("/list", self.listCommand),
+            ("/next", self.nextCommand),
+            ("/previous", self.previousCommand),
+            ("/task_", self.selectTaskCommand),
+            ("/info", self.taskInfoCommand),
+            ("/heuristic_", self.heuristicSelectionCommand),
+            ("/heuristic", self.heuristicListCommand),
+            ("/filter_", self.filterSelectionCommand),
+            ("/filter", self.filterListCommand),
+            ("/done", self.doneCommand),
+            ("/set", self.setCommand),
+            ("/new", self.newCommand),
+            ("/schedule", self.scheduleCommand),
+            ("/work", self.workCommand),
+            ("/stats", self.statsCommand),
+            ("/snooze", self.snoozeCommand),
+            ("/export", self.exportCommand),
+            ("/import", self.importCommand),
+            ("/search", self.searchCommand),
+            ("/agenda", self.agendaCommand),
+            ("/project", self.projectCommand)
+        ]
         pass
 
     def dispose(self):
@@ -123,32 +147,48 @@ class TelegramReportingService(IReportingService):
             elif result[0] == int(self.chatId):
                 await self.processMessage(result[1])
 
-    async def sendHelp(self):
-        helpMessage = "Commands:"
-        helpMessage += "\n\t/list - List all tasks"
-        helpMessage += "\n\t/heuristic - List heuristic options"
-        helpMessage += "\n\t/filter - List filter options"
-        helpMessage += "\n\t/new [description] - Create a new default task"
-        helpMessage += "\n\t/schedule [expected work per day (optional)] - Reeschedules the selected task"
-        helpMessage += "\n\t/stats - Show work done statistics"
-        await self.bot.sendMessage(chat_id=self.chatId, text=helpMessage)
-
     # Each command must be made into an object and injected into this class
     async def listCommand(self, messageText: str = "", expectAnswer: bool = True):
+        """
+        # Command /list
+        This command lists the tasks in the current view.
+        - It shows a list of tasks and a shortcut command to select them.
+        - If there's more than one page, it will show the first page.
+        - You can use /next and /previous to navigate through the pages.
+        - You can use /task_ to select a task.
+        - Tasks are filtered according to the selected /filter strategy
+        - Tasks are sorted according the selected /heuristic strategy
+        """
         self._taskListManager.reset_pagination()
         await self.sendTaskList()
 
     async def nextCommand(self, messageText: str = "", expectAnswer: bool = True):
+        """
+        # Command /next
+        This command shows the next page of tasks.
+        It only works if there's more than one page.
+        """
         self._taskListManager.next_page()
         if expectAnswer:
             await self.sendTaskList()
 
     async def previousCommand(self, messageText: str = "", expectAnswer: bool = True):
+        """
+        # Command /previous
+        This command shows the previous page of tasks.
+        It only works if there's more than one page.
+        """
         self._taskListManager.prior_page()
         if expectAnswer:
             await self.sendTaskList()
 
     async def selectTaskCommand(self, messageText: str = "", expectAnswer: bool = True):
+        """
+        # Command /task_[task_number]
+        This command selects a task to show more information.
+        You can use /info to show detailed information about the selected task.
+        Once a task is selected, it can be manipulated with other commands.
+        """
         self._taskListManager.select_task(messageText)
 
         selectedTask: ITaskModel = self._taskListManager.selected_task
@@ -156,6 +196,20 @@ class TelegramReportingService(IReportingService):
             await self.sendTaskInformation(selectedTask)
 
     async def taskInfoCommand(self, messageText: str = "", expectAnswer: bool = True):
+        """
+        # Command /info
+        This command shows detailed information about the selected task.
+        It shows all the information available for the selected task:
+        - Description: Main text describing the task
+        - Context: Category or project the task belongs to
+        - Start: When the task becomes available
+        - Due: When the task needs to be completed by
+        - Total Cost: Estimated time/effort required to complete
+        - Remaining Cost: Effort that still needs to be invested
+        - Severity: Priority or importance level of the task
+        - Heuristic values: Calculated metrics for task prioritization
+        - Metadata: Task representation in the system
+        """
         selectedTask = self._taskListManager.selected_task
         if selectedTask is not None:
             await self.sendTaskInformation(selectedTask, True)
@@ -163,26 +217,136 @@ class TelegramReportingService(IReportingService):
             await self.bot.sendMessage(chat_id=self.chatId, text="no task selected.")
 
     async def helpCommand(self, messageText: str = "", expectAnswer: bool = True):
-        await self.sendHelp()
+        """
+        # Command Manual
+        This manual will show what features are available and how to use them.
+        send /help command_name to get more information about a specific command.
+
+        ## Task Listing
+        - /list - List tasks in the current view
+        - /next - Show the next page of tasks
+        - /previous - Show the previous page of tasks
+        - /agenda - Show the tasks for today
+        - /heuristic - List heuristic options
+        - /heuristic_[heuristic] - Select a heuristic
+        - /filter - List filter options
+        - /filter_[filter] - Select a filter
+
+        ## Task Querying
+        - /task_[task_number] - Select a task to show more information
+        - /info - Show detailed information about the selected task
+        - /search [search terms] - Search for tasks
+
+        ## Task Manipulation
+        - /done - Mark the selected task as done
+        - /set [parameter] [value] - Set a parameter of the selected task
+        - /new [description] - Create a new task
+        - /schedule [expected work per day (optional)] - Reschedule the selected task
+        - /work [time] - Add work to the selected task
+        - /snooze [time] - Snooze the selected task
+
+        ## Project Management
+        - /project [command] - Manage projects
+
+        ## Data Management
+        - /export [format] - Export tasks to a file
+        - /import [format] - Import tasks from a file
+
+        ## Other
+        - /help - Show this help message
+        - /stats - Show work done statistics
+        - date - Time point format
+        - time - Time diff format
+        """
+        helpMessage: list[str] = []
+
+        args = messageText.split(" ")[1:]
+        commandsStr = [command[0] for command in self.commands]
+        printHelp = True
+        if len(args) > 0:
+            commandKey = f"/{args[0]}"
+            printHelp = False
+            if (commandKey in commandsStr):
+                commandFunc = next((command[1] for command in self.commands if command[0] in commandKey), None)
+                commandDoc = commandFunc.__doc__.splitlines()
+                for line in commandDoc:
+                    helpMessage.append(line.strip())
+            elif args[0] == "date":
+                helpMessage.append("# Time point format")
+                helpMessage.append("The time point format is YYYY-MM-DD or YYYY-MM-DDTHH:MM")
+                helpMessage.append("You can use the following shortcuts:")
+                helpMessage.append("- today: Current date")
+                helpMessage.append("- tomorrow: Next day")
+                helpMessage.append("- now: Current time")
+                helpMessage.append("When using the time format, you can use the following:")
+                helpMessage.append("- YYYY-MM-DDTHH:MM: Date and time")
+                helpMessage.append("- YYYY-MM-DD: Date")
+                helpMessage.append("Or concatenate time points with time diff by using ;")
+                helpMessage.append("Example: 'today;+2h' will be today at 02:00 am")
+            elif args[0] == "time":
+                helpMessage.append("# Time diff format")
+                helpMessage.append("The time duration format is [+|-][number][unit]")
+                helpMessage.append("You can use the following units:")
+                helpMessage.append("- m: minutes")
+                helpMessage.append("- h: hours")
+                helpMessage.append("- d: days")
+                helpMessage.append("- w: weeks")
+                helpMessage.append("- p: pomodoros (by omitting the unit)")
+                helpMessage.append("You can concatenate time diffs by using ;")
+                helpMessage.append("Example: '+1d;+2h' will be tomorrow at 02:00 am")
+            else:
+                printHelp = True
+
+        if printHelp:
+            helpMessage.append(self.helpCommand.__doc__)
+
+        await self.bot.sendMessage(chat_id=self.chatId, text="\n".join(helpMessage))
 
     async def heuristicListCommand(self, messageText: str = "", expectAnswer: bool = True):
+        """
+        # Command /heuristic
+        This command lists the available heuristic options.
+        Heuristics are used to sort the tasks in the list.
+        The selected heuristic will be used to sort the tasks.
+        """
         await self.bot.sendMessage(chat_id=self.chatId, text=self._taskListManager.get_heuristic_list())
 
     async def filterListCommand(self, messageText: str = "", expectAnswer: bool = True):
+        """
+        # Command /filter
+        This command lists the available filter options.
+        Filters are used to show only the tasks that match the criteria.
+        The selected filter will be used to show the tasks.
+        """
         filterList = self._taskListManager.get_filter_list()
         await self.bot.sendMessage(chat_id=self.chatId, text=filterList)
 
     async def heuristicSelectionCommand(self, messageText: str = "", expectAnswer: bool = True):
+        """
+        # Command /heuristic_[heuristic]
+        This command selects a heuristic to sort the tasks.
+        The heuristic will be used to sort the tasks.
+        """
         self._taskListManager.select_heuristic(messageText)
         if expectAnswer:
             await self.sendTaskList()
 
     async def filterSelectionCommand(self, messageText: str = "", expectAnswer: bool = True):
+        """
+        # Command /filter_[filter]
+        This command selects a filter to show only the tasks that match the criteria.
+        The filter will be used to show the tasks.
+        """
         self._taskListManager.select_filter(messageText)
         if expectAnswer:
             await self.sendTaskList()
 
     async def doneCommand(self, messageText: str = "", expectAnswer: bool = True):
+        """
+        # Command /done
+        This command marks the selected task as done.
+        The task will be marked as completed and removed from the list.
+        """
         selected_task = self._taskListManager.selected_task
         if selected_task is not None:
             task = selected_task
@@ -194,6 +358,26 @@ class TelegramReportingService(IReportingService):
             await self.bot.sendMessage(chat_id=self.chatId, text="no task selected.")
 
     async def setCommand(self, messageText: str = "", expectAnswer: bool = True):
+        """
+        # Command /set [parameter] [value]
+        This command sets a parameter of the selected task.
+        You can set the following parameters:
+        - description: Main text describing the task
+        - context: Category or project the task belongs to
+        - start: When the task becomes available
+        - due: When the task needs to be completed by
+        - total_cost: Estimated time/effort required to complete
+        - effort_invested: Effort that has been invested
+        - calm: Flag to indicate if the task is calm or not
+        The value of the parameter must be provided.
+        ## Value types
+        Type of values: text, date, time, number, boolean
+        Text: Any text value
+        Date: see /help date
+        Time: /help time
+        Number: Any number value
+        Boolean: true or false
+        """
         selected_task = self._taskListManager.selected_task
         if selected_task is not None:
             task = selected_task
@@ -209,6 +393,15 @@ class TelegramReportingService(IReportingService):
             await self.bot.sendMessage(chat_id=self.chatId, text="no task selected.")
 
     async def newCommand(self, messageText: str = "", expectAnswer: bool = True):
+        """
+        # Command /new [description](;[context];[total_cost])
+        This command creates a new task with the provided description.
+        The task will be added to the list and can be selected.
+        You can optionalyy provide a context and total cost for the task.
+        The context is the category or project the task belongs to.
+        The total cost is the estimated time/effort required to complete.
+        The context and total cost must be separated by a semicolon.
+        """
         params = messageText.split(" ")[1:]
         if len(params) > 0:
             extendedParams = " ".join(params).split(";")
@@ -230,6 +423,13 @@ class TelegramReportingService(IReportingService):
             await self.bot.sendMessage(chat_id=self.chatId, text="no description provided.")
 
     async def scheduleCommand(self, messageText: str = "", expectAnswer: bool = True):
+        """
+        # Command /schedule [expected work per day (optional)]
+        This command reschedules the selected task.
+        You can provide the expected work per day to distribute the effort.
+        The task due date will be rescheduled according to the provided value.
+        if no value is provided, task severity will be adjusted, keeping the same due date.
+        """
         selected_task = self._taskListManager.selected_task
         params = messageText.split(" ")[1:]
         if selected_task is not None:
@@ -241,6 +441,12 @@ class TelegramReportingService(IReportingService):
             await self.bot.sendMessage(chat_id=self.chatId, text="no task provided.")
 
     async def workCommand(self, messageText: str = "", expectAnswer: bool = True):
+        """
+        # Command /work [time]
+        This command adds work to the selected task.
+        You can provide the time spent on the task.
+        The task effort invested will be updated.
+        """
         selected_task = self._taskListManager.selected_task
         params = messageText.split(" ")[1:]
         if selected_task is not None:
@@ -256,9 +462,20 @@ class TelegramReportingService(IReportingService):
             await self.bot.sendMessage(chat_id=self.chatId, text="no task provided.")
 
     async def statsCommand(self, messageText: str = "", expectAnswer: bool = True):
+        """
+        # Command /stats
+        This command shows work done statistics.
+        It shows the work done today and the average work per day.
+        """
         await self.bot.sendMessage(chat_id=self.chatId, text=self._taskListManager.get_list_stats(), parse_mode="Markdown")
 
     async def snoozeCommand(self, messageText: str = "", expectAnswer: bool = True):
+        """
+        # Command /snooze [time]
+        This command snoozes the selected task.
+        You can provide the snooze time.
+        The task start date will be updated.
+        """
         params = messageText.split(" ")[1:]
         if len(params) > 0:
             params = params[0]
@@ -269,6 +486,16 @@ class TelegramReportingService(IReportingService):
         await self.setCommand(startParams)
 
     async def exportCommand(self, messageText: str = "", expectAnswer: bool = True):
+        """
+        # Command /export [format]
+        This command exports tasks to a file.
+        You can provide the format of the exported file.
+        The exported file will be sent to the chat.
+        ## Supported formats
+        json: JSON format
+        ## Incoming formats
+        ical: iCalendar format
+        """
         formatIds: dict = {
             "json": "json",
             # TODO: "ical": "ical"
@@ -290,6 +517,16 @@ class TelegramReportingService(IReportingService):
         await self.bot.sendFile(chat_id=self.chatId, data=exportData)
 
     async def importCommand(self, messageText: str = "", expectAnswer: bool = True):
+        """
+        # Command /import [format]
+        This command imports tasks from a file.
+        You can provide the format of the imported file.
+        The imported file will be used to update the task list.
+        ## Supported formats
+        json: JSON format
+        ## Incoming formats
+        ical: iCalendar format
+        """
         formatIds: dict = {
             "json": "json",
             # TODO: "ical": "ical"
@@ -311,6 +548,13 @@ class TelegramReportingService(IReportingService):
         await self.listCommand(messageText, expectAnswer)
 
     async def searchCommand(self, messageText: str = "", expectAnswer: bool = True):
+        """
+        # Command /search [search terms]
+        This command searches for tasks.
+        You can provide the search terms to filter the tasks.
+        The tasks that match the search terms will be shown.
+        If only one task matches, it will be selected.
+        """
         # getting results
         searchTerms = messageText.split(" ")[1:]
         searchResultsManager = self._taskListManager.search_tasks(searchTerms)
@@ -327,10 +571,22 @@ class TelegramReportingService(IReportingService):
             await self.bot.sendMessage(chat_id=self.chatId, text="No results found")
 
     async def agendaCommand(self, messageText: str = "", expectAnswer: bool = True):
+        """
+        # Command /agenda
+        This command shows the tasks for today.
+        It shows the tasks that are due today.
+        It will show the times they are available
+        Finally it will show which non-urgent tasks are available next
+        """
         agenda = self._taskListManager.render_day_agenda(TimePoint.today(), self._categories)
         await self.bot.sendMessage(chat_id=self.chatId, text=agenda)
 
     async def projectCommand(self, messageText: str = "", expectAnswer: bool = True):
+        """
+        # Command /project [command]
+        This command manages projects.
+        use /project help to get more information about project commands.
+        """
         SUPPORTED_COMMANDS = ProjectCommands.values()
         messageArgs = messageText.split(" ")
         if len(messageArgs) < 2:
@@ -346,29 +602,7 @@ class TelegramReportingService(IReportingService):
         await self.bot.sendMessage(chat_id=self.chatId, text=response)
 
     async def processMessage(self, messageText: str):
-        commands: list[(str, Coroutine[Any, Any, None])] = [
-            ("/list", self.listCommand),
-            ("/next", self.nextCommand),
-            ("/previous", self.previousCommand),
-            ("/task_", self.selectTaskCommand),
-            ("/info", self.taskInfoCommand),
-            ("/heuristic_", self.heuristicSelectionCommand),
-            ("/heuristic", self.heuristicListCommand),
-            ("/filter_", self.filterSelectionCommand),
-            ("/filter", self.filterListCommand),
-            ("/done", self.doneCommand),
-            ("/set", self.setCommand),
-            ("/new", self.newCommand),
-            ("/schedule", self.scheduleCommand),
-            ("/work", self.workCommand),
-            ("/stats", self.statsCommand),
-            ("/snooze", self.snoozeCommand),
-            ("/export", self.exportCommand),
-            ("/import", self.importCommand),
-            ("/search", self.searchCommand),
-            ("/agenda", self.agendaCommand),
-            ("/project", self.projectCommand)
-        ]
+        commands: List[Tuple[str, Coroutine[Any, Any, None]]] = self.commands
 
         messageTextLines = messageText.strip().splitlines()
 
