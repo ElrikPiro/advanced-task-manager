@@ -77,7 +77,6 @@ class TestTaskProvider(unittest.TestCase):
         self.assertEqual(task_list[0].getContext(), "work")
         self.assertEqual(task_list[0].getSeverity(), 1.0)
         self.assertEqual(task_list[0].getProject(), "Project1")
-
         # Completed tasks (status="x") should be filtered out
         descriptions = [task.getDescription() for task in task_list]
         self.assertIn("Task 1 @ Project1", descriptions)
@@ -111,7 +110,6 @@ class TestTaskProvider(unittest.TestCase):
         # Test existing attribute
         result = self.task_provider.getTaskListAttribute("tasks")
         self.assertEqual(result, self.sample_tasks["tasks"])
-
         # Test non-existing attribute
         result = self.task_provider.getTaskListAttribute("nonexistent")
         self.assertEqual(result, "")
@@ -137,7 +135,6 @@ class TestTaskProvider(unittest.TestCase):
     def test_create_default_task(self):
         # Create a default task
         task = self.task_provider.createDefaultTask("New Task")
-
         # Check task properties
         self.assertEqual(task.getDescription(), "New Task")
         self.assertEqual(task.getContext(), "workstation")
