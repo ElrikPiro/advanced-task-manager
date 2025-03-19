@@ -37,7 +37,7 @@ class JsonProjectManager(IProjectManager):
         Returns:
             str: The result of the command
         """
-        if command in ProjectCommands.values():
+        if command in self.commands.keys():
             return self.commands.get(command, self._get_help)(messageArgs)
         else:
             return self._get_help()

@@ -79,6 +79,25 @@ class TestObsidianTaskModel(unittest.TestCase):
         )
         self.assertFalse(self.task == other_task)
 
+    def test_getProject(self):
+        self.assertEqual(self.task.getProject(), "test_file:10")
+
+    def test_getProject_withSubdirectory(self):
+        self.task.setFile("subdirectory/test_file.md")
+        self.assertEqual(self.task.getProject(), "test_file:10")
+
+    def test_getProject_withWindowsPath(self):
+        self.task.setFile("C:\\Users\\test\\Documents\\test_file.md")
+        self.assertEqual(self.task.getProject(), "test_file:10")
+
+    def test_getProject_withMultipleExtensions(self):
+        self.task.setFile("test_file.backup.md")
+        self.assertEqual(self.task.getProject(), "test_file:10")
+
+    def test_getProject_afterChangingLine(self):
+        self.task.setLine(25)
+        self.assertEqual(self.task.getProject(), "test_file:25")
+
 
 if __name__ == '__main__':
     unittest.main()
