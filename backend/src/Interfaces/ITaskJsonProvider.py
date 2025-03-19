@@ -13,6 +13,12 @@ class ITaskJsonProvider(ABC):
 
     @abstractmethod
     def getJson(self) -> dict:
+        """
+        Gets the tasks json.
+
+        Returns:
+            dict: The tasks json.
+        """
         pass
 
     @abstractmethod

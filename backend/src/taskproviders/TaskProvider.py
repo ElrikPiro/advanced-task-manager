@@ -23,17 +23,33 @@ class TaskProvider(ITaskProvider):
             self.service.start()
 
     def dispose(self):
+        """
+        Disposes the task provider.
+
+        This method should be called when the task provider is no longer needed.
+        It will stop the service thread if it is running allowing the python process to exit.
+        """
         if not self.__disableThreading:
             self.serviceRunning = False
             self.service.join()
 
     def __serviceThread(self):
+        """
+        The service thread that will notify the registered callbacks every 10 seconds.
+        """
         while self.serviceRunning:
             for callback in self.onTaskListUpdatedCallbacks:
                 callback()
             threading.Event().wait(10)
 
     def getTaskList(self) -> List[ITaskModel]:
+        """
+        Gets the task list.
+
+        This method reads the task list from the json file and creates a list of task models from it.
+
+        Returns:
+            List[ITaskModel]: The task list."""
         newTaskJson = self.taskJsonProvider.getJson()
         self.dict_task_list = dict(newTaskJson)
         self.dict_task_list["tasks"] = []
@@ -48,6 +64,15 @@ class TaskProvider(ITaskProvider):
         return task_list
 
     def createTaskFromDict(self, dict_task: dict, index: int) -> ITaskModel:
+        """
+        Creates a task model from a dictionary.
+
+        This method creates a task model from a dictionary containing the task data.
+
+        Params:
+            dict_task: The dictionary containing the task data.
+            index: The index of the task in the task list.
+        """
         return TaskModel(index=index, description=dict_task["description"], context=dict_task["context"], start=dict_task["start"], due=dict_task["due"], severity=dict_task["severity"], totalCost=dict_task["totalCost"], investedEffort=dict_task["investedEffort"], status=dict_task["status"], calm=dict_task["calm"], project=dict_task.get("project", ""))
 
     def getTaskListAttribute(self, string: str) -> str:
@@ -57,7 +82,14 @@ class TaskProvider(ITaskProvider):
             return ""
 
     def saveTask(self, task: ITaskModel):
-        # edit the dictionary to be saved
+        """
+        Saves a task.
+
+        This method saves a task to the task list.
+
+        Params:
+            task: The task to be saved.
+        """
         task_list = self.getTaskList()
         for index in range(len(task_list)):
             if task_list[index] == task:
@@ -78,6 +110,14 @@ class TaskProvider(ITaskProvider):
         self.taskJsonProvider.saveJson(self.dict_task_list)
 
     def createDefaultTask(self, description: str) -> ITaskModel:
+        """
+        Creates a default task.
+
+        This method creates a default task with the given description.
+
+        Params:
+            description: The description of the task.
+        """
         starts = int(datetime.datetime.now().timestamp() * 1e3)
         due = int(datetime.datetime.today().timestamp() * 1e3)
         starts = starts - starts % 60000
@@ -107,7 +147,14 @@ class TaskProvider(ITaskProvider):
         return task
 
     def getTaskMetadata(self, task: ITaskModel) -> str:
-        # return as stringyfied dictionary
+        """
+        Gets the metadata of a task.
+
+        This method gets the metadata of a task in string format.
+
+        Params:
+            task: The task to get the metadata from.
+        """
         return dict(
             description=task.getDescription(),
             context=task.getContext(),

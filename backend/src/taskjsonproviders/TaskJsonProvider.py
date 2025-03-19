@@ -13,6 +13,12 @@ class TaskJsonProvider(ITaskJsonProvider):
         self.fileBroker = fileBroker
 
     def getJson(self) -> dict:
+        """
+        Reads the tasks json file and injects tasks for projects without any task assigned.
+
+        Returns:
+            dict: The tasks json.
+        """
         taskJson = self.fileBroker.readFileContentJson(FileRegistry.STANDALONE_TASKS_JSON)
         taskJson = self.__injectOpenProjectTasks(taskJson)
         return taskJson

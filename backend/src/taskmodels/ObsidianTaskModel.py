@@ -18,9 +18,18 @@ class ObsidianTaskModel(TaskModel):
 
     # Overrided
     def getDescription(self) -> str:
+        """
+        Gets the task description. This is the task title with the addition of the file and line where the task is stored.
+
+        Returns:
+            str: The enriched task description.
+        """
         return f"{self._description} @ '{self.getProject()}'"
 
     def getProject(self):
+        """
+        Gets the file name with the line number where the task is stored.
+        """
         slash = "/"
         dot = "."
         return f"{self._file.split(slash).pop().split(dot)[0]}:{self._line}"

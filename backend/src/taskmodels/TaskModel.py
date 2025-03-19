@@ -19,6 +19,12 @@ class TaskModel(ITaskModel):
         self._index: int = index
 
     def getDescription(self) -> str:
+        """
+        Gets the task description. This is the task title with the addition of the project where the task is stored.
+
+        Returns:
+            str: The enriched task description.
+        """
         return f"{self._description}{'' if self._project == '' else f' @ {self._project}'}"
 
     def getContext(self) -> str:
@@ -46,6 +52,12 @@ class TaskModel(ITaskModel):
         return self._calm
 
     def getProject(self):
+        """
+        Gets the project where the task is stored.
+
+        Returns:
+            str: The project name.
+        """
         return self._project
 
     def setDescription(self, description: str):
