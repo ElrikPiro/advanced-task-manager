@@ -1,31 +1,10 @@
 from typing import List
+
+from .Utils import stripDoc
 from .Interfaces.IProjectManager import IProjectManager, ProjectCommands
-from .Interfaces.ITaskJsonProvider import VALID_PROJECT_STATUS, ITaskJsonProvider
+from .Interfaces.ITaskJsonProvider import VALID_PROJECT_STATUS
 from .Interfaces.ITaskProvider import ITaskProvider
 from .Interfaces.IFileBroker import IFileBroker, VaultRegistry
-
-
-def stripDoc(docstring: str) -> str:
-    """
-    Strip the leading whitespace from the docstring.
-
-    Args:
-        docstring (str): The docstring
-    Returns:
-        str: The docstring without leading whitespace
-    """
-    sanitizedDocstring = docstring.strip()
-    if not sanitizedDocstring:
-        return sanitizedDocstring
-
-    lines = docstring.splitlines()
-    indent = len(docstring)
-    for line in lines[1:]:
-        stripped = line.lstrip()
-        if stripped:
-            indent = min(indent, len(line) - len(stripped))
-
-    return "\n".join(line[indent:] for line in lines)
 
 
 class ObsidianProjectManager(IProjectManager):
@@ -363,103 +342,3 @@ class ObsidianProjectManager(IProjectManager):
             return "Format: hold project_name"
 
         return self._update_project_status(messageArgs[0], "hold")
-
-
-class JsonProjectManager(IProjectManager):
-    """
-    Implementation of the project manager interface that manages projects inside a single json file.
-    """
-
-    def __init__(self, taskListProvider: ITaskJsonProvider):
-        """
-        Initialize the JsonProjectManager with the necessary providers.
-        """
-        self.__taskListProvider = taskListProvider
-        self.commands: dict[str, callable] = {
-            ProjectCommands.LIST.value: self._list_projects,
-            ProjectCommands.CAT.value: self._cat_project,
-            ProjectCommands.EDIT.value: self._edit_project_line,
-            ProjectCommands.ADD.value: self._add_project_line,
-            ProjectCommands.REMOVE.value: self._remove_project_line,
-            ProjectCommands.OPEN.value: self._open_project,
-            ProjectCommands.CLOSE.value: self._close_project,
-            ProjectCommands.HOLD.value: self._hold_project
-        }
-
-    def process_command(self, command: str, messageArgs: List[str]) -> str:
-        """
-        Process a command with its arguments.
-
-        Args:
-            command (str): The command to process.
-            messageArgs (List[str]): Arguments for the command.
-        """
-        return self._get_help()  # not yet implemented
-        if command in ProjectCommands.values():
-            return self.commands[command](messageArgs)
-        else:
-            return self._get_help()
-
-    def _get_help(self) -> str:
-        """
-        Get the help message for the project manager.
-
-        Returns:
-            str: The help message.
-        """
-        return "Project manager is still not supported on standalone json files."
-
-    def _list_projects(self, messageArgs: List[str]) -> str:
-        """
-        List projects with specified status.
-        """
-
-        return ""
-
-    def _cat_project(self, messageArgs: List[str]) -> str:
-        """
-        Get the contents of a project.
-        """
-        return ""
-
-    def _edit_project_line(self, messageArgs: List[str]) -> str:
-        """
-        Edit a line in a project.
-        """
-        return ""
-
-    def _add_project_line(self, messageArgs: List[str]) -> str:
-        """
-        Add a new line to a project.
-        """
-        return ""
-
-    def _remove_project_line(self, messageArgs: List[str]) -> str:
-        """
-        Remove a line from a project.
-        """
-        return ""
-
-    def _update_project_status(self, project_name: str, new_status: str) -> str:
-        """
-        Helper function to update project status.
-        """
-        return ""
-
-    def _open_project(self, messageArgs: List[str]) -> str:
-        """
-        Open a project or create a new one.
-        """
-        return ""
-
-    def _close_project(self, messageArgs: List[str]) -> str:
-        """
-        Close a project.
-        """
-        return ""
-
-    def _hold_project(self, messageArgs: List[str]) -> str:
-        """
-        Put a project on hold.
-        """
-        return ""

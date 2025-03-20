@@ -18,9 +18,21 @@ class ObsidianTaskModel(TaskModel):
 
     # Overrided
     def getDescription(self) -> str:
+        """
+        Gets the task description. This is the task title with the addition of the file and line where the task is stored.
+
+        Returns:
+            str: The enriched task description.
+        """
+        return f"{self._description} @ '{self.getProject()}'"
+
+    def getProject(self):
+        """
+        Gets the file name with the line number where the task is stored.
+        """
         slash = "/"
         dot = "."
-        return f"{self._description} @ '{self._file.split(slash).pop().split(dot)[0]}:{self._line}'"
+        return f"{self._file.split(slash).pop().split(dot)[0]}:{self._line}"
 
     def __eq__(self, other: ITaskModel):
         return self.getDescription() == other.getDescription() and self.getContext() == other.getContext() and self.getStart() == other.getStart() and self.getDue() == other.getDue() and self.getSeverity() == other.getSeverity() and self.getTotalCost().as_pomodoros() == other.getTotalCost().as_pomodoros() and self.getInvestedEffort().as_pomodoros() == other.getInvestedEffort().as_pomodoros() and self.getStatus() == other.getStatus() and self.getFile() == other.getFile() and self.getLine() == other.getLine() and self.getCalm() == other.getCalm()

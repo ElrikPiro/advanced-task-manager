@@ -22,7 +22,8 @@ from src.heuristics.DaysToThresholdHeuristic import DaysToThresholdHeuristic
 from src.StatisticsService import StatisticsService
 from src.FileBroker import FileBroker
 from src.filters.WorkloadAbleFilter import WorkloadAbleFilter
-from src.ProjectManager import JsonProjectManager, ObsidianProjectManager
+from src.ProjectManager import ObsidianProjectManager
+from src.JsonProjectManager import JsonProjectManager
 
 
 class TelegramReportingServiceContainer():

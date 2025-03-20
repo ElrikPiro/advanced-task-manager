@@ -1,4 +1,5 @@
 import datetime
+import threading
 from ..Interfaces.ITaskProvider import ITaskProvider
 from ..Interfaces.ITaskModel import ITaskModel
 from ..Interfaces.ITaskJsonProvider import ITaskJsonProvider
@@ -10,25 +11,69 @@ import json
 
 class TaskProvider(ITaskProvider):
 
-    def __init__(self, task_json_provider: ITaskJsonProvider, fileBroker: IFileBroker):
+    def __init__(self, task_json_provider: ITaskJsonProvider, fileBroker: IFileBroker, disableThreading: bool = False):
         self.taskJsonProvider = task_json_provider
         self.fileBroker = fileBroker
         self.dict_task_list = self.taskJsonProvider.getJson()
-        self.taskJsonProvider.onTaskListUpdatedCallbacks = []
+        self.onTaskListUpdatedCallbacks: list[callable] = []
+        self.__disableThreading = disableThreading
+        if not self.__disableThreading:
+            self.serviceRunning = True
+            self.service = threading.Thread(target=self.__serviceThread)
+            self.service.start()
 
     def dispose(self):
-        pass
+        """
+        Disposes the task provider.
+
+        This method should be called when the task provider is no longer needed.
+        It will stop the service thread if it is running allowing the python process to exit.
+        """
+        if not self.__disableThreading:
+            self.serviceRunning = False
+            self.service.join()
+
+    def __serviceThread(self):
+        """
+        The service thread that will notify the registered callbacks every 10 seconds.
+        """
+        while self.serviceRunning:
+            for callback in self.onTaskListUpdatedCallbacks:
+                callback()
+            threading.Event().wait(10)
 
     def getTaskList(self) -> List[ITaskModel]:
+        """
+        Gets the task list.
+
+        This method reads the task list from the json file and creates a list of task models from it.
+
+        Returns:
+            List[ITaskModel]: The task list."""
+        newTaskJson = self.taskJsonProvider.getJson()
+        self.dict_task_list = dict(newTaskJson)
+        self.dict_task_list["tasks"] = []
         task_list = []
         index = 0
-        for task in self.dict_task_list["tasks"]:
+        for task in newTaskJson["tasks"]:
+            if task["status"] == "x":
+                continue
             task_list.append(self.createTaskFromDict(task, index))
+            self.dict_task_list["tasks"].append(task)
             index += 1
         return task_list
 
     def createTaskFromDict(self, dict_task: dict, index: int) -> ITaskModel:
-        return TaskModel(index=index, description=dict_task["description"], context=dict_task["context"], start=dict_task["start"], due=dict_task["due"], severity=dict_task["severity"], totalCost=dict_task["totalCost"], investedEffort=dict_task["investedEffort"], status=dict_task["status"], calm=dict_task["calm"])
+        """
+        Creates a task model from a dictionary.
+
+        This method creates a task model from a dictionary containing the task data.
+
+        Params:
+            dict_task: The dictionary containing the task data.
+            index: The index of the task in the task list.
+        """
+        return TaskModel(index=index, description=dict_task["description"], context=dict_task["context"], start=dict_task["start"], due=dict_task["due"], severity=dict_task["severity"], totalCost=dict_task["totalCost"], investedEffort=dict_task["investedEffort"], status=dict_task["status"], calm=dict_task["calm"], project=dict_task.get("project", ""))
 
     def getTaskListAttribute(self, string: str) -> str:
         try:
@@ -37,12 +82,19 @@ class TaskProvider(ITaskProvider):
             return ""
 
     def saveTask(self, task: ITaskModel):
-        # edit the dictionary to be saved
+        """
+        Saves a task.
+
+        This method saves a task to the task list.
+
+        Params:
+            task: The task to be saved.
+        """
         task_list = self.getTaskList()
         for index in range(len(task_list)):
             if task_list[index] == task:
                 self.dict_task_list["tasks"][index] = dict(
-                    description=task.getDescription(),
+                    description=task.getDescription().split(" @ ")[0].strip(),
                     context=task.getContext(),
                     start=task.getStart().as_int(),
                     due=task.getDue().as_int(),
@@ -50,15 +102,22 @@ class TaskProvider(ITaskProvider):
                     totalCost=task.getTotalCost().as_pomodoros(),
                     investedEffort=task.getInvestedEffort().as_pomodoros(),
                     status=task.getStatus(),
-                    calm="True" if task.getCalm() else "False"
+                    calm="True" if task.getCalm() else "False",
+                    project=task.getProject()
                 )
                 break
 
         self.taskJsonProvider.saveJson(self.dict_task_list)
-        for callback in self.taskJsonProvider.onTaskListUpdatedCallbacks:
-            callback()
 
     def createDefaultTask(self, description: str) -> ITaskModel:
+        """
+        Creates a default task.
+
+        This method creates a default task with the given description.
+
+        Params:
+            description: The description of the task.
+        """
         starts = int(datetime.datetime.now().timestamp() * 1e3)
         due = int(datetime.datetime.today().timestamp() * 1e3)
         starts = starts - starts % 60000
@@ -78,7 +137,8 @@ class TaskProvider(ITaskProvider):
             totalCost=1.0,
             investedEffort=invested,
             status=status,
-            calm=calm
+            calm=calm,
+            project=""
         )
 
         task = self.createTaskFromDict(default_task, len(self.dict_task_list["tasks"]))
@@ -87,7 +147,14 @@ class TaskProvider(ITaskProvider):
         return task
 
     def getTaskMetadata(self, task: ITaskModel) -> str:
-        # return as stringyfied dictionary
+        """
+        Gets the metadata of a task.
+
+        This method gets the metadata of a task in string format.
+
+        Params:
+            task: The task to get the metadata from.
+        """
         return dict(
             description=task.getDescription(),
             context=task.getContext(),
@@ -101,7 +168,7 @@ class TaskProvider(ITaskProvider):
         ).__str__()
 
     def registerTaskListUpdatedCallback(self, callback):
-        # self.taskJsonProvider.onTaskListUpdatedCallbacks.append(callback)
+        self.onTaskListUpdatedCallbacks.append(callback)
         pass
 
     def compare(self, list_a: list[ITaskModel], list_b: list[ITaskModel]) -> bool:
