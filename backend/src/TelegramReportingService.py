@@ -624,6 +624,8 @@ class TelegramReportingService(IReportingService):
                 currentTimePoint = currentTimePoint.today()
             elif value == "tomorrow":
                 currentTimePoint = currentTimePoint.tomorrow()
+            elif value.find(":") > 0:
+                currentTimePoint = currentTimePoint.strip_time() + TimeAmount(value)
             else:
                 currentTimePoint = currentTimePoint + TimeAmount(value)
         return currentTimePoint
@@ -641,7 +643,7 @@ class TelegramReportingService(IReportingService):
             await self.bot.sendMessage(chat_id=self.chatId, text=errorMessage)
 
     async def setStartCommand(self, task: ITaskModel, value: str):
-        if value.startswith("+") or value.startswith("-") or value.startswith("now") or value.startswith("today") or value.startswith("tomorrow"):
+        if value.startswith("+") or value.startswith("-") or value.startswith("now") or value.startswith("today") or value.startswith("tomorrow") or value.count(":") == 1:
             start_timestamp = self.processRelativeTimeSet(task.getStart(), value)
             task.setStart(start_timestamp)
         else:
