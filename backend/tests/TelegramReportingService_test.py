@@ -2,6 +2,8 @@ import unittest
 from unittest.mock import MagicMock, patch, AsyncMock
 from src.TelegramReportingService import TelegramReportingService
 import asyncio
+from src.wrappers.TimeManagement import TimePoint, TimeAmount
+import datetime
 
 
 class TestTelegramReportingService(unittest.TestCase):
@@ -371,6 +373,92 @@ class TestTelegramReportingService(unittest.TestCase):
         self.taskProvider.saveTask.assert_called_once_with(mockTask)
         self.task_list_manager.add_task.assert_called_once_with(mockTask)
         self.telegramReportingService.sendTaskInformation.assert_not_called()
+
+    @patch('src.wrappers.TimeManagement.datetime.datetime')
+    def test_processRelativeTimeSet_now(self, mock_datetime):
+        # Arrange
+        mock_datetime.now.return_value = datetime.datetime(2023, 5, 15, 10, 30, 0)
+        current_time = TimePoint(datetime.datetime(2023, 5, 10, 8, 0, 0))
+
+        # Act
+        result = self.telegramReportingService.processRelativeTimeSet(current_time, "now")
+
+        # Assert
+        self.assertEqual(result.datetime_representation, datetime.datetime(2023, 5, 15, 10, 30, 0))
+
+    def test_processRelativeTimeSet_today(self):
+        # Arrange
+        today = datetime.datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+        current_time = TimePoint(datetime.datetime(2023, 5, 10, 8, 0, 0))
+
+        # Act
+        result = self.telegramReportingService.processRelativeTimeSet(current_time, "today")
+
+        # Assert
+        self.assertEqual(result.datetime_representation, today)
+
+    def test_processRelativeTimeSet_tomorrow(self):
+        # Arrange
+        tomorrow = datetime.datetime.now().replace(hour=0, minute=0, second=0, microsecond=0) + datetime.timedelta(days=1)
+        current_time = TimePoint(datetime.datetime(2023, 5, 10, 8, 0, 0))
+
+        # Act
+        result = self.telegramReportingService.processRelativeTimeSet(current_time, "tomorrow")
+
+        # Assert
+        self.assertEqual(result.datetime_representation, tomorrow)
+
+    def test_processRelativeTimeSet_time_format(self):
+        # Arrange
+        current_time = TimePoint(datetime.datetime(2023, 5, 15, 10, 30, 0))
+
+        # Act
+        result = self.telegramReportingService.processRelativeTimeSet(current_time, "14:45")
+
+        # Assert
+        self.assertEqual(result.datetime_representation, datetime.datetime(2023, 5, 15, 14, 45, 0))
+
+    def test_processRelativeTimeSet_relative_time_addition(self):
+        # Arrange
+        current_time = TimePoint(datetime.datetime(2023, 5, 15, 10, 30, 0))
+
+        # Act
+        result = self.telegramReportingService.processRelativeTimeSet(current_time, "+2h")
+
+        # Assert
+        self.assertEqual(result.datetime_representation, datetime.datetime(2023, 5, 15, 12, 30, 0))
+
+    def test_processRelativeTimeSet_relative_time_subtraction(self):
+        # Arrange
+        current_time = TimePoint(datetime.datetime(2023, 5, 15, 10, 30, 0))
+
+        # Act
+        result = self.telegramReportingService.processRelativeTimeSet(current_time, "-30m")
+
+        # Assert
+        self.assertEqual(result.datetime_representation, datetime.datetime(2023, 5, 15, 10, 0, 0))
+
+    def test_processRelativeTimeSet_combined_values(self):
+        # Arrange
+        expected = datetime.datetime.now().replace(hour=0, minute=0, second=0, microsecond=0) + datetime.timedelta(hours=2)
+        current_time = TimePoint(datetime.datetime(2023, 5, 10, 8, 0, 0))
+
+        # Act
+        result = self.telegramReportingService.processRelativeTimeSet(current_time, "today;+2h")
+
+        # Assert
+        self.assertEqual(result.datetime_representation, expected)
+
+    def test_processRelativeTimeSet_complex_chain(self):
+        # Arrange
+        expected = datetime.datetime.now().replace(hour=0, minute=0, second=0, microsecond=0) + datetime.timedelta(days=1, hours=15, minutes=30)
+        current_time = TimePoint(datetime.datetime(2023, 5, 10, 8, 0, 0))
+
+        # Act
+        result = self.telegramReportingService.processRelativeTimeSet(current_time, "tomorrow;14:30;+1h")
+
+        # Assert
+        self.assertEqual(result.datetime_representation, expected)
 
 
 if __name__ == '__main__':
