@@ -2,7 +2,7 @@ import unittest
 from unittest.mock import MagicMock, patch, AsyncMock
 from src.TelegramReportingService import TelegramReportingService
 import asyncio
-from src.wrappers.TimeManagement import TimePoint, TimeAmount
+from src.wrappers.TimeManagement import TimePoint
 import datetime
 
 
