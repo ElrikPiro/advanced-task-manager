@@ -34,5 +34,5 @@ class RemainingEffortHeuristic(IHeuristic):
 
     def getComment(self, task: ITaskModel) -> str:
         remaining_effort = self.evaluate(task)
-        time_amount = TimeAmount(remaining_effort)
+        time_amount = TimeAmount(str(remaining_effort) + "p")
         return str(time_amount)

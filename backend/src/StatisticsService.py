@@ -31,7 +31,7 @@ class StatisticsService(IStatisticsService):
         self.fileBroker.writeFileContentJson(FileRegistry.STATISTICS_JSON, self.workDone)
 
     def getWorkDone(self, date: TimePoint) -> TimeAmount:
-        work_done: str = f"{self.workDone.get(date.datetime_representation.date().isoformat(), 0.0)}"
+        work_done: str = f"{self.workDone.get(date.datetime_representation.date().isoformat(), 0.0)}p"
         return TimeAmount(work_done)
 
     def getWorkloadStats(self, taskList: list[ITaskModel]) -> list:

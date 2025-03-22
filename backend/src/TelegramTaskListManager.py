@@ -146,7 +146,7 @@ class TelegramTaskListManager(ITaskListManager):
         statsMessage = "Work done in the last 7 days:\n"
         statsMessage += "`|    Date    | Work Done |`\n"
         statsMessage += "`|------------|-----------|`\n"
-        totalWork: TimeAmount = TimeAmount("0")
+        totalWork: TimeAmount = TimeAmount("0p")
         for i in range(7):
             date: TimePoint = TimePoint.today() + TimeAmount(f"-{i}d")
             workDone: TimeAmount = self.__statistics_service.getWorkDone(date)

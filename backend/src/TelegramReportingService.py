@@ -452,7 +452,7 @@ class TelegramReportingService(IReportingService):
         if selected_task is not None:
             task = selected_task
             work_units = TimeAmount(" ".join(params[0:]))
-            await self.processSetParam(task, "effort_invested", str(work_units.as_pomodoros()))
+            await self.processSetParam(task, "effort_invested", f"{str(work_units.as_pomodoros())}p")
             self.taskProvider.saveTask(task)
             date = datetime.datetime.now().date()
             self.statiticsProvider.doWork(date, work_units.as_pomodoros())
@@ -615,6 +615,21 @@ class TelegramReportingService(IReportingService):
             iteration += 1
 
     def processRelativeTimeSet(self, current: TimePoint, value: str) -> TimePoint:
+        """
+        Modifies a TimePoint by processing a chain of strings representing time diffs.
+        it also has the following shortcuts:
+        - now: Current time
+        - today: Current date
+        - tomorrow: Next day
+        - HH:MM: Time of the day in which the pointer is set
+
+        Params:
+            current: The current time point.
+            value: The string representing the time diff, several values can be concatenated by using a semicolon.
+
+        Returns:
+            The new time point.
+        """
         values = value.split(";")
         currentTimePoint = current
         for value in values:
@@ -624,6 +639,8 @@ class TelegramReportingService(IReportingService):
                 currentTimePoint = currentTimePoint.today()
             elif value == "tomorrow":
                 currentTimePoint = currentTimePoint.tomorrow()
+            elif value.find(":") > 0:
+                currentTimePoint = currentTimePoint.strip_time() + TimeAmount(value)
             else:
                 currentTimePoint = currentTimePoint + TimeAmount(value)
         return currentTimePoint
@@ -641,7 +658,21 @@ class TelegramReportingService(IReportingService):
             await self.bot.sendMessage(chat_id=self.chatId, text=errorMessage)
 
     async def setStartCommand(self, task: ITaskModel, value: str):
-        if value.startswith("+") or value.startswith("-") or value.startswith("now") or value.startswith("today") or value.startswith("tomorrow"):
+        """
+        Sets the start date/time of a task.
+
+        This method updates when a task becomes available based on the provided value.
+        It supports both absolute and relative time formats:
+
+        Params:
+            task: The task model to update.
+            value: The new start date/time value. Can be:
+                - Relative format (starting with +/-, or keywords now/today/tomorrow)
+                - Time format (HH:MM)
+                - Absolute date format (YYYY-MM-DDTHH:MM)
+                - Combined values separated by semicolons (e.g., "today;+2h")
+        """
+        if value.startswith("+") or value.startswith("-") or value.startswith("now") or value.startswith("today") or value.startswith("tomorrow") or value.count(":") == 1:
             start_timestamp = self.processRelativeTimeSet(task.getStart(), value)
             task.setStart(start_timestamp)
         else:
@@ -650,7 +681,21 @@ class TelegramReportingService(IReportingService):
         pass
 
     async def setDueCommand(self, task: ITaskModel, value: str):
-        if value.startswith("+") or value.startswith("-") or value.startswith("today") or value.startswith("tomorrow"):
+        """
+        Sets the due date/time of a task.
+
+        This method updates the deadline by which a task should be completed based on the provided value.
+        It supports both absolute and relative time formats:
+
+        Params:
+            task: The task model to update.
+            value: The new due date/time value. Can be:
+                - Relative format (starting with +/-, or keywords today/tomorrow)
+                - Time format (HH:MM)
+                - Absolute date format (YYYY-MM-DD)
+                - Combined values separated by semicolons (e.g., "today;+2d")
+        """
+        if value.startswith("+") or value.startswith("-") or value.startswith("today") or value.startswith("tomorrow") or value.count(":") == 1:
             due_timestamp = self.processRelativeTimeSet(task.getDue(), value)
             task.setDue(due_timestamp)
         else:
