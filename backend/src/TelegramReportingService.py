@@ -452,7 +452,7 @@ class TelegramReportingService(IReportingService):
         if selected_task is not None:
             task = selected_task
             work_units = TimeAmount(" ".join(params[0:]))
-            await self.processSetParam(task, "effort_invested", str(work_units.as_pomodoros()))
+            await self.processSetParam(task, "effort_invested", f"{str(work_units.as_pomodoros())}p")
             self.taskProvider.saveTask(task)
             date = datetime.datetime.now().date()
             self.statiticsProvider.doWork(date, work_units.as_pomodoros())
