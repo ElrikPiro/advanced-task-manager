@@ -16,7 +16,8 @@ class TimeAmount:
     """
 
     def __init__(self, str_representation: str):
-        self.int_representation = _convert_time_string_to_miliseconds(
+        conversionFunc = _convert_time_string_to_miliseconds if str_representation.find(":") == -1 else _convert_hour_string_to_miliseconds
+        self.int_representation = conversionFunc(
             str_representation
         )
 
@@ -101,7 +102,26 @@ class TimePoint:
     def strip_time(self):
         return TimePoint(self.datetime_representation.replace(hour=0, minute=0, second=0, microsecond=0))
 
+
 # Private helper functions in module
+
+
+def _convert_hour_string_to_miliseconds(value: str) -> int:
+    """
+    Converts a string representing a time amount to miliseconds.
+
+    This function expects an string representing an amount of time in the format HH:MM and converts it to miliseconds.
+
+    Params:
+        value: The string representing the time amount.
+    Returns:
+        The time amount in miliseconds.
+    Throws:
+        ValueError: If the time amount is not in the expected format.
+    """
+    value = str(value)
+    hours, minutes = value.split(":")
+    return int(hours) * 60 * 60 * 1000 + int(minutes) * 60 * 1000
 
 
 def _convert_time_string_to_miliseconds(value: str) -> int:
@@ -129,9 +149,8 @@ def _convert_time_string_to_miliseconds(value: str) -> int:
         modifier *= 25 * 60
     elif value.endswith("s"):
         modifier *= 1
-    else:  # no letter at the end, assume pomodoros
-        value += "p"
-        modifier *= 25 * 60
+    else:
+        raise ValueError("Invalid time string format (no time unit defined)")
 
     floatValue = float(value[1:-1])
     return int(sign * floatValue * modifier)
