@@ -29,7 +29,7 @@ class StatisticsService(IStatisticsService):
         self.workDone[date.isoformat()] = self.workDone.get(date.isoformat(), 0.0) + work_units
         self.workDone["log"] = self.workDone.get("log", [])
         self.workDone["log"].append({"timestamp": TimePoint.now().as_int(), "work_units": work_units, "task": task.getDescription()})
-        self.workDone["log"] = [entry for entry in self.workDone["log"] if TimePoint.now().as_int() - entry["timestamp"] < 86400]
+        self.workDone["log"] = [entry for entry in self.workDone["log"] if TimePoint.now().as_int() - entry["timestamp"] < 86400000]
 
         TimeAmount(f"{work_units}p")
         print(f"Work done on {TimePoint.now()}: {work_units}p on {task.getDescription()}")
@@ -64,3 +64,6 @@ class StatisticsService(IStatisticsService):
 
         retval = [workload, remainingEffort, maxHeuristic, HeuristicName, offender, offenderMax]
         return retval
+
+    def getWorkDoneLog(self) -> list:
+        return self.workDone["log"]

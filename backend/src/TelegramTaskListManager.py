@@ -170,6 +170,15 @@ class TelegramTaskListManager(ITaskListManager):
         statsMessage += f"    `max Offender: '{offender}' with {offenderMax} per day`\n"
         statsMessage += f"`total remaining effort: {remEffort}`\n"
         statsMessage += f"`max {heuristicName}: {heuristicValue}`\n\n"
+
+        log = self.__statistics_service.getWorkDoneLog()
+        statsMessage += "Work done log:\n"
+        for entry in log:
+            task = entry["task"]
+            work_units = entry["work_units"]
+            timestamp = TimePoint.from_int(entry["timestamp"])
+            statsMessage += f"`{timestamp}: {work_units}p on {task}`\n"
+
         statsMessage += "/list - return back to the task list"
         return statsMessage
 

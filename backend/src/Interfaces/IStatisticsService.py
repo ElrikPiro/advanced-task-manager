@@ -22,3 +22,7 @@ class IStatisticsService(ABC):
     @abstractmethod
     def initialize(self):
         pass
+
+    @abstractmethod
+    def getWorkDoneLog(self) -> list:
+        pass
