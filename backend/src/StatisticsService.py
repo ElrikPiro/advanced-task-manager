@@ -11,7 +11,7 @@ from .wrappers.TimeManagement import TimePoint, TimeAmount
 class StatisticsService(IStatisticsService):
 
     def __init__(self, fileBroker: IFileBroker, workLoadAbleFilter: IFilter, remainingEffortHeuristic: IHeuristic, mainHeuristic: IHeuristic):
-        self.workDone: dict[str, float] = {datetime.date.today().isoformat(): 0.0}
+        self.workDone: dict = {datetime.date.today().isoformat(): 0.0}
         self.fileBroker = fileBroker
         self.workLoadAbleFilter = workLoadAbleFilter
         self.remainingEffortHeuristic = remainingEffortHeuristic
@@ -25,9 +25,14 @@ class StatisticsService(IStatisticsService):
             print(f"{e.__class__.__name__}: {e}")
             print("Initializing StatisticsService with empty data.")
 
-    def doWork(self, date: datetime.date, work_units: float):
+    def doWork(self, date: datetime.date, work_units: float, task: ITaskModel):
         self.workDone[date.isoformat()] = self.workDone.get(date.isoformat(), 0.0) + work_units
-        # Save to file
+        self.workDone["log"] = self.workDone.get("log", [])
+        self.workDone["log"].append({"timestamp": TimePoint.now().as_int(), "work_units": work_units, "task": task.getDescription()})
+        self.workDone["log"] = [entry for entry in self.workDone["log"] if TimePoint.now().as_int() - entry["timestamp"] < 86400]
+
+        TimeAmount(f"{work_units}p")
+        print(f"Work done on {TimePoint.now()}: {work_units}p on {task.getDescription()}")
         self.fileBroker.writeFileContentJson(FileRegistry.STATISTICS_JSON, self.workDone)
 
     def getWorkDone(self, date: TimePoint) -> TimeAmount:

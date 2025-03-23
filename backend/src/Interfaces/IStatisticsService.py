@@ -8,7 +8,7 @@ from ..wrappers.TimeManagement import TimePoint, TimeAmount
 class IStatisticsService(ABC):
 
     @abstractmethod
-    def doWork(self, date: datetime.date, work_units: float):
+    def doWork(self, date: datetime.date, work_units: float, task: ITaskModel):
         pass
 
     @abstractmethod
