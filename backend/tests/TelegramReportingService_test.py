@@ -460,6 +460,73 @@ class TestTelegramReportingService(unittest.TestCase):
         # Assert
         self.assertEqual(result.datetime_representation, expected)
 
+    def test_workCommand_with_selected_task(self):
+        # Arrange
+        mockTask = MagicMock()
+        self.task_list_manager.selected_task = mockTask
+        self.taskProvider.saveTask = MagicMock()
+        self.telegramReportingService.processSetParam = AsyncMock()
+        self.telegramReportingService.sendTaskInformation = AsyncMock()
+        messageText = "/work 2p"
+
+        # Act
+        asyncio.run(self.telegramReportingService.workCommand(messageText))
+
+        # Assert
+        self.telegramReportingService.processSetParam.assert_called_once()
+        self.taskProvider.saveTask.assert_called_once_with(mockTask)
+        self.statisticsProvider.doWork.assert_called_once()
+        self.telegramReportingService.sendTaskInformation.assert_called_once_with(mockTask)
+
+    def test_workCommand_without_selected_task(self):
+        # Arrange
+        self.task_list_manager.selected_task = None
+        messageText = "/work 2p"
+
+        # Act
+        asyncio.run(self.telegramReportingService.workCommand(messageText))
+
+        # Assert
+        self.bot.sendMessage.assert_called_once_with(
+            chat_id=123456789,
+            text="no task provided."
+        )
+
+    def test_workCommand_with_time_amount(self):
+        # Arrange
+        mockTask = MagicMock()
+        self.task_list_manager.selected_task = mockTask
+        self.taskProvider.saveTask = MagicMock()
+        self.telegramReportingService.processSetParam = AsyncMock()
+        self.telegramReportingService.sendTaskInformation = AsyncMock()
+        messageText = "/work 1h"
+
+        # Act
+        asyncio.run(self.telegramReportingService.workCommand(messageText))
+
+        # Assert
+        # Check that processSetParam is called with the correct effort parameter
+        self.telegramReportingService.processSetParam.assert_called_once()
+        self.taskProvider.saveTask.assert_called_once_with(mockTask)
+        self.statisticsProvider.doWork.assert_called_once()
+
+    def test_workCommand_no_expectAnswer(self):
+        # Arrange
+        mockTask = MagicMock()
+        self.task_list_manager.selected_task = mockTask
+        self.taskProvider.saveTask = MagicMock()
+        self.telegramReportingService.processSetParam = AsyncMock()
+        self.telegramReportingService.sendTaskInformation = AsyncMock()
+        messageText = "/work 2p"
+
+        # Act
+        asyncio.run(self.telegramReportingService.workCommand(messageText, expectAnswer=False))
+
+        # Assert
+        self.taskProvider.saveTask.assert_called_once_with(mockTask)
+        self.statisticsProvider.doWork.assert_called_once()
+        self.telegramReportingService.sendTaskInformation.assert_not_called()
+
 
 if __name__ == '__main__':
     unittest.main()
