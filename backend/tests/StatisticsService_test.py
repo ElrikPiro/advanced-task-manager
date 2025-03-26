@@ -32,7 +32,7 @@ class TestStatisticsService(unittest.TestCase):
     def test_do_work(self):
         # Arrange
         test_date = datetime.date(2023, 1, 1)
-        work_units = 2.5
+        work_units = TimeAmount("2.5p")
 
         # Act
         with patch('src.wrappers.TimeManagement.TimePoint.now') as mock_now:
@@ -41,7 +41,7 @@ class TestStatisticsService(unittest.TestCase):
             self.service.doWork(test_date, work_units, self.mock_task)
 
         # Assert
-        self.assertEqual(self.service.workDone[test_date.isoformat()], work_units)
+        self.assertEqual(self.service.workDone[test_date.isoformat()], work_units.as_pomodoros())
         self.mock_file_broker.writeFileContentJson.assert_called_once_with(
             FileRegistry.STATISTICS_JSON, self.service.workDone
         )
@@ -49,9 +49,9 @@ class TestStatisticsService(unittest.TestCase):
     def test_do_work_accumulates_work(self):
         # Arrange
         test_date = datetime.date(2023, 1, 1)
-        initial_work = 1.5
-        additional_work = 2.0
-        self.service.workDone = {test_date.isoformat(): initial_work}
+        initial_work = TimeAmount("1.6p")
+        additional_work = TimeAmount("2.0p")
+        self.service.workDone = {test_date.isoformat(): initial_work.as_pomodoros()}
 
         # Act
         with patch('src.wrappers.TimeManagement.TimePoint.now') as mock_now:
@@ -60,7 +60,7 @@ class TestStatisticsService(unittest.TestCase):
             self.service.doWork(test_date, additional_work, self.mock_task)
 
         # Assert
-        self.assertEqual(self.service.workDone[test_date.isoformat()], initial_work + additional_work)
+        self.assertEqual(self.service.workDone[test_date.isoformat()], initial_work.as_pomodoros() + additional_work.as_pomodoros())
 
     def test_get_work_done_log(self):
         # Arrange

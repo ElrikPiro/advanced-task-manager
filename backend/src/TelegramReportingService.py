@@ -455,7 +455,7 @@ class TelegramReportingService(IReportingService):
             await self.processSetParam(task, "effort_invested", f"{str(work_units.as_pomodoros())}p")
             self.taskProvider.saveTask(task)
             date = datetime.datetime.now().date()
-            self.statiticsProvider.doWork(date, work_units.as_pomodoros(), task)
+            self.statiticsProvider.doWork(date, work_units, task)
             if expectAnswer:
                 await self.sendTaskInformation(task)
         else:
