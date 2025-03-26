@@ -639,7 +639,7 @@ class TelegramReportingService(IReportingService):
                 currentTimePoint = currentTimePoint.today()
             elif value == "tomorrow":
                 currentTimePoint = currentTimePoint.tomorrow()
-            elif value.find(":") > 0:
+            elif value.find(":") > 0 and value.find("T") < 0:
                 currentTimePoint = currentTimePoint.strip_time() + TimeAmount(value)
             else:
                 currentTimePoint = currentTimePoint + TimeAmount(value)
