@@ -177,7 +177,8 @@ class TelegramTaskListManager(ITaskListManager):
             task = entry["task"]
             work_units = entry["work_units"]
             timestamp = TimePoint.from_int(entry["timestamp"])
-            statsMessage += f"`{timestamp}: {work_units}p on {task}`\n"
+            timeAmount = TimeAmount(f"{work_units}p")
+            statsMessage += f"`{timestamp}: {timeAmount} on {task}`\n"
 
         statsMessage += "/list - return back to the task list"
         return statsMessage

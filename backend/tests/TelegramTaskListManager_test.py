@@ -69,8 +69,8 @@ class TestTelegramTaskListManager(unittest.TestCase):
 
         # Set up getWorkDoneLog to return a sample log
         work_done_log = [
-            {"task": "Task 1", "work_units": "2p", "timestamp": TimePoint.now().as_int()},
-            {"task": "Task 2", "work_units": "1p", "timestamp": TimePoint.now().as_int() - 3600}
+            {"task": "Task 1", "work_units": "2", "timestamp": TimePoint.now().as_int()},
+            {"task": "Task 2", "work_units": "1", "timestamp": TimePoint.now().as_int() - 3600}
         ]
         self.statistics_service.getWorkDoneLog.return_value = work_done_log
 
@@ -97,7 +97,8 @@ class TestTelegramTaskListManager(unittest.TestCase):
         for entry in work_done_log:
             task = entry["task"]
             work_units = entry["work_units"]
-            self.assertIn(f"{work_units}p on {task}", result)
+            timeAmount = TimeAmount(f"{work_units}p")
+            self.assertIn(f"{timeAmount} on {task}", result)
 
         # Check navigation option is present
         self.assertIn("/list - return back to the task list", result)
