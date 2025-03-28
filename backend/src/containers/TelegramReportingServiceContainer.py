@@ -3,6 +3,7 @@ import os
 from dependency_injector import containers, providers
 import telegram
 
+from src.wrappers.TimeManagement import TimeAmount
 from src.taskjsonproviders.ObsidianVaultTaskJsonProvider import ObsidianVaultTaskJsonProvider
 from src.TelegramTaskListManager import TelegramTaskListManager
 from src.wrappers.TelegramBotUserCommService import TelegramBotUserCommService
@@ -115,6 +116,19 @@ class TelegramReportingServiceContainer():
                 print("The directory does not exist, using current directory")
                 vaultPath = "."
             defaultConfig["OBSIDIAN_VAULT_PATH"] = vaultPath
+
+        print("Dedication time is the minimum time you are willing to compromise to completing tasks, in minutes (i.e: 60m), hours (i.e: 1h), or pomodoros (i.e: 2.4p)")
+        validPomodoros = False
+        while not validPomodoros:
+            dedicationTime = input("Please enter the dedication time: ")
+            try:
+                pomodorosPerDay = TimeAmount(dedicationTime)
+                validPomodoros = TimeAmount(dedicationTime).as_pomodoros() > 0
+            except Exception as e:
+                print(f"Invalid pomodoro value: {e}")
+                validPomodoros = False
+
+        defaultConfig["DEDICATION_TIME"] = f"{pomodorosPerDay.as_pomodoros()}p"
 
         # write the default config to the config.json file in disk
         json.dump(defaultConfig, open("config.json", "w"), indent=4)
