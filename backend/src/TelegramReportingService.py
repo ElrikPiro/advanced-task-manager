@@ -455,7 +455,7 @@ class TelegramReportingService(IReportingService):
             await self.processSetParam(task, "effort_invested", f"{str(work_units.as_pomodoros())}p")
             self.taskProvider.saveTask(task)
             date = datetime.datetime.now().date()
-            self.statiticsProvider.doWork(date, work_units.as_pomodoros())
+            self.statiticsProvider.doWork(date, work_units, task)
             if expectAnswer:
                 await self.sendTaskInformation(task)
         else:
@@ -639,7 +639,7 @@ class TelegramReportingService(IReportingService):
                 currentTimePoint = currentTimePoint.today()
             elif value == "tomorrow":
                 currentTimePoint = currentTimePoint.tomorrow()
-            elif value.find(":") > 0:
+            elif value.find(":") > 0 and value.find("T") < 0:
                 currentTimePoint = currentTimePoint.strip_time() + TimeAmount(value)
             else:
                 currentTimePoint = currentTimePoint + TimeAmount(value)

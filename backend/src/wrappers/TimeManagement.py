@@ -96,6 +96,10 @@ class TimePoint:
         except ValueError:
             return TimePoint(datetime.datetime.strptime(string, "%Y-%m-%d"))
 
+    @staticmethod
+    def from_int(value: int):
+        return TimePoint(datetime.datetime.fromtimestamp(value / 1e3))
+
     def as_int(self):
         return int(self.datetime_representation.timestamp() * 1e3)
 
