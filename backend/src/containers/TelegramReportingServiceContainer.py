@@ -159,6 +159,8 @@ class TelegramReportingServiceContainer():
         appdata = self.tryGetConfig("APPDATA", obsidianMode, default="NULL_APPDATA")
         vaultPath = self.tryGetConfig("OBSIDIAN_VAULT_PATH", obsidianMode, default="NULL_VAULT_PATH")
 
+        dedicationTime = TimeAmount(self.tryGetConfig("DEDICATION_TIME", required=False, default="2p"))
+
         categoriesConfigOption = self.config.jsonConfig.categories()
         self.container.categories = list[dict](categoriesConfigOption)
 
@@ -228,7 +230,7 @@ class TelegramReportingServiceContainer():
         self.container.filterList.extend(self.container.orderedCategories)
 
         # Scheduling algorithm
-        self.container.heristicScheduling = providers.Singleton(HeuristicScheduling, self.container.taskProvider())
+        self.container.heristicScheduling = providers.Singleton(HeuristicScheduling, dedicationTime)
 
         # Statistics service
         self.container.statisticsService = providers.Singleton(StatisticsService, self.container.fileBroker, self.container.workLoadAbleFilter, self.container.remainingEffortHeuristic(1.0), self.container.slackHeuristic)
