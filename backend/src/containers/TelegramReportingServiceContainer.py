@@ -185,10 +185,10 @@ class TelegramReportingServiceContainer():
             self.container.taskJsonProvider = providers.Singleton(TaskJsonProvider, self.container.fileBroker)
             self.container.taskProvider = providers.Singleton(TaskProvider, self.container.taskJsonProvider, self.container.fileBroker)
         # Heuristics
-        self.container.remainingEffortHeuristic = providers.Factory(RemainingEffortHeuristic, self.container.taskProvider)
-        self.container.daysToThresholdHeuristic = providers.Factory(DaysToThresholdHeuristic, self.container.taskProvider)
-        self.container.slackHeuristic = providers.Factory(SlackHeuristic, self.container.taskProvider)
-        self.container.tomorrowSlackHeuristic = providers.Factory(SlackHeuristic, self.container.taskProvider, 1)
+        self.container.remainingEffortHeuristic = providers.Factory(RemainingEffortHeuristic, dedicationTime)
+        self.container.daysToThresholdHeuristic = providers.Factory(DaysToThresholdHeuristic, dedicationTime)
+        self.container.slackHeuristic = providers.Factory(SlackHeuristic, dedicationTime)
+        self.container.tomorrowSlackHeuristic = providers.Factory(SlackHeuristic, dedicationTime, 1)
 
         ## Heuristic list
         self.container.heuristicList = providers.List(

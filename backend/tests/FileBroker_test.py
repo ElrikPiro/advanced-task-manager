@@ -32,7 +32,7 @@ class TestFileBroker(unittest.TestCase):
                 readcontent = self.fileBroker.readFileContent(
                     FileRegistry.STANDALONE_TASKS_JSON
                 )
-                self.assertEqual(readcontent, '{"tasks": [], "pomodoros_per_day": "2"}')
+                self.assertEqual(readcontent, '{"tasks": []}')
 
     def test_readFileContentJson_WhenFileIsFound_ThenReturnFileContent(self):
         with patch("builtins.open", mock_open(read_data='{"key": "value"}')) as mock_file:
@@ -49,7 +49,7 @@ class TestFileBroker(unittest.TestCase):
                 readcontent = self.fileBroker.readFileContentJson(
                     FileRegistry.STANDALONE_TASKS_JSON
                 )
-                self.assertEqual(readcontent, {"tasks": [], "pomodoros_per_day": "2"})
+                self.assertEqual(readcontent, {"tasks": []})
 
     def test___createFile_WhenFileIsCreated_ThenReturnNone(self):
         with patch("builtins.open", mock_open()) as mock_file:
