@@ -80,7 +80,7 @@ class TestTelegramTaskListManager(unittest.TestCase):
         # Assert
         # Check that the result contains expected parts
         self.assertIn("Work done in the last 7 days:", result)
-        self.assertIn("|    Date    | Work Done |", result)
+        self.assertIn("|    Date    | Work  Done |", result)
 
         # Check for the average work done (2 + 3 + 1.5 + 0 + 2.5 + 1 + 4) / 7 = 2.0
         self.assertIn("|   Average  |    2.0    |", result)
