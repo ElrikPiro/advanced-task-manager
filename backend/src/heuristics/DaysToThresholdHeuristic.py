@@ -15,7 +15,7 @@ class DaysToThresholdHeuristic(IHeuristic):
     def sort(self, tasks: List[ITaskModel]) -> List[Tuple[ITaskModel, float]]:
         pomodorosPerDay = self.dedication.as_pomodoros()
         retval = [(task, self.fastEvaluate(task, pomodorosPerDay)) for task in tasks]
-        retval.sort(key=lambda x: x[1], reverse=True)
+        retval.sort(key=lambda x: x[1], reverse=False)
         return retval
 
     def fastEvaluate(self, task: ITaskModel, pomodorosPerDay: float) -> float:
