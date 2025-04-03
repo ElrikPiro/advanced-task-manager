@@ -3,18 +3,17 @@ from math import ceil
 from .wrappers.TimeManagement import TimeAmount
 from .Interfaces.IScheduling import IScheduling
 from .Interfaces.ITaskModel import ITaskModel
-from .Interfaces.ITaskProvider import ITaskProvider
 
 
 class HeuristicScheduling(IScheduling):
 
-    def __init__(self, pomodoroConstProvider: ITaskProvider):
-        self.pomodoroConstProvider = pomodoroConstProvider
+    def __init__(self, dedication: TimeAmount):
+        self.__dedication = dedication
 
     def schedule(self, task: ITaskModel, param: str) -> None:
 
         d = task.calculateRemainingTime().as_days()
-        p = float(self.pomodoroConstProvider.getTaskListAttribute("pomodoros_per_day"))
+        p = self.__dedication.as_pomodoros()
         r = task.getTotalCost().as_pomodoros()
 
         if param.replace(".", "").isnumeric():

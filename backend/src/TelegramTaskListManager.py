@@ -144,18 +144,18 @@ class TelegramTaskListManager(ITaskListManager):
 
     def get_list_stats(self) -> str:
         statsMessage = "Work done in the last 7 days:\n"
-        statsMessage += "`|    Date    | Work Done |`\n"
-        statsMessage += "`|------------|-----------|`\n"
+        statsMessage += "`|    Date    | Work  Done |`\n"
+        statsMessage += "`|------------|------------|`\n"
         totalWork: TimeAmount = TimeAmount("0p")
         for i in range(7):
             date: TimePoint = TimePoint.today() + TimeAmount(f"-{i}d")
             workDone: TimeAmount = self.__statistics_service.getWorkDone(date)
             totalWork += workDone
-            statsMessage += f"`| {date} |    {round(workDone.as_pomodoros(), 1)}    |`\n"
+            statsMessage += f"`| {date} |    {round(workDone.as_pomodoros(), 2)}    |`\n"
         # add average work done per day
-        statsMessage += "`|------------|-----------|`\n"
-        statsMessage += f"`|   Average  |    {round(totalWork.as_pomodoros()/7, 1)}    |`\n"
-        statsMessage += "`|------------|-----------|`\n\n"
+        statsMessage += "`|------------|------------|`\n"
+        statsMessage += f"`|   Average  |    {round(totalWork.as_pomodoros()/7, 2)}    |`\n"
+        statsMessage += "`|------------|------------|`\n\n"
 
         statsMessage += "Workload statistics:\n"
         workloadStats = self.__statistics_service.getWorkloadStats(self.__taskModelList)

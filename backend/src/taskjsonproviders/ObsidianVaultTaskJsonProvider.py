@@ -7,7 +7,7 @@ class ObsidianVaultTaskJsonProvider(ITaskJsonProvider):
 
     def __init__(self, fileBroker: IFileBroker):
         self.__fileBroker = fileBroker
-        self._lastJson = {"tasks": [], "pomodoros_per_day": "2"}
+        self._lastJson = {"tasks": []}
         self._lastJsonList: list = []
         self.__lastProjectList: list = []
         self._lastMtime = 0.0
@@ -24,7 +24,7 @@ class ObsidianVaultTaskJsonProvider(ITaskJsonProvider):
         if mtime <= self._lastMtime:
             return self._lastJson
 
-        self._lastJson = {"tasks": [], "pomodoros_per_day": "2"}
+        self._lastJson = {"tasks": []}
         self._lastJsonList = []
         self.__lastProjectList = []
 

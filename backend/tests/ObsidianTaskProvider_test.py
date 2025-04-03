@@ -137,13 +137,11 @@ class TestObsidianTaskProvider(unittest.TestCase):
                     "calm": "true"
                 }
             ],
-            "pomodoros_per_day": "2",
         }
 
     def fromObsidianToGenericJsonDumps(self, obsidianJson: dict) -> str:
         retval = {
             "tasks": [],
-            "pomodoros_per_day": "2",
         }
 
         for task in obsidianJson["tasks"]:

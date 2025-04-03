@@ -3,6 +3,7 @@ import os
 from dependency_injector import containers, providers
 import telegram
 
+from src.wrappers.TimeManagement import TimeAmount
 from src.taskjsonproviders.ObsidianVaultTaskJsonProvider import ObsidianVaultTaskJsonProvider
 from src.TelegramTaskListManager import TelegramTaskListManager
 from src.wrappers.TelegramBotUserCommService import TelegramBotUserCommService
@@ -116,6 +117,19 @@ class TelegramReportingServiceContainer():
                 vaultPath = "."
             defaultConfig["OBSIDIAN_VAULT_PATH"] = vaultPath
 
+        print("Dedication time is the minimum time you are willing to compromise to completing tasks, in minutes (i.e: 60m), hours (i.e: 1h), or pomodoros (i.e: 2.4p)")
+        validPomodoros = False
+        while not validPomodoros:
+            dedicationTime = input("Please enter the dedication time: ")
+            try:
+                pomodorosPerDay = TimeAmount(dedicationTime)
+                validPomodoros = TimeAmount(dedicationTime).as_pomodoros() > 0
+            except Exception as e:
+                print(f"Invalid pomodoro value: {e}")
+                validPomodoros = False
+
+        defaultConfig["DEDICATION_TIME"] = f"{pomodorosPerDay.as_pomodoros()}p"
+
         # write the default config to the config.json file in disk
         json.dump(defaultConfig, open("config.json", "w"), indent=4)
 
@@ -145,6 +159,8 @@ class TelegramReportingServiceContainer():
         appdata = self.tryGetConfig("APPDATA", obsidianMode, default="NULL_APPDATA")
         vaultPath = self.tryGetConfig("OBSIDIAN_VAULT_PATH", obsidianMode, default="NULL_VAULT_PATH")
 
+        dedicationTime = TimeAmount(self.tryGetConfig("DEDICATION_TIME", required=False, default="2p"))
+
         categoriesConfigOption = self.config.jsonConfig.categories()
         self.container.categories = list[dict](categoriesConfigOption)
 
@@ -169,10 +185,10 @@ class TelegramReportingServiceContainer():
             self.container.taskJsonProvider = providers.Singleton(TaskJsonProvider, self.container.fileBroker)
             self.container.taskProvider = providers.Singleton(TaskProvider, self.container.taskJsonProvider, self.container.fileBroker)
         # Heuristics
-        self.container.remainingEffortHeuristic = providers.Factory(RemainingEffortHeuristic, self.container.taskProvider)
-        self.container.daysToThresholdHeuristic = providers.Factory(DaysToThresholdHeuristic, self.container.taskProvider)
-        self.container.slackHeuristic = providers.Factory(SlackHeuristic, self.container.taskProvider)
-        self.container.tomorrowSlackHeuristic = providers.Factory(SlackHeuristic, self.container.taskProvider, 1)
+        self.container.remainingEffortHeuristic = providers.Factory(RemainingEffortHeuristic, dedicationTime)
+        self.container.daysToThresholdHeuristic = providers.Factory(DaysToThresholdHeuristic, dedicationTime)
+        self.container.slackHeuristic = providers.Factory(SlackHeuristic, dedicationTime)
+        self.container.tomorrowSlackHeuristic = providers.Factory(SlackHeuristic, dedicationTime, 1)
 
         ## Heuristic list
         self.container.heuristicList = providers.List(
@@ -214,7 +230,7 @@ class TelegramReportingServiceContainer():
         self.container.filterList.extend(self.container.orderedCategories)
 
         # Scheduling algorithm
-        self.container.heristicScheduling = providers.Singleton(HeuristicScheduling, self.container.taskProvider())
+        self.container.heristicScheduling = providers.Singleton(HeuristicScheduling, dedicationTime)
 
         # Statistics service
         self.container.statisticsService = providers.Singleton(StatisticsService, self.container.fileBroker, self.container.workLoadAbleFilter, self.container.remainingEffortHeuristic(1.0), self.container.slackHeuristic)

@@ -1,17 +1,17 @@
 from typing import List, Tuple
 from ..Interfaces.IHeuristic import IHeuristic
 from ..Interfaces.ITaskModel import ITaskModel
-from ..Interfaces.ITaskProvider import ITaskProvider
+from ..wrappers.TimeManagement import TimeAmount
 
 
 class SlackHeuristic(IHeuristic):
 
-    def __init__(self, pomodorosPerDayProvider: ITaskProvider, daysOffset: int = 0):
-        self.pomodorosPerDayProvider = pomodorosPerDayProvider
+    def __init__(self, dedication: TimeAmount, daysOffset: int = 0):
+        self.dedication = dedication
         self.daysOffset = daysOffset
 
     def sort(self, tasks: List[ITaskModel]) -> List[Tuple[ITaskModel, float]]:
-        pomodorosPerDay = float(self.pomodorosPerDayProvider.getTaskListAttribute("pomodoros_per_day"))
+        pomodorosPerDay = self.dedication.as_pomodoros()
         retval = [(task, self.fastEvaluate(task, pomodorosPerDay)) for task in tasks]
         retval.sort(key=lambda x: x[1], reverse=True)
         return retval
@@ -33,7 +33,7 @@ class SlackHeuristic(IHeuristic):
             return 100
 
     def evaluate(self, task: ITaskModel) -> float:
-        p = float(self.pomodorosPerDayProvider.getTaskListAttribute("pomodoros_per_day"))
+        p = self.dedication.as_pomodoros()
         return self.fastEvaluate(task, p)
 
     def getComment(self, task: ITaskModel) -> str:
