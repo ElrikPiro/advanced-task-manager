@@ -5,7 +5,7 @@ from .Interfaces.IFileBroker import IFileBroker, FileRegistry, VaultRegistry
 
 class FileBroker(IFileBroker):
     def __init__(self, jsonPath: str, appdata: str, vaultPath: str):
-        defaultTaskJson = '{"tasks": [], "pomodoros_per_day": "2"}'
+        defaultTaskJson = '{"tasks": []}'
 
         self.filePaths: dict[FileRegistry, dict] = {
             FileRegistry.STANDALONE_TASKS_JSON: {

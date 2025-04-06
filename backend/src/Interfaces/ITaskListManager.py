@@ -78,6 +78,10 @@ class ITaskListManager(ABC):
 
     @abstractmethod
     def get_list_stats(self) -> str:
+        """
+        Returns a string with the statistics of the task list.
+        This includes workload, remaining effort, heuristic value, and offender task.
+        """
         pass
 
     @abstractmethod

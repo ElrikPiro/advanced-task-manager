@@ -48,7 +48,7 @@ class TimeAmount:
         """
         Returns the time amount as a number of pomodoros.
         """
-        return ceil((self.int_representation * 5) / (25 * 60 * 1000)) / 5
+        return ceil((self.int_representation * 25) / (25 * 60 * 1000)) / 25
 
     def as_days(self) -> int:
         """
@@ -161,7 +161,7 @@ def _convert_time_string_to_miliseconds(value: str) -> int:
 
 
 def _convert_seconds_to_time_string(miliseconds: int) -> str:
-    pomodoros = ceil((5 * miliseconds) / (25 * 60 * 1000)) / 5
+    pomodoros = ceil((25 * miliseconds) / (25 * 60 * 1000)) / 25
     # round pomodoros to 1 decimal place
     days, miliseconds = divmod(miliseconds, 86400000)
     hours, miliseconds = divmod(miliseconds, 3600000)

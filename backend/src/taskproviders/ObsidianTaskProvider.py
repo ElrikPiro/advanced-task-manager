@@ -178,6 +178,5 @@ class ObsidianTaskProvider(ITaskProvider):
             }
             tasks.append(taskDict)
         return json.dumps({
-            "tasks": tasks,
-            "pomodoros_per_day": self.getTaskListAttribute("pomodoros_per_day")
+            "tasks": tasks
         }, indent=4)
