@@ -193,14 +193,15 @@ class TelegramReportingServiceContainer():
         vaultPath = self.tryGetConfig("OBSIDIAN_VAULT_PATH", obsidianMode, default="NULL_VAULT_PATH")
 
         dedicationTime = TimeAmount(self.tryGetConfig("DEDICATION_TIME", required=False, default="2p"))
+        categoriesConfigOption = self.config.jsonConfig.categories()
+        self.container.categories = list[dict](categoriesConfigOption)
+
         taskDiscoveryPolicies = {
             "context_missing_policy": self.tryGetConfig("CONTEXT_MISSING_POLICY", obsidianMode, default="0"),
             "date_missing_policy": self.tryGetConfig("DATE_MISSING_POLICY", obsidianMode, default="0"),
             "default_context": self.tryGetConfig("DEFAULT_CONTEXT", obsidianMode, default="inbox"),
+            "categories_prefixes": [category["prefix"] for category in self.container.categories],
         }
-
-        categoriesConfigOption = self.config.jsonConfig.categories()
-        self.container.categories = list[dict](categoriesConfigOption)
 
         # External services
 

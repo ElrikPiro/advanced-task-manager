@@ -13,6 +13,7 @@ class TestObsidianVaultTaskJsonProvider(unittest.TestCase):
             "context_missing_policy": "0",
             "date_missing_policy": "0",
             "default_context": "inbox",
+            "categories_prefixes": ["work"],
         }
         self.provider = ObsidianVaultTaskJsonProvider(self.mock_file_broker, self.policies)
 
@@ -59,7 +60,7 @@ class TestObsidianVaultTaskJsonProvider(unittest.TestCase):
         self.mock_file_broker.getVaultFileLines.return_value = [
             "---",
             "---",
-            "- [ ] Complete report [track::work] [due::2023-12-31] [severity::3] [remaining_cost::2] [invested::1]"
+            "- [ ] Complete report [track::work] [start::2023-12-31] [due::2023-12-31] [severity::3] [remaining_cost::2] [invested::1]"
         ]
 
         result = self.provider.getJson()
@@ -67,7 +68,7 @@ class TestObsidianVaultTaskJsonProvider(unittest.TestCase):
         task = result["tasks"][0]
         self.assertEqual(task["taskText"], "Complete report")
         self.assertEqual(task["due"], str(TimePoint.from_string("2023-12-31").as_int()))
-        self.assertEqual(task["severity"], "3")
+        self.assertEqual(task["severity"], "3.0")
         self.assertEqual(task["remaining_cost"], "2")
         self.assertEqual(task["invested"], "1")
         self.assertEqual(task["total_cost"], "1.0")
@@ -95,7 +96,7 @@ class TestObsidianVaultTaskJsonProvider(unittest.TestCase):
 
         result = self.provider.getJson()
         task = result["tasks"][0]
-        self.assertEqual(task["severity"], "5")
+        self.assertEqual(task["severity"], "5.0")
         self.assertEqual(task["starts"], str(TimePoint.from_string("2023-01-01").as_int()))
 
     def test_update_existing_task(self):

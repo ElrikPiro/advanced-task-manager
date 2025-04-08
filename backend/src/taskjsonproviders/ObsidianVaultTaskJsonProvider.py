@@ -156,13 +156,39 @@ class ObsidianVaultTaskJsonProvider(ITaskJsonProvider):
 
         # special case for starts and due that should be converted to int
         try:
-            taskDict["starts"] = str(TimePoint.from_string(taskDict["starts"]).as_int())
-            taskDict["due"] = str(TimePoint.from_string(taskDict["due"]).as_int())
-            taskDict["valid"] = "True" if taskDict.get("track") is not None else "False"
+            taskDict["starts"] = self.__apply_date_policy(taskDict["starts"])
+            taskDict["due"] = self.__apply_date_policy(taskDict["due"])
+            taskDict["track"] = self.__apply_track_policy(taskDict["track"])
+            taskDict["severity"] = str(float(taskDict["severity"]))
             taskDict["total_cost"] = str(float(taskDict["remaining_cost"]) - float(taskDict["invested"]))
             taskDict["effort_invested"] = taskDict["invested"]
+            taskDict["valid"] = "True"
         except Exception:
             taskDict["valid"] = "False"
             pass
 
         return taskDict
+
+    def __apply_date_policy(self, date: str) -> str:
+        try:
+            return str(TimePoint.from_string(date).as_int())
+        except ValueError:
+            if self.__policies["date_missing_policy"] == "1":
+                return str(TimePoint.today().as_int())
+            raise ValueError(f"Invalid date format: {date}. Expected format is YYYY-MM-DD or YYYY-MM-DDTHH:MM")
+
+    def __apply_track_policy(self, track: str) -> str:
+        def is_prefix_of(prefix):
+            isPrefix = False
+            for context in self.__policies["categories_prefixes"]:
+                if track.startswith(context):
+                    isPrefix = True
+                    break
+            return isPrefix
+
+        if track is None or not is_prefix_of(track):
+            if self.__policies["context_missing_policy"] == "1":
+                return self.__policies["default_context"]
+            raise ValueError("Track tag is missing and no default value is set.")
+
+        return track
