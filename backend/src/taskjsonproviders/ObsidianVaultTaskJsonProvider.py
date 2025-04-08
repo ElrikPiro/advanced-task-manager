@@ -5,12 +5,13 @@ from ..Interfaces.IFileBroker import IFileBroker, VaultRegistry
 
 class ObsidianVaultTaskJsonProvider(ITaskJsonProvider):
 
-    def __init__(self, fileBroker: IFileBroker):
+    def __init__(self, fileBroker: IFileBroker, policies: dict):
         self.__fileBroker = fileBroker
         self._lastJson = {"tasks": []}
         self._lastJsonList: list = []
         self.__lastProjectList: list = []
         self._lastMtime = 0.0
+        self.__policies = policies
 
     def getJson(self) -> dict:
         vaultFiles = self.__fileBroker.getVaultFiles(VaultRegistry.OBSIDIAN)

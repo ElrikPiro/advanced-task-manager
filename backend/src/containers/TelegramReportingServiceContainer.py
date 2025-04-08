@@ -196,7 +196,7 @@ class TelegramReportingServiceContainer():
         taskDiscoveryPolicies = {
             "context_missing_policy": self.tryGetConfig("CONTEXT_MISSING_POLICY", obsidianMode, default="0"),
             "date_missing_policy": self.tryGetConfig("DATE_MISSING_POLICY", obsidianMode, default="0"),
-            "default_context": self.tryGetConfig("DEFAULT_CONTEXT", obsidianMode, default="alert"),
+            "default_context": self.tryGetConfig("DEFAULT_CONTEXT", obsidianMode, default="inbox"),
         }
 
         categoriesConfigOption = self.config.jsonConfig.categories()
@@ -217,7 +217,7 @@ class TelegramReportingServiceContainer():
         self.container.userCommService = self.container.telegramUserCommService if telegramMode else self.container.shellUserCommService
 
         if obsidianMode:
-            self.container.taskJsonProvider = providers.Singleton(ObsidianVaultTaskJsonProvider, self.container.fileBroker)
+            self.container.taskJsonProvider = providers.Singleton(ObsidianVaultTaskJsonProvider, self.container.fileBroker, taskDiscoveryPolicies)
             self.container.taskProvider = providers.Singleton(ObsidianTaskProvider, self.container.taskJsonProvider, self.container.fileBroker)
         else:
             self.container.taskJsonProvider = providers.Singleton(TaskJsonProvider, self.container.fileBroker)

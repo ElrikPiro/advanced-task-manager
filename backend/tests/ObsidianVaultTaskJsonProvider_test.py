@@ -9,7 +9,12 @@ class TestObsidianVaultTaskJsonProvider(unittest.TestCase):
 
     def setUp(self):
         self.mock_file_broker = MagicMock(spec=IFileBroker)
-        self.provider = ObsidianVaultTaskJsonProvider(self.mock_file_broker)
+        self.policies = {
+            "context_missing_policy": "0",
+            "date_missing_policy": "0",
+            "default_context": "inbox",
+        }
+        self.provider = ObsidianVaultTaskJsonProvider(self.mock_file_broker, self.policies)
 
     def test_empty_vault_returns_empty_dict(self):
         self.mock_file_broker.getVaultFiles.return_value = []
