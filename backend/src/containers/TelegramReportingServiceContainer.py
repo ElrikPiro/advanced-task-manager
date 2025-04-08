@@ -73,6 +73,10 @@ class TelegramReportingServiceContainer():
                 {
                     "prefix": "outdoor",
                     "description": "Outdoor dynamic tasks"
+                },
+                {
+                    "prefix": "inbox",
+                    "description": "Inbox tasks"
                 }
             ],
         }
@@ -116,6 +120,35 @@ class TelegramReportingServiceContainer():
                 print("The directory does not exist, using current directory")
                 vaultPath = "."
             defaultConfig["OBSIDIAN_VAULT_PATH"] = vaultPath
+            # ask the user for a context missing policy
+            print("Context missing policy is the policy to use when a task does not have a context")
+            print("0 - ignore")
+            print("1 - use_default")
+            contextMissingPolicy = input("Please enter the context missing policy: (0)")
+            while contextMissingPolicy not in ["0", "1"]:
+                print("Invalid context missing policy, using 0 (ignore)")
+                contextMissingPolicy = "0"
+            defaultConfig["CONTEXT_MISSING_POLICY"] = contextMissingPolicy
+            if contextMissingPolicy == "1":
+                # ask the user for a default context
+                defaultContext = input("Please enter the default context: ")
+                # get a list of context categories prefixes
+                contextCategories = [category["prefix"] for category in defaultConfig["categories"]]
+                # check if the default context is in the list of prefixes
+                while defaultContext not in contextCategories:
+                    print(f"Invalid context, please select one of the following: {contextCategories}")
+                    defaultContext = input("Please enter the default context: ")
+
+                defaultConfig["DEFAULT_CONTEXT"] = defaultContext
+            # ask the user for a date missing policy
+            print("Date missing policy is the policy to use when a task does not have a valid date")
+            print("0 - ignore")
+            print("1 - use_current_date")
+            dateMissingPolicy = input("Please enter the date missing policy: (0)")
+            while dateMissingPolicy not in ["0", "1"]:
+                print("Invalid date missing policy, using 0 (ignore)")
+                dateMissingPolicy = "0"
+            defaultConfig["DATE_MISSING_POLICY"] = dateMissingPolicy
 
         print("Dedication time is the minimum time you are willing to compromise to completing tasks, in minutes (i.e: 60m), hours (i.e: 1h), or pomodoros (i.e: 2.4p)")
         validPomodoros = False
@@ -160,9 +193,15 @@ class TelegramReportingServiceContainer():
         vaultPath = self.tryGetConfig("OBSIDIAN_VAULT_PATH", obsidianMode, default="NULL_VAULT_PATH")
 
         dedicationTime = TimeAmount(self.tryGetConfig("DEDICATION_TIME", required=False, default="2p"))
-
         categoriesConfigOption = self.config.jsonConfig.categories()
         self.container.categories = list[dict](categoriesConfigOption)
+
+        taskDiscoveryPolicies = {
+            "context_missing_policy": self.tryGetConfig("CONTEXT_MISSING_POLICY", obsidianMode, default="0"),
+            "date_missing_policy": self.tryGetConfig("DATE_MISSING_POLICY", obsidianMode, default="0"),
+            "default_context": self.tryGetConfig("DEFAULT_CONTEXT", obsidianMode, default="inbox"),
+            "categories_prefixes": [category["prefix"] for category in self.container.categories],
+        }
 
         # External services
 
@@ -179,7 +218,7 @@ class TelegramReportingServiceContainer():
         self.container.userCommService = self.container.telegramUserCommService if telegramMode else self.container.shellUserCommService
 
         if obsidianMode:
-            self.container.taskJsonProvider = providers.Singleton(ObsidianVaultTaskJsonProvider, self.container.fileBroker)
+            self.container.taskJsonProvider = providers.Singleton(ObsidianVaultTaskJsonProvider, self.container.fileBroker, taskDiscoveryPolicies)
             self.container.taskProvider = providers.Singleton(ObsidianTaskProvider, self.container.taskJsonProvider, self.container.fileBroker)
         else:
             self.container.taskJsonProvider = providers.Singleton(TaskJsonProvider, self.container.fileBroker)
