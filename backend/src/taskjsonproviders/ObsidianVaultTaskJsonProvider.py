@@ -57,7 +57,7 @@ class ObsidianVaultTaskJsonProvider(ITaskJsonProvider):
 
             if len(taskLines) == 0 and status == "open":
                 taskDict = self.__getTaskDictFromLine(
-                    "- [ ] Define next action [track::alert]",
+                    f"- [ ] Define next action [track::{self.__getFallbackPolicy()}]",
                     file[0], str(len(fileContent)),
                     fileHeader
                 )
@@ -192,3 +192,8 @@ class ObsidianVaultTaskJsonProvider(ITaskJsonProvider):
             raise ValueError("Track tag is missing and no default value is set.")
 
         return track
+
+    def __getFallbackPolicy(self) -> str:
+        if self.__policies["default_context"] in self.__policies["categories_prefixes"]:
+            return self.__policies["default_context"]
+        return self.__policies["categories_prefixes"][0] if self.__policies["categories_prefixes"] else None
