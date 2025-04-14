@@ -137,6 +137,38 @@ class TestObsidianVaultTaskJsonProvider(unittest.TestCase):
         self.provider.saveJson({"tasks": []})
         # No assertions needed as the method doesn't do anything
 
+    def test_update_or_append_task_functionality(self):
+        # Test that __update_or_append_task correctly updates or appends tasks
+        # Create a task first
+        self.mock_file_broker.getVaultFiles.return_value = [("tasks.md", 100.0)]
+        self.mock_file_broker.getVaultFileLines.return_value = [
+            "---",
+            "---",
+            "- [ ] Task 1 [track::work] [severity::2]"
+        ]
+
+        result = self.provider.getJson()
+        self.assertEqual(len(result["tasks"]), 1)
+        self.assertEqual(result["tasks"][0]["taskText"], "Task 1")
+        self.assertEqual(result["tasks"][0]["severity"], "2.0")
+
+        # Now add a new task with a different line and update the existing one
+        self.mock_file_broker.getVaultFiles.return_value = [("tasks.md", 200.0)]
+        self.mock_file_broker.getVaultFileLines.return_value = [
+            "---",
+            "---",
+            "- [ ] Task 1 updated [track::work] [severity::3]",
+            "- [ ] Task 2 [track::work]"
+        ]
+
+        result = self.provider.getJson()
+        self.assertEqual(len(result["tasks"]), 2)
+
+        # Tasks should be ordered based on their order in the file
+        self.assertEqual(result["tasks"][0]["taskText"], "Task 1 updated")
+        self.assertEqual(result["tasks"][0]["severity"], "3.0")
+        self.assertEqual(result["tasks"][1]["taskText"], "Task 2")
+
 
 if __name__ == "__main__":
     unittest.main()
