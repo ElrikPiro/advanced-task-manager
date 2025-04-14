@@ -133,7 +133,8 @@ class ObsidianVaultTaskJsonProvider(ITaskJsonProvider):
 
         # get task text
         # task text is everything after "- [ ]" and before any [] containing a "::"
-        textAfterCheckbox = line.split("- [ ]")[1]
+        lineMod = line + "[eol:: here]"
+        textAfterCheckbox = lineMod.split("- [ ]")[1]
         textBeforeFirstDualColon = textAfterCheckbox.split("::")[0]
         splittedByCorchetes = textBeforeFirstDualColon.split("[")
         allButLast = splittedByCorchetes[:-1]
@@ -158,12 +159,13 @@ class ObsidianVaultTaskJsonProvider(ITaskJsonProvider):
         try:
             taskDict["starts"] = self.__apply_date_policy(taskDict["starts"])
             taskDict["due"] = self.__apply_date_policy(taskDict["due"])
-            taskDict["track"] = self.__apply_track_policy(taskDict["track"])
+            taskDict["track"] = self.__apply_track_policy(taskDict.get("track", None))
             taskDict["severity"] = str(float(taskDict["severity"]))
             taskDict["total_cost"] = str(float(taskDict["remaining_cost"]) - float(taskDict["invested"]))
             taskDict["effort_invested"] = taskDict["invested"]
             taskDict["valid"] = "True"
-        except Exception:
+        except Exception as ex:
+            print(f"Error while processing task {taskDict['taskText']} in file {file} at line {lineNum}: {ex}")
             taskDict["valid"] = "False"
             pass
 
