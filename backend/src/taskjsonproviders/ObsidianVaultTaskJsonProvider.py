@@ -5,12 +5,13 @@ from ..Interfaces.IFileBroker import IFileBroker, VaultRegistry
 
 class ObsidianVaultTaskJsonProvider(ITaskJsonProvider):
 
-    def __init__(self, fileBroker: IFileBroker):
+    def __init__(self, fileBroker: IFileBroker, policies: dict):
         self.__fileBroker = fileBroker
         self._lastJson = {"tasks": []}
         self._lastJsonList: list = []
         self.__lastProjectList: list = []
         self._lastMtime = 0.0
+        self.__policies = policies
 
     def getJson(self) -> dict:
         vaultFiles = self.__fileBroker.getVaultFiles(VaultRegistry.OBSIDIAN)
@@ -56,7 +57,7 @@ class ObsidianVaultTaskJsonProvider(ITaskJsonProvider):
 
             if len(taskLines) == 0 and status == "open":
                 taskDict = self.__getTaskDictFromLine(
-                    "- [ ] Define next action [track::alert]",
+                    f"- [ ] Define next action [track::{self.__getFallbackPolicy()}]",
                     file[0], str(len(fileContent)),
                     fileHeader
                 )
@@ -132,7 +133,8 @@ class ObsidianVaultTaskJsonProvider(ITaskJsonProvider):
 
         # get task text
         # task text is everything after "- [ ]" and before any [] containing a "::"
-        textAfterCheckbox = line.split("- [ ]")[1]
+        lineMod = line + "[eol:: here]"
+        textAfterCheckbox = lineMod.split("- [ ]")[1]
         textBeforeFirstDualColon = textAfterCheckbox.split("::")[0]
         splittedByCorchetes = textBeforeFirstDualColon.split("[")
         allButLast = splittedByCorchetes[:-1]
@@ -155,13 +157,45 @@ class ObsidianVaultTaskJsonProvider(ITaskJsonProvider):
 
         # special case for starts and due that should be converted to int
         try:
-            taskDict["starts"] = str(TimePoint.from_string(taskDict["starts"]).as_int())
-            taskDict["due"] = str(TimePoint.from_string(taskDict["due"]).as_int())
-            taskDict["valid"] = "True" if taskDict.get("track") is not None else "False"
+            taskDict["starts"] = self.__apply_date_policy(taskDict["starts"])
+            taskDict["due"] = self.__apply_date_policy(taskDict["due"])
+            taskDict["track"] = self.__apply_track_policy(taskDict.get("track", None))
+            taskDict["severity"] = str(float(taskDict["severity"]))
             taskDict["total_cost"] = str(float(taskDict["remaining_cost"]) - float(taskDict["invested"]))
             taskDict["effort_invested"] = taskDict["invested"]
-        except Exception:
+            taskDict["valid"] = "True"
+        except Exception as ex:
+            print(f"Error while processing task {taskDict['taskText']} in file {file} at line {lineNum}: {ex}")
             taskDict["valid"] = "False"
             pass
 
         return taskDict
+
+    def __apply_date_policy(self, date: str) -> str:
+        try:
+            return str(TimePoint.from_string(date).as_int())
+        except ValueError:
+            if self.__policies["date_missing_policy"] == "1":
+                return str(TimePoint.today().as_int())
+            raise ValueError(f"Invalid date format: {date}. Expected format is YYYY-MM-DD or YYYY-MM-DDTHH:MM")
+
+    def __apply_track_policy(self, track: str) -> str:
+        def is_prefix_of(prefix):
+            isPrefix = False
+            for context in self.__policies["categories_prefixes"]:
+                if track.startswith(context):
+                    isPrefix = True
+                    break
+            return isPrefix
+
+        if track is None or not is_prefix_of(track):
+            if self.__policies["context_missing_policy"] == "1":
+                return self.__policies["default_context"]
+            raise ValueError("Track tag is missing and no default value is set.")
+
+        return track
+
+    def __getFallbackPolicy(self) -> str:
+        if self.__policies["default_context"] in self.__policies["categories_prefixes"]:
+            return self.__policies["default_context"]
+        return self.__policies["categories_prefixes"][0] if self.__policies["categories_prefixes"] else None

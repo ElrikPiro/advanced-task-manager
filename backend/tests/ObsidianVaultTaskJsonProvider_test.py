@@ -9,7 +9,13 @@ class TestObsidianVaultTaskJsonProvider(unittest.TestCase):
 
     def setUp(self):
         self.mock_file_broker = MagicMock(spec=IFileBroker)
-        self.provider = ObsidianVaultTaskJsonProvider(self.mock_file_broker)
+        self.policies = {
+            "context_missing_policy": "0",
+            "date_missing_policy": "0",
+            "default_context": "inbox",
+            "categories_prefixes": ["work"],
+        }
+        self.provider = ObsidianVaultTaskJsonProvider(self.mock_file_broker, self.policies)
 
     def test_empty_vault_returns_empty_dict(self):
         self.mock_file_broker.getVaultFiles.return_value = []
@@ -54,7 +60,7 @@ class TestObsidianVaultTaskJsonProvider(unittest.TestCase):
         self.mock_file_broker.getVaultFileLines.return_value = [
             "---",
             "---",
-            "- [ ] Complete report [track::work] [due::2023-12-31] [severity::3] [remaining_cost::2] [invested::1]"
+            "- [ ] Complete report [track::work] [start::2023-12-31] [due::2023-12-31] [severity::3] [remaining_cost::2] [invested::1]"
         ]
 
         result = self.provider.getJson()
@@ -62,7 +68,7 @@ class TestObsidianVaultTaskJsonProvider(unittest.TestCase):
         task = result["tasks"][0]
         self.assertEqual(task["taskText"], "Complete report")
         self.assertEqual(task["due"], str(TimePoint.from_string("2023-12-31").as_int()))
-        self.assertEqual(task["severity"], "3")
+        self.assertEqual(task["severity"], "3.0")
         self.assertEqual(task["remaining_cost"], "2")
         self.assertEqual(task["invested"], "1")
         self.assertEqual(task["total_cost"], "1.0")
@@ -90,7 +96,7 @@ class TestObsidianVaultTaskJsonProvider(unittest.TestCase):
 
         result = self.provider.getJson()
         task = result["tasks"][0]
-        self.assertEqual(task["severity"], "5")
+        self.assertEqual(task["severity"], "5.0")
         self.assertEqual(task["starts"], str(TimePoint.from_string("2023-01-01").as_int()))
 
     def test_update_existing_task(self):
@@ -130,6 +136,38 @@ class TestObsidianVaultTaskJsonProvider(unittest.TestCase):
         # saveJson should be a no-op
         self.provider.saveJson({"tasks": []})
         # No assertions needed as the method doesn't do anything
+
+    def test_update_or_append_task_functionality(self):
+        # Test that __update_or_append_task correctly updates or appends tasks
+        # Create a task first
+        self.mock_file_broker.getVaultFiles.return_value = [("tasks.md", 100.0)]
+        self.mock_file_broker.getVaultFileLines.return_value = [
+            "---",
+            "---",
+            "- [ ] Task 1 [track::work] [severity::2]"
+        ]
+
+        result = self.provider.getJson()
+        self.assertEqual(len(result["tasks"]), 1)
+        self.assertEqual(result["tasks"][0]["taskText"], "Task 1")
+        self.assertEqual(result["tasks"][0]["severity"], "2.0")
+
+        # Now add a new task with a different line and update the existing one
+        self.mock_file_broker.getVaultFiles.return_value = [("tasks.md", 200.0)]
+        self.mock_file_broker.getVaultFileLines.return_value = [
+            "---",
+            "---",
+            "- [ ] Task 1 updated [track::work] [severity::3]",
+            "- [ ] Task 2 [track::work]"
+        ]
+
+        result = self.provider.getJson()
+        self.assertEqual(len(result["tasks"]), 2)
+
+        # Tasks should be ordered based on their order in the file
+        self.assertEqual(result["tasks"][0]["taskText"], "Task 1 updated")
+        self.assertEqual(result["tasks"][0]["severity"], "3.0")
+        self.assertEqual(result["tasks"][1]["taskText"], "Task 2")
 
 
 if __name__ == "__main__":
