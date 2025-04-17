@@ -23,13 +23,22 @@ class TelegramBotUserCommService(IUserCommService):
         await self.bot.send_message(chat_id, text, parse_mode=parse_mode)
         pass
 
+    def __preprocessMessageText(self, text: str) -> str:
+        parts = text.split(' ')
+
+        if parts and "__" in parts[0]:
+            parts[0] = parts[0].replace("__", " ")
+
+        text = ' '.join(parts)
+        return text
+
     async def getMessageUpdates(self) -> tuple[int, str]:
         result = await self.bot.getUpdates(limit=1, timeout=1, allowed_updates=['message'], offset=self.offset)
         if len(result) == 0:
             return None
         elif result[0].message.text is not None:
             self.offset = result[0].update_id + 1
-            return (result[0].message.chat.id, result[0].message.text)
+            return (result[0].message.chat.id, self.__preprocessMessageText(result[0].message.text))
         elif result[0].message.document is not None:
             self.offset = result[0].update_id + 1
             file_id = result[0].message.document.file_id
