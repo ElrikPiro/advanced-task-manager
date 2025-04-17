@@ -27,37 +27,49 @@ class TestTelegramBotUserCommService(unittest.TestCase):
         # Test with double underscore in the first word
         input_text = "command__name parameter1 parameter2"
         processed_text = self.service._TelegramBotUserCommService__preprocessMessageText(input_text)
-        assert processed_text == "command name parameter1 parameter2"
+        assert processed_text == "/command name parameter1 parameter2"
 
     def test_preprocess_message_text_without_double_underscore(self):
         # Test with no double underscore
         input_text = "command parameter1 parameter2"
         processed_text = self.service._TelegramBotUserCommService__preprocessMessageText(input_text)
-        assert processed_text == "command parameter1 parameter2"
+        assert processed_text == "/command parameter1 parameter2"
 
     def test_preprocess_message_text_with_double_underscore_not_in_first_word(self):
         # Test with double underscore in a word that's not first
         input_text = "command param__eter1 parameter2"
         processed_text = self.service._TelegramBotUserCommService__preprocessMessageText(input_text)
-        assert processed_text == "command param__eter1 parameter2"
+        assert processed_text == "/command param__eter1 parameter2"
 
     def test_preprocess_message_text_with_multiple_double_underscores_in_first_word(self):
         # Test with multiple double underscores in first word
         input_text = "comm__and__name parameter1 parameter2"
         processed_text = self.service._TelegramBotUserCommService__preprocessMessageText(input_text)
-        assert processed_text == "comm and name parameter1 parameter2"
+        assert processed_text == "/comm and name parameter1 parameter2"
 
     def test_preprocess_message_text_single_word(self):
         # Test with just one word containing double underscore
         input_text = "command__name"
         processed_text = self.service._TelegramBotUserCommService__preprocessMessageText(input_text)
-        assert processed_text == "command name"
+        assert processed_text == "/command name"
 
     def test_preprocess_message_text_empty_string(self):
         # Test with empty string
         input_text = ""
         processed_text = self.service._TelegramBotUserCommService__preprocessMessageText(input_text)
-        assert processed_text == ""
+        assert processed_text == "/"
+
+    def test_preprocess_message_text_no_leading_slash(self):
+        # Test with no leading slash in the input text
+        input_text = "command"
+        processed_text = self.service._TelegramBotUserCommService__preprocessMessageText(input_text)
+        assert processed_text == "/command"
+
+    def test_preprocess_message_text_with_leading_slash(self):
+        # Test with leading slash in the input text
+        input_text = "/command"
+        processed_text = self.service._TelegramBotUserCommService__preprocessMessageText(input_text)
+        assert processed_text == "/command"
 
 
 class TestTelegramBotUserCommServiceAsync(unittest.IsolatedAsyncioTestCase):
@@ -97,7 +109,7 @@ class TestTelegramBotUserCommServiceAsync(unittest.IsolatedAsyncioTestCase):
         self.telegram_bot.getUpdates = AsyncMock(return_value=[mock_update])
 
         result = await self.service.getMessageUpdates()
-        assert result == (67890, "hello world")
+        assert result == (67890, "/hello world")
         assert self.service.offset == 12346  # update_id + 1
 
     async def test_getMessageUpdates_with_document(self):

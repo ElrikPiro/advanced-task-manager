@@ -15,10 +15,16 @@ class ShellUserCommService(IUserCommService):
     async def sendMessage(self, chat_id: int, text: str, parse_mode: str = None) -> None:
         print(f"[bot -> {chat_id}]: {text}")
 
+    def __preprocessMessageText(self, text: str) -> str:
+        if not text.startswith("/"):
+            text = "/" + text
+
+        return text
+
     async def getMessageUpdates(self) -> tuple[int, str]:
         text = input(f"[User({self.chatId})]: ")
         self.offset += 1
-        return (self.chatId, text)
+        return (self.chatId, self.__preprocessMessageText(text))
 
     async def sendFile(self, chat_id: int, data: bytearray) -> None:
         print(f"[bot -> {chat_id}]: File sent")
