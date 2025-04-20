@@ -24,6 +24,9 @@ class TelegramBotUserCommService(IUserCommService):
         pass
 
     def __preprocessMessageText(self, text: str) -> str:
+        if not text.startswith("/"):
+            text = "/" + text
+
         parts = text.split(' ')
 
         if parts and "__" in parts[0]:
