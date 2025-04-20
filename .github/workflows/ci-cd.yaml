@@ -72,11 +72,6 @@ jobs:
           coverage run -m unittest discover -s tests -p '*_test.py'
           coverage report -m
 
-      - name: Upload coverage report
-        uses: actions/upload-artifact@v4
-        with:
-          name: coverage-report
-
       # Fail if coverage is below 80%
       - name: Check coverage
         run: |
