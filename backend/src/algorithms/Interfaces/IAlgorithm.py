@@ -22,3 +22,13 @@ class IAlgorithm(ABC):
             List[ITaskModel]: The list of tasks after applying the algorithm.
         """
         pass
+
+    @abstractmethod
+    def getDescription(self) -> str:
+        """
+        Get the description of the algorithm.
+
+        Returns:
+            str: The description of the algorithm.
+        """
+        pass
