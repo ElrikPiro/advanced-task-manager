@@ -11,11 +11,11 @@ class GtdAlgorithm(IAlgorithm):
     """
     GTD Algorithm implementation.
     This algorithm filters tasks based on their urgency and heuristic values.
-    
+
     It applies a series of filters to determine which tasks should be processed.
     The algorithm is designed to work with a list of tasks and apply various heuristics
     to prioritize them.
-    
+
     The algorithm consists of the following steps:
     1. Filter tasks with due dates before the current time (urgent tasks).
     2. Filter tasks based on ordered categories.
