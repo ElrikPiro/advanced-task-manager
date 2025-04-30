@@ -65,7 +65,7 @@ class ObsidianTaskProvider(ITaskProvider):
 
     def _getTaskLine(self, task: ITaskModel) -> str:
         context = task.getContext()
-        description = task.getDescription().split("@")[0].strip().split(f"({context})")[:-1].strip()
+        description = task.getDescription().split("@")[0].replace(f"({context})", "").strip()
         start = str(task.getStart())
         due = str(task.getDue())
         severity = task.getSeverity()
