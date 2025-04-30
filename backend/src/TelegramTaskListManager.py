@@ -244,7 +244,7 @@ class TelegramTaskListManager(ITaskListManager):
         if len(current_urgents_by_categories) > 0:
             agenda_str += "# Active Urgent tasks:\n"
             for task in current_urgents_by_categories:
-                agenda_str += f"\n{task.getContext()}: {task.getDescription()}"
+                agenda_str += f"\n{task.getDescription()}"
             agenda_str += "\n\n"
         return agenda_str
 

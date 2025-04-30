@@ -20,17 +20,17 @@ class TestObsidianTaskModel(unittest.TestCase):
         )
 
     def test_getDescription(self):
-        expected_description = "Test Task @ 'test_file:10'"
+        expected_description = "(Test Context) Test Task @ 'test_file:10'"
         self.assertEqual(self.task.getDescription(), expected_description)
 
     def test_getDescription_withLinuxSubdirectory(self):
         self.task.setFile("subdirectory/test_file.md")
-        expected_description = "Test Task @ 'test_file:10'"
+        expected_description = "(Test Context) Test Task @ 'test_file:10'"
         self.assertEqual(self.task.getDescription(), expected_description)
 
     def test_getDescription_withWindowsSubdirectory(self):
         self.task.setFile("subdirectory\\test_file.md")
-        expected_description = "Test Task @ 'test_file:10'"
+        expected_description = "(Test Context) Test Task @ 'test_file:10'"
         self.assertEqual(self.task.getDescription(), expected_description)
 
     def test_getFile(self):
