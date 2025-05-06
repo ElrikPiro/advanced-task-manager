@@ -137,14 +137,14 @@ class TestTaskProvider(unittest.TestCase):
         task = self.task_provider.createDefaultTask("New Task")
         # Check task properties
         self.assertEqual(task.getDescription(), "New Task")
-        self.assertEqual(task.getContext(), "workstation")
+        self.assertEqual(task.getContext(), "inbox")
         self.assertEqual(task.getSeverity(), 1.0)
         self.assertEqual(task.getStatus(), " ")
         self.assertFalse(task.getCalm())
 
         # Ensure task was added to the task list
         self.assertIn(
-            {"description": "New Task", "context": "workstation", "status": " ", "calm": "False"},
+            {"description": "New Task", "context": "inbox", "status": " ", "calm": "False"},
             [
                 {k: t[k] for k in ["description", "context", "status", "calm"]}
                 for t in self.task_provider.dict_task_list["tasks"]

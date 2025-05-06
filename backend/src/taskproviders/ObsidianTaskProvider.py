@@ -122,7 +122,7 @@ class ObsidianTaskProvider(ITaskProvider):
         status = " "
         calm = "False"
 
-        task = ObsidianTaskModel(description, "workstation", starts, due, 1, severity, invested, status, "", -1, calm)
+        task = ObsidianTaskModel(description, "inbox", starts, due, 1, severity, invested, status, "", -1, calm)
         return task
 
     def getTaskMetadata(self, task: ITaskModel) -> str:
