@@ -130,7 +130,7 @@ class TaskProvider(ITaskProvider):
 
         default_task = dict(
             description=description,
-            context="workstation",
+            context="inbox",
             start=starts,
             due=due,
             severity=severity,

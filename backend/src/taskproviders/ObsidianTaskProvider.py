@@ -64,8 +64,8 @@ class ObsidianTaskProvider(ITaskProvider):
             return self.TaskJsonProvider.getJson()[string]
 
     def _getTaskLine(self, task: ITaskModel) -> str:
-        description = task.getDescription().split("@")[0].strip()
         context = task.getContext()
+        description = task.getDescription().split("@")[0].replace(f"({context})", "").strip()
         start = str(task.getStart())
         due = str(task.getDue())
         severity = task.getSeverity()
@@ -122,7 +122,7 @@ class ObsidianTaskProvider(ITaskProvider):
         status = " "
         calm = "False"
 
-        task = ObsidianTaskModel(description, "workstation", starts, due, 1, severity, invested, status, "", -1, calm)
+        task = ObsidianTaskModel(description, "inbox", starts, due, 1, severity, invested, status, "", -1, calm)
         return task
 
     def getTaskMetadata(self, task: ITaskModel) -> str:
