@@ -262,7 +262,6 @@ class TelegramReportingServiceContainer():
 
         ## Filter list
         self.container.filterList = [
-            ("GTD filter", self.container.gtdFilter()),
             ("All active task filter", self.container.activeFilter()),
             ("All inactive task filter", InactiveTaskFilter()),
         ]
