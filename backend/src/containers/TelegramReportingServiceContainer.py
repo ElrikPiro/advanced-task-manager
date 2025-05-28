@@ -17,7 +17,6 @@ from src.taskproviders.ObsidianTaskProvider import ObsidianTaskProvider
 from src.heuristics.SlackHeuristic import SlackHeuristic
 from src.heuristics.RemainingEffortHeuristic import RemainingEffortHeuristic
 from src.filters.ContextPrefixTaskFilter import ContextPrefixTaskFilter
-from src.filters.GtdTaskFilter import GtdTaskFilter
 from src.filters.ActiveTaskFilter import InactiveTaskFilter
 from src.heuristics.DaysToThresholdHeuristic import DaysToThresholdHeuristic
 from src.StatisticsService import StatisticsService
@@ -254,16 +253,14 @@ class TelegramReportingServiceContainer():
         for categoryDict in self.container.categories:
             prefix = categoryDict["prefix"]
             description = categoryDict["description"]
-            self.container.orderedCategories.append((description, self.container.contextPrefixTaskFilter(prefix=prefix)))
-
-        self.container.gtdFilter = providers.Singleton(GtdTaskFilter, self.container.activeFilter(), self.container.orderedCategories, self.container.orderedHeuristics(), self.container.defaultHeuristic())
+            self.container.orderedCategories.append((description, self.container.contextPrefixTaskFilter(prefix=prefix), False))
 
         self.container.workLoadAbleFilter = providers.Singleton(WorkloadAbleFilter, self.container.activeFilter())
 
         ## Filter list
         self.container.filterList = [
-            ("All active task filter", self.container.activeFilter()),
-            ("All inactive task filter", InactiveTaskFilter()),
+            ("All active task filter", self.container.activeFilter(), True),
+            ("All inactive task filter", InactiveTaskFilter(), False),
         ]
         self.container.filterList.extend(self.container.orderedCategories)
 

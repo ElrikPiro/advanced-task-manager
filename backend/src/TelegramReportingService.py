@@ -334,7 +334,7 @@ class TelegramReportingService(IReportingService):
     async def filterSelectionCommand(self, messageText: str = "", expectAnswer: bool = True):
         """
         # Command /filter_[filter]
-        This command selects a filter to show only the tasks that match the criteria.
+        This command toggles a filter to show only the tasks that match the criteria.
         The filter will be used to show the tasks.
         """
         self._taskListManager.select_filter(messageText)

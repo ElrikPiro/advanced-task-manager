@@ -12,7 +12,7 @@ from .Interfaces.ITaskListManager import ITaskListManager
 
 class TelegramTaskListManager(ITaskListManager):
 
-    def __init__(self, taskModelList: List[ITaskModel], heuristics: List[Tuple[str, IHeuristic]], filters: List[Tuple[str, IFilter]], statistics_service: IStatisticsService, tasksPerPage: int = 5):
+    def __init__(self, taskModelList: List[ITaskModel], heuristics: List[Tuple[str, IHeuristic]], filters: List[Tuple[str, IFilter, bool]], statistics_service: IStatisticsService, tasksPerPage: int = 5):
 
         self.__taskModelList = taskModelList
 
@@ -22,7 +22,6 @@ class TelegramTaskListManager(ITaskListManager):
         self.__selectedHeuristic = heuristics[0] if len(heuristics) > 0 else None
 
         self.__filterList = filters
-        self.__selectedFilter = filters[0] if len(filters) > 0 else None
 
         self.__statistics_service = statistics_service
 
@@ -31,11 +30,13 @@ class TelegramTaskListManager(ITaskListManager):
     @property
     def filtered_task_list(self) -> List[ITaskModel]:
 
-        newTaskList: List[ITaskModel] = self.__taskModelList
+        newTaskList: List[ITaskModel] = []
 
-        if len(self.__filterList) > 0:
-            selectedFilter: IFilter = self.__selectedFilter[1]
-            newTaskList = selectedFilter.filter(newTaskList)
+        for task in self.__taskModelList:
+            for filter in self.__filterList:
+                if filter[2] and filter[1].filter([task]):
+                    newTaskList.append(task)
+                    break
 
         if len(self.__heuristicList) > 0:
             heuristic: IHeuristic = self.__selectedHeuristic[1]
@@ -99,12 +100,17 @@ class TelegramTaskListManager(ITaskListManager):
             taskListString += "/next - Next page\n/previous - Previous page"
             taskListString += "\n\n/search [search terms] - Search for tasks"
             taskListString += "\n/agenda - Show today's agenda"
+            taskListString += "\n/filter - configure filters"
 
         if len(self.__heuristicList) > 0:
             taskListString += "\n\nselected /heuristic: " + self.__selectedHeuristic[0]
 
-        if len(self.__filterList) > 0:
-            taskListString += "\nselected /filter: " + self.__selectedFilter[1].getDescription()
+        isOnlyFirstFilterActive = len([f for f in self.__filterList if f[2]]) == 1
+        if not isOnlyFirstFilterActive:
+            taskListString += "\n\nselected filters: "
+            for i, filter in enumerate(self.__filterList):
+                if filter[2]:
+                    taskListString += f"\n/filter_{i+1}: {filter[0]}"
 
         return taskListString
 
@@ -130,7 +136,7 @@ class TelegramTaskListManager(ITaskListManager):
 
     def select_filter(self, messageText: str):
         filterIndex = int(messageText.split("_")[1]) - 1
-        self.__selectedFilter = self.__filterList[filterIndex]
+        self.__filterList[filterIndex][2] = not self.__filterList[filterIndex][2]
 
     def get_filter_list(self) -> str:
         filterList = "\n".join([f"/filter_{i+1}: {filter[0]}" for i, filter in enumerate(self.__filterList)])
