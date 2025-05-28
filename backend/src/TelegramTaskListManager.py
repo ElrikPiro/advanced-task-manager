@@ -33,8 +33,8 @@ class TelegramTaskListManager(ITaskListManager):
         newTaskList: List[ITaskModel] = []
 
         for task in self.__taskModelList:
-            for filter in self.__filterList:
-                if filter[2] and filter[1].filter([task]):
+            for filterr in self.__filterList:
+                if filterr[2] and filterr[1].filter([task]):
                     newTaskList.append(task)
                     break
 
