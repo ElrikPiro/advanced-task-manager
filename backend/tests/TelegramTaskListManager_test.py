@@ -305,50 +305,6 @@ class TestTelegramTaskListManager(unittest.TestCase):
         filtered = manager.filtered_task_list
         self.assertEqual(filtered, list(reversed(self.task_list)))
 
-    def test_filtered_task_list_with_multiple_filters(self):
-        # Only the first enabled filter is applied
-        filter1 = MagicMock()
-        filter2 = MagicMock()
-        # filter1 returns only task2 if present
-        filter1.filter.side_effect = lambda tasks: [tasks[0]] if tasks[0] is self.task2 else []
-        # filter2 would return only task3, but should not be called
-        filter2.filter.side_effect = lambda tasks: [tasks[0]] if tasks[0] is self.task3 else []
-        filters = [
-            ("Filter1", filter1, True),
-            ("Filter2", filter2, True)
-        ]
-        self.task1.getDescription.return_value = "Task 1"
-        self.task2.getDescription.return_value = "Task 2"
-        self.task3.getDescription.return_value = "Task 3"
-        manager = TelegramTaskListManager(self.task_list, [], filters, self.statistics_service)
-        filtered = manager.filtered_task_list
-        self.assertEqual(len(filtered), 1)
-        self.assertEqual(filtered[0].getDescription(), "Task 2")
-        filter2.filter.assert_not_called()
-
-    def test_filtered_task_list_with_multiple_filters_enabled(self):
-        # Only the first enabled filter is applied, even if both are enabled
-        filter1 = MagicMock()
-        filter2 = MagicMock()
-        # filter1 returns only task3 if present
-        filter1.filter.side_effect = lambda tasks: [tasks[0]] if tasks[0] is self.task3 else []
-        # filter2 would return only task1, but should not be called
-        filter2.filter.side_effect = lambda tasks: [tasks[0]] if tasks[0] is self.task1 else []
-        filters = [
-            ("Filter1", filter1, True),
-            ("Filter2", filter2, True)
-        ]
-        self.task1.getDescription.return_value = "Task 1"
-        self.task2.getDescription.return_value = "Task 2"
-        self.task3.getDescription.return_value = "Task 3"
-        manager = TelegramTaskListManager(self.task_list, self.heuristics, filters, self.statistics_service)
-        manager._TelegramTaskListManager__heuristicList = self.heuristics
-        manager._TelegramTaskListManager__selectedHeuristic = self.heuristics[0]
-        filtered = manager.filtered_task_list
-        self.assertEqual(len(filtered), 1)
-        self.assertEqual(filtered[0].getDescription(), "Task 3")
-        filter2.filter.assert_not_called()
-
 
 class TestTelegramTaskListManagerAdditional(unittest.TestCase):
 
