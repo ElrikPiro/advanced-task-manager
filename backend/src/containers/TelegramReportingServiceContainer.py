@@ -24,6 +24,10 @@ from src.FileBroker import FileBroker
 from src.filters.WorkloadAbleFilter import WorkloadAbleFilter
 from src.ProjectManager import ObsidianProjectManager
 from src.JsonProjectManager import JsonProjectManager
+from src.algorithms.GtdAlgorithm import GtdAlgorithm
+from src.algorithms.EdfAlgotithm import EdfAlgorithm
+from src.algorithms.HeuristicAlgorithm import HeuristicAlgorithm
+from src.algorithms.ShortestJobAlgorithm import ShortestJobAlgorithm
 
 
 class TelegramReportingServiceContainer():
@@ -264,6 +268,13 @@ class TelegramReportingServiceContainer():
         ]
         self.container.filterList.extend(self.container.orderedCategories)
 
+        # Algorithm list
+        self.container.algorithmList = providers.List(
+            ("GTD Algorithm", GtdAlgorithm(self.container.orderedCategories, self.container.orderedHeuristics(), self.container.defaultHeuristic())),
+            ("EDF Algorithm", EdfAlgorithm()),
+            ("Shortest Job Algorithm", ShortestJobAlgorithm()),
+        )
+
         # Scheduling algorithm
         self.container.heristicScheduling = providers.Singleton(HeuristicScheduling, dedicationTime)
 
@@ -271,7 +282,7 @@ class TelegramReportingServiceContainer():
         self.container.statisticsService = providers.Singleton(StatisticsService, self.container.fileBroker, self.container.workLoadAbleFilter, self.container.remainingEffortHeuristic(1.0), self.container.slackHeuristic)
 
         # Task Manager
-        self.container.taskListManager = providers.Singleton(TelegramTaskListManager, self.container.taskProvider().getTaskList(), self.container.heuristicList, self.container.filterList, self.container.statisticsService)
+        self.container.taskListManager = providers.Singleton(TelegramTaskListManager, self.container.taskProvider().getTaskList(), self.container.algorithmList, self.container.heuristicList, self.container.filterList, self.container.statisticsService)
 
         # Project Manager
         if obsidianMode:

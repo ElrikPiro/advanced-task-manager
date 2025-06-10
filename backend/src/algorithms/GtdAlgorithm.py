@@ -79,7 +79,7 @@ class GtdAlgorithm(IAlgorithm):
 
     def _filterOrderedCategories(self, tasks: list[ITaskModel]) -> list:
         filteredTasks = []
-        for description, category in self.orderedCategories:
+        for description, category, active in self.orderedCategories:
             filteredTasks = category.filter(tasks)
             if len(filteredTasks) == 0:
                 continue
