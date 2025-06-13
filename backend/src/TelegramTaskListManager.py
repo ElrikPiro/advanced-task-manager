@@ -114,13 +114,17 @@ class TelegramTaskListManager(ITaskListManager):
         if len(self.__heuristicList) > 0:
             taskListString += "\n\nselected /heuristic: " + self.__selectedHeuristic[0]
 
-        isOnlyFirstFilterActive = len([f for f in self.__filterList if f[2]]) == 1
+        taskListString = self.render_filter_summary(taskListString)
+
+        return taskListString
+
+    def render_filter_summary(self, taskListString: str) -> str:
+        isOnlyFirstFilterActive = len([f for f in self.__filterList if f[2]]) == 1 and self.__filterList[0][2]
         if not isOnlyFirstFilterActive:
             taskListString += "\n\nselected filters: "
             for i, filter in enumerate(self.__filterList):
                 if filter[2]:
                     taskListString += f"\n/filter_{i+1}: {filter[0]}"
-
         return taskListString
 
     def update_taskList(self, taskModelList: List[ITaskModel]):
@@ -159,6 +163,7 @@ class TelegramTaskListManager(ITaskListManager):
         filterList = "\n".join([f"/filter_{i+1}: {filter[0]}" for i, filter in enumerate(self.__filterList)])
         filterList += "\n\n/heuristic - List heuristic options"
         filterList += "\n/algorithm - List algorithm options"
+        filterList = self.render_filter_summary(filterList)
         return filterList
 
     def get_heuristic_list(self) -> str:
