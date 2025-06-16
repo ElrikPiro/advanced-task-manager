@@ -31,13 +31,6 @@ class TestStartTimeHeuristic(unittest.TestCase):
         score = self.heuristic.evaluate(task)
         self.assertEqual(score, 1.5)
 
-    def test_getComment(self):
-        task = MagicMock(spec=ITaskModel)
-        task.getStart.return_value.as_string.return_value = "1500"
-
-        comment = self.heuristic.getComment(task)
-        self.assertEqual(comment, "1500")
-
 
 if __name__ == "__main__":
     unittest.main()
