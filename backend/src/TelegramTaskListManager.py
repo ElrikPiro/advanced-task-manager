@@ -93,7 +93,7 @@ class TelegramTaskListManager(ITaskListManager):
                     taskListSearched.append(task)
                     break
 
-        return TelegramTaskListManager(taskListSearched, [], [], [], self.__statistics_service, self.__tasksPerPage)
+        return TelegramTaskListManager(taskListSearched, [], [], self.__filterList, self.__statistics_service, self.__tasksPerPage)
 
     def render_task_list_str(self, interactive: bool = True) -> str:
         task_list = self.filtered_task_list
