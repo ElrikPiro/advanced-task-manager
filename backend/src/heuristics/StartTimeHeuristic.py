@@ -23,4 +23,4 @@ class StartTimeHeuristic(IHeuristic):
         return task.getStart().as_int() / 1000.0
 
     def getComment(self, task: ITaskModel) -> str:
-        return task.getStart()
+        return str(task.getStart())
