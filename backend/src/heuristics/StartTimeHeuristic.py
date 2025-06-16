@@ -12,7 +12,7 @@ class StartTimeHeuristic(IHeuristic):
     """
 
     def __init__(self):
-        return None
+        pass
 
     def sort(self, tasks: List[ITaskModel]) -> List[Tuple[ITaskModel, float]]:
         retval = [(task, self.evaluate(task)) for task in tasks]
