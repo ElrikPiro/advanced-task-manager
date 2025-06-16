@@ -26,7 +26,6 @@ from src.ProjectManager import ObsidianProjectManager
 from src.JsonProjectManager import JsonProjectManager
 from src.algorithms.GtdAlgorithm import GtdAlgorithm
 from src.algorithms.EdfAlgotithm import EdfAlgorithm
-from src.algorithms.HeuristicAlgorithm import HeuristicAlgorithm
 from src.algorithms.ShortestJobAlgorithm import ShortestJobAlgorithm
 
 
