@@ -43,14 +43,14 @@ class TelegramTaskListManager(ITaskListManager):
                     newTaskList.append(task)
                     break
 
-        if len(self.__algorithmList) > 0:
-            algorithm: IAlgorithm = self.__selectedAlgorithm[1]
-            newTaskList = algorithm.apply(newTaskList)
-
         if len(self.__heuristicList) > 0:
             heuristic: IHeuristic = self.__selectedHeuristic[1]
             sortedTaskList: List[Tuple[ITaskModel, float]] = heuristic.sort(newTaskList)
             newTaskList = [task for task, _ in sortedTaskList]
+
+        if len(self.__algorithmList) > 0:
+            algorithm: IAlgorithm = self.__selectedAlgorithm[1]
+            newTaskList = algorithm.apply(newTaskList)
 
         return newTaskList
 

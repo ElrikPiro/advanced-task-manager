@@ -27,7 +27,7 @@ class ShortestJobAlgorithm(IAlgorithm):
             list: The list of tasks after applying the algorithm.
         """
 
-        sorted_tasks = sorted(taskList, key=lambda task: task.getTotalCost().as_int())
+        sorted_tasks = sorted(taskList, key=lambda task: task.getTotalCost().as_pomodoros())
 
         self.description = "Shortest Job First (SJF) Algorithm"
         self.description += f" \n    - {len(sorted_tasks)} tasks sorted by execution time"
