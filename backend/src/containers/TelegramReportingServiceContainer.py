@@ -25,7 +25,7 @@ from src.filters.WorkloadAbleFilter import WorkloadAbleFilter
 from src.ProjectManager import ObsidianProjectManager
 from src.JsonProjectManager import JsonProjectManager
 from src.algorithms.GtdAlgorithm import GtdAlgorithm
-from src.algorithms.EdfAlgotithm import EdfAlgorithm
+from src.algorithms.EdfAlgorithm import EdfAlgorithm
 from src.algorithms.ShortestJobAlgorithm import ShortestJobAlgorithm
 
 

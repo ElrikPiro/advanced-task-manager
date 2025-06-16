@@ -1,6 +1,6 @@
 import unittest
 from unittest.mock import Mock
-from src.algorithms.EdfAlgotithm import EdfAlgorithm
+from src.algorithms.EdfAlgorithm import EdfAlgorithm
 from src.Interfaces.ITaskModel import ITaskModel
 from src.wrappers.TimeManagement import TimeAmount, TimePoint
 
