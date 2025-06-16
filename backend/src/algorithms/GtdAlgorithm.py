@@ -44,6 +44,9 @@ class GtdAlgorithm(IAlgorithm):
         Returns:
             list: The list of tasks after applying the algorithm.
         """
+        self.description = self.baseDescription
+        self.category = "all"
+
         # get all task with due date before now
         retval = self._filterUrgents(taskList)
         retval = self._filterOrderedCategories(retval)
@@ -64,6 +67,7 @@ class GtdAlgorithm(IAlgorithm):
         # get default working model
         heuristic, threshold = self.defaultHeuristic
         retval = self._filterByHeuristic(heuristic, threshold, taskList)
+        self.description = f"{self.baseDescription} \n    - {heuristic.__class__.__name__} >= {threshold} ({self.category})"
 
         return retval
 

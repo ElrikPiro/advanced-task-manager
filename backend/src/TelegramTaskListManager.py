@@ -114,6 +114,10 @@ class TelegramTaskListManager(ITaskListManager):
         if len(self.__heuristicList) > 0:
             taskListString += "\n\nselected /heuristic: " + self.__selectedHeuristic[0]
 
+        if len(self.__algorithmList) > 0:
+            taskListString += "\n\nselected /algorithm: " + self.__selectedAlgorithm[0] + " ("
+            taskListString += self.__selectedAlgorithm[1].getDescription() + ")"
+
         taskListString = self.render_filter_summary(taskListString)
 
         return taskListString

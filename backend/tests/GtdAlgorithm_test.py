@@ -16,7 +16,7 @@ class TestGtdAlgorithm(unittest.TestCase):
         self.mock_task.getCalm.return_value = False
 
         self.algorithm = GtdAlgorithm(
-            orderedCategories=[("Category1", self.mock_filter)],
+            orderedCategories=[("Category1", self.mock_filter, True)],
             orderedHeuristics=[(self.mock_heuristic, 0.5)],
             defaultHeuristic=(self.mock_heuristic, 0.2)
         )

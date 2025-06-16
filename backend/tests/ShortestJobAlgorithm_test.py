@@ -10,9 +10,9 @@ class TestShortestJobAlgorithm(unittest.TestCase):
         self.mock_task2 = Mock(spec=ITaskModel)
         self.mock_task3 = Mock(spec=ITaskModel)
 
-        self.mock_task1.getTotalCost.return_value.as_int.return_value = 5  # Cost of 5
-        self.mock_task2.getTotalCost.return_value.as_int.return_value = 3  # Cost of 3
-        self.mock_task3.getTotalCost.return_value.as_int.return_value = 1  # Cost of 1
+        self.mock_task1.getTotalCost.return_value.as_pomodoros.return_value = 5  # Cost of 5
+        self.mock_task2.getTotalCost.return_value.as_pomodoros.return_value = 3  # Cost of 3
+        self.mock_task3.getTotalCost.return_value.as_pomodoros.return_value = 1  # Cost of 1
 
         self.algorithm = ShortestJobAlgorithm()
 
