@@ -27,6 +27,7 @@ from src.JsonProjectManager import JsonProjectManager
 from src.algorithms.GtdAlgorithm import GtdAlgorithm
 from src.algorithms.EdfAlgorithm import EdfAlgorithm
 from src.algorithms.ShortestJobAlgorithm import ShortestJobAlgorithm
+from src.heuristics.StartTimeHeuristic import StartTimeHeuristic
 
 
 class TelegramReportingServiceContainer():
@@ -237,6 +238,7 @@ class TelegramReportingServiceContainer():
             ("Remaining Time(100)", self.container.daysToThresholdHeuristic(100.0)),
             ("Remaining Time(1)", self.container.daysToThresholdHeuristic(1.0)),
             ("Slack Heuristic", self.container.slackHeuristic()),
+            ("Start Time Heuristic", StartTimeHeuristic()),
         )
 
         # Filters
