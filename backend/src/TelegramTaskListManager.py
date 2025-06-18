@@ -1,5 +1,6 @@
 from typing import List, Tuple
 
+
 from .wrappers.TimeManagement import TimeAmount, TimePoint
 
 from .Interfaces.ITaskProvider import ITaskProvider
@@ -8,11 +9,12 @@ from .Interfaces.IFilter import IFilter
 from .Interfaces.IHeuristic import IHeuristic
 from .Interfaces.ITaskModel import ITaskModel
 from .Interfaces.ITaskListManager import ITaskListManager
+from .algorithms.Interfaces.IAlgorithm import IAlgorithm
 
 
 class TelegramTaskListManager(ITaskListManager):
 
-    def __init__(self, taskModelList: List[ITaskModel], heuristics: List[Tuple[str, IHeuristic]], filters: List[Tuple[str, IFilter]], statistics_service: IStatisticsService, tasksPerPage: int = 5):
+    def __init__(self, taskModelList: List[ITaskModel], algorithms: List[Tuple[str, IAlgorithm]], heuristics: List[Tuple[str, IHeuristic]], filters: List[Tuple[str, IFilter, bool]], statistics_service: IStatisticsService, tasksPerPage: int = 5):
 
         self.__taskModelList = taskModelList
 
@@ -22,7 +24,9 @@ class TelegramTaskListManager(ITaskListManager):
         self.__selectedHeuristic = heuristics[0] if len(heuristics) > 0 else None
 
         self.__filterList = filters
-        self.__selectedFilter = filters[0] if len(filters) > 0 else None
+
+        self.__algorithmList = algorithms
+        self.__selectedAlgorithm = algorithms[0] if len(algorithms) > 0 else None
 
         self.__statistics_service = statistics_service
 
@@ -31,16 +35,22 @@ class TelegramTaskListManager(ITaskListManager):
     @property
     def filtered_task_list(self) -> List[ITaskModel]:
 
-        newTaskList: List[ITaskModel] = self.__taskModelList
+        newTaskList: List[ITaskModel] = []
 
-        if len(self.__filterList) > 0:
-            selectedFilter: IFilter = self.__selectedFilter[1]
-            newTaskList = selectedFilter.filter(newTaskList)
+        for task in self.__taskModelList:
+            for filterr in self.__filterList:
+                if filterr[2] and filterr[1].filter([task]):
+                    newTaskList.append(task)
+                    break
 
         if len(self.__heuristicList) > 0:
             heuristic: IHeuristic = self.__selectedHeuristic[1]
             sortedTaskList: List[Tuple[ITaskModel, float]] = heuristic.sort(newTaskList)
             newTaskList = [task for task, _ in sortedTaskList]
+
+        if len(self.__algorithmList) > 0:
+            algorithm: IAlgorithm = self.__selectedAlgorithm[1]
+            newTaskList = algorithm.apply(newTaskList)
 
         return newTaskList
 
@@ -83,7 +93,7 @@ class TelegramTaskListManager(ITaskListManager):
                     taskListSearched.append(task)
                     break
 
-        return TelegramTaskListManager(taskListSearched, [], [], self.__statistics_service, self.__tasksPerPage)
+        return TelegramTaskListManager(taskListSearched, [], [], self.__filterList, self.__statistics_service, self.__tasksPerPage)
 
     def render_task_list_str(self, interactive: bool = True) -> str:
         task_list = self.filtered_task_list
@@ -99,13 +109,26 @@ class TelegramTaskListManager(ITaskListManager):
             taskListString += "/next - Next page\n/previous - Previous page"
             taskListString += "\n\n/search [search terms] - Search for tasks"
             taskListString += "\n/agenda - Show today's agenda"
+            taskListString += "\n/filter - configure filters"
 
         if len(self.__heuristicList) > 0:
             taskListString += "\n\nselected /heuristic: " + self.__selectedHeuristic[0]
 
-        if len(self.__filterList) > 0:
-            taskListString += "\nselected /filter: " + self.__selectedFilter[1].getDescription()
+        if len(self.__algorithmList) > 0:
+            taskListString += "\n\nselected /algorithm: " + self.__selectedAlgorithm[0] + " ("
+            taskListString += self.__selectedAlgorithm[1].getDescription() + ")"
 
+        taskListString = self.render_filter_summary(taskListString)
+
+        return taskListString
+
+    def render_filter_summary(self, taskListString: str) -> str:
+        isOnlyFirstFilterActive = len([f for f in self.__filterList if f[2]]) == 1 and self.__filterList[0][2]
+        if not isOnlyFirstFilterActive:
+            taskListString += "\n\nselected filters: "
+            for i, filter in enumerate(self.__filterList):
+                if filter[2]:
+                    taskListString += f"\n/filter_{i+1}: {filter[0]}"
         return taskListString
 
     def update_taskList(self, taskModelList: List[ITaskModel]):
@@ -130,17 +153,34 @@ class TelegramTaskListManager(ITaskListManager):
 
     def select_filter(self, messageText: str):
         filterIndex = int(messageText.split("_")[1]) - 1
-        self.__selectedFilter = self.__filterList[filterIndex]
+        self.__filterList[filterIndex] = (
+            self.__filterList[filterIndex][0],
+            self.__filterList[filterIndex][1],
+            not self.__filterList[filterIndex][2]
+        )
+
+    def select_algorithm(self, messageText: str):
+        algorithmIndex = int(messageText.split("_")[1]) - 1
+        self.__selectedAlgorithm = self.__algorithmList[algorithmIndex]
 
     def get_filter_list(self) -> str:
         filterList = "\n".join([f"/filter_{i+1}: {filter[0]}" for i, filter in enumerate(self.__filterList)])
         filterList += "\n\n/heuristic - List heuristic options"
+        filterList += "\n/algorithm - List algorithm options"
+        filterList = self.render_filter_summary(filterList)
         return filterList
 
     def get_heuristic_list(self) -> str:
         heuristicList = "\n".join([f"/heuristic_{i+1}: {heuristic[0]}" for i, heuristic in enumerate(self.__heuristicList)])
         heuristicList += "\n\n/filter - List filter options"
+        heuristicList += "\n/algorithm - List algorithm options"
         return heuristicList
+
+    def get_algorithm_list(self) -> str:
+        algorithmList = "\n".join([f"/algorithm_{i+1}: {algorithm[0]}" for i, algorithm in enumerate(self.__algorithmList)])
+        algorithmList += "\n\n/heuristic - List heuristic options"
+        algorithmList += "\n/filter - List filter options"
+        return algorithmList
 
     def get_list_stats(self) -> str:
         statsMessage = "Work done in the last 7 days:\n"
@@ -292,6 +332,6 @@ class TelegramTaskListManager(ITaskListManager):
     def __render_other_tasks(self, agenda_str, other_tasks):
         if len(other_tasks) > 0:
             agenda_str += "# Other tasks:\n"
-            agenda_str += TelegramTaskListManager(other_tasks, self.__heuristicList, self.__filterList, self.__statistics_service).render_task_list_str(False)
+            agenda_str += TelegramTaskListManager(other_tasks, self.__algorithmList, self.__heuristicList, self.__filterList, self.__statistics_service).render_task_list_str(False)
             agenda_str += "\n\n"
         return agenda_str

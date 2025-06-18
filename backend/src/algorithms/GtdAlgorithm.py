@@ -1,29 +1,54 @@
-from typing import Tuple
+from typing import List, Tuple
 
-from ..wrappers.TimeManagement import TimePoint
+from src.Interfaces.IFilter import IFilter
+from src.Interfaces.IHeuristic import IHeuristic
+from src.wrappers.TimeManagement import TimePoint
+from src.Interfaces.ITaskModel import ITaskModel
+from src.algorithms.Interfaces.IAlgorithm import IAlgorithm
 
-from ..Interfaces.IFilter import IFilter
-from ..Interfaces.IHeuristic import IHeuristic
-from ..Interfaces.ITaskModel import ITaskModel
 
+class GtdAlgorithm(IAlgorithm):
+    """
+    GTD Algorithm implementation.
+    This algorithm filters tasks based on their urgency and heuristic values.
 
-class GtdTaskFilter(IFilter):
+    It applies a series of filters to determine which tasks should be processed.
+    The algorithm is designed to work with a list of tasks and apply various heuristics
+    to prioritize them.
 
-    def __init__(self, activeFilter: IFilter, orderedCategories: list[IFilter], orderedHeuristics: list[(IHeuristic, float)], defaultHeuristic: Tuple[IHeuristic, float]):
-        self.activeFilter = activeFilter
+    The algorithm consists of the following steps:
+    1. Filter tasks with due dates before the current time (urgent tasks).
+    2. Filter tasks based on ordered categories.
+    3. Filter tasks based on heuristic values and thresholds.
+    4. Filter tasks based on calmness.
+    5. Apply a default heuristic if no other tasks are found.
+    6. Return the filtered list of tasks.
+    """
+
+    def __init__(self, orderedCategories: list[IFilter], orderedHeuristics: list[(IHeuristic, float)], defaultHeuristic: Tuple[IHeuristic, float]):
         self.orderedCategories = orderedCategories
         self.orderedHeuristics = orderedHeuristics
         self.defaultHeuristic = defaultHeuristic
-        self.baseDescription = "GTD Task Filter"
+        self.baseDescription = "GTD Task Algorithm"
         self.description = self.baseDescription
         self.category = "all"
-        pass
+    pass
 
-    def filter(self, tasks: list[ITaskModel]) -> list:
-        activeTasks = self.activeFilter.filter(tasks) if self.activeFilter is not None else tasks
+    def apply(self, taskList: List[ITaskModel]) -> List[ITaskModel]:
+        """
+        Execute the GTD algorithm with the given parameters.
+
+        Args:
+            taskList (list): The list of tasks to be processed by the algorithm.
+
+        Returns:
+            list: The list of tasks after applying the algorithm.
+        """
+        self.description = self.baseDescription
+        self.category = "all"
 
         # get all task with due date before now
-        retval = self._filterUrgents(activeTasks)
+        retval = self._filterUrgents(taskList)
         retval = self._filterOrderedCategories(retval)
 
         if len(retval) > 0:
@@ -32,32 +57,24 @@ class GtdTaskFilter(IFilter):
 
         # get all task with heuristic value above threshold and NOT calm
         for heuristic, threshold in self.orderedHeuristics:
-            retval = self._filterByHeuristic(heuristic, threshold, activeTasks)
+            retval = self._filterByHeuristic(heuristic, threshold, taskList)
             retval = self._filterCalmTasks(retval)
             retval = self._filterOrderedCategories(retval)
             if len(retval) > 0:
                 self.description = f"{self.baseDescription} \n    - {heuristic.__class__.__name__} >= {threshold} ({self.category})"
                 return retval
 
-        # get all task with heuristic value above threshold and calm
-        for heuristic, threshold in self.orderedHeuristics:
-            retval = self._filterByHeuristic(heuristic, threshold, activeTasks)
-            retval = self._filterCalmTasks(retval, False)
-            if len(retval) > 0:
-                self.description = f"{self.baseDescription} \n    - {heuristic.__class__.__name__} >= {threshold} (CALM)"
-                return retval
-
         # get default working model
         heuristic, threshold = self.defaultHeuristic
-        retval = self._filterByHeuristic(heuristic, threshold, activeTasks)
+        retval = self._filterByHeuristic(heuristic, threshold, taskList)
+        self.description = f"{self.baseDescription} \n    - {heuristic.__class__.__name__} >= {threshold} ({self.category})"
 
-        self.description = f"{self.baseDescription} \n    - {heuristic.__class__.__name__} >= {threshold} (default)"
         return retval
 
     def getDescription(self) -> str:
         return self.description
 
-    def _filterUrgents(self, tasks: list[ITaskModel]) -> list:
+    def _filterUrgents(self, tasks: List[ITaskModel]) -> list:
         retval = []
         for task in tasks:
             if task.getDue().as_int() < TimePoint.now().as_int():
@@ -66,7 +83,7 @@ class GtdTaskFilter(IFilter):
 
     def _filterOrderedCategories(self, tasks: list[ITaskModel]) -> list:
         filteredTasks = []
-        for description, category in self.orderedCategories:
+        for description, category, active in self.orderedCategories:
             filteredTasks = category.filter(tasks)
             if len(filteredTasks) == 0:
                 continue

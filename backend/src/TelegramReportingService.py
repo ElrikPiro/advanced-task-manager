@@ -63,7 +63,9 @@ class TelegramReportingService(IReportingService):
             ("/import", self.importCommand),
             ("/search", self.searchCommand),
             ("/agenda", self.agendaCommand),
-            ("/project", self.projectCommand)
+            ("/project", self.projectCommand),
+            ("/algorithm_", self.algorithmSelectionCommand),
+            ("/algorithm", self.algorithmListCommand),
         ]
         pass
 
@@ -231,6 +233,8 @@ class TelegramReportingService(IReportingService):
         - /heuristic_[heuristic] - Select a heuristic
         - /filter - List filter options
         - /filter_[filter] - Select a filter
+        - /algorithm - Show the current algorithm used for task sorting
+        - /algorithm_[algorithm] - Select an algorithm for task sorting
 
         ## Task Querying
         - /task_[task_number] - Select a task to show more information
@@ -311,6 +315,16 @@ class TelegramReportingService(IReportingService):
         """
         await self.bot.sendMessage(chat_id=self.chatId, text=self._taskListManager.get_heuristic_list())
 
+    async def algorithmListCommand(self, messageText: str = "", expectAnswer: bool = True):
+        """
+        # Command /algorithm
+        This command lists the available algorithm options.
+        Algorithms are used to sort the tasks in the list.
+        The selected algorithm will be used to sort the tasks.
+        """
+        algorithmList = self._taskListManager.get_algorithm_list()
+        await self.bot.sendMessage(chat_id=self.chatId, text=algorithmList)
+
     async def filterListCommand(self, messageText: str = "", expectAnswer: bool = True):
         """
         # Command /filter
@@ -331,10 +345,20 @@ class TelegramReportingService(IReportingService):
         if expectAnswer:
             await self.sendTaskList()
 
+    async def algorithmSelectionCommand(self, messageText: str = "", expectAnswer: bool = True):
+        """
+        # Command /algorithm_[algorithm]
+        This command selects an algorithm to sort the tasks.
+        The algorithm will be used to sort the tasks.
+        """
+        self._taskListManager.select_algorithm(messageText)
+        if expectAnswer:
+            await self.sendTaskList()
+
     async def filterSelectionCommand(self, messageText: str = "", expectAnswer: bool = True):
         """
         # Command /filter_[filter]
-        This command selects a filter to show only the tasks that match the criteria.
+        This command toggles a filter to show only the tasks that match the criteria.
         The filter will be used to show the tasks.
         """
         self._taskListManager.select_filter(messageText)
