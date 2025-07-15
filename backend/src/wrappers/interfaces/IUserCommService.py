@@ -1,5 +1,7 @@
 from abc import ABC, abstractmethod
 
+from ..Messaging import IMessage
+
 
 class IUserCommService(ABC):
 
