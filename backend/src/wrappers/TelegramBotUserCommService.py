@@ -19,7 +19,7 @@ class TelegramBotUserCommService(IUserCommService):
         await self.bot.shutdown()
         pass
 
-    async def sendMessage(self, chat_id: int, text: str, parse_mode: str = None) -> None:
+    async def sendMessage_legacy(self, chat_id: int, text: str, parse_mode: str = None) -> None:
         await self.bot.send_message(chat_id, text, parse_mode=parse_mode)
         pass
 
@@ -35,7 +35,7 @@ class TelegramBotUserCommService(IUserCommService):
         text = ' '.join(parts)
         return text
 
-    async def getMessageUpdates(self) -> tuple[int, str]:
+    async def getMessageUpdates_legacy(self) -> tuple[int, str]:
         result = await self.bot.getUpdates(limit=1, timeout=1, allowed_updates=['message'], offset=self.offset)
         if len(result) == 0:
             return None
@@ -54,7 +54,7 @@ class TelegramBotUserCommService(IUserCommService):
             self.offset = result[0].update_id + 1
             return None
 
-    async def sendFile(self, chat_id: int, data: bytearray) -> None:
+    async def sendFile_legacy(self, chat_id: int, data: bytearray) -> None:
         import io
         f = io.BufferedReader(io.BytesIO(data))
 

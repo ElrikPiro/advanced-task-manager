@@ -12,13 +12,17 @@ class IUserCommService(ABC):
         pass
 
     @abstractmethod
-    async def sendMessage(self, chat_id: int, text: str) -> None:
+    async def sendMessage_legacy(self, chat_id: int, text: str) -> None:
         pass
 
     @abstractmethod
-    async def getMessageUpdates(self) -> tuple[int, str]:
+    async def getMessageUpdates_legacy(self) -> tuple[int, str]:
         pass
 
     @abstractmethod
-    async def sendFile(self, chat_id: int, data: bytearray) -> None:
+    async def sendFile_legacy(self, chat_id: int, data: bytearray) -> None:
+        pass
+
+    @abstractmethod
+    async def sendMessage(self, message: IMessage) -> None:
         pass
