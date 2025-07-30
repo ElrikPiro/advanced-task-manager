@@ -3,6 +3,7 @@ import os
 from dependency_injector import containers, providers
 import telegram
 
+from backend.src.wrappers.Messaging import BotAgent, IAgent, MessageBuilder, UserAgent
 from src.wrappers.TimeManagement import TimeAmount
 from src.taskjsonproviders.ObsidianVaultTaskJsonProvider import ObsidianVaultTaskJsonProvider
 from src.TelegramTaskListManager import TelegramTaskListManager
@@ -215,8 +216,10 @@ class TelegramReportingServiceContainer():
         self.container.fileBroker = providers.Singleton(FileBroker, jsonPath, appdata, vaultPath)
 
         # User communication services
-        self.container.shellUserCommService = providers.Singleton(ShellUserCommService, chatId)
-        self.container.telegramUserCommService = providers.Singleton(TelegramBotUserCommService, self.container.bot, self.container.fileBroker)
+        botId: IAgent = BotAgent(id="TaskManagerBot", name="Task Manager Bot", description="Bot for managing tasks")
+
+        self.container.shellUserCommService = providers.Singleton(ShellUserCommService, chatId, botId)
+        self.container.telegramUserCommService = providers.Singleton(TelegramBotUserCommService, self.container.bot, self.container.fileBroker, botId)
 
         self.container.userCommService = self.container.telegramUserCommService if telegramMode else self.container.shellUserCommService
 
@@ -291,5 +294,9 @@ class TelegramReportingServiceContainer():
         else:
             self.container.projectManager = providers.Singleton(JsonProjectManager, self.container.taskJsonProvider)
 
+        # Message builder
+        self.container.messageBuilder = providers.Singleton(MessageBuilder)
+
         # Reporting service
-        self.container.telegramReportingService = providers.Singleton(TelegramReportingService, self.container.userCommService(), self.container.taskProvider(), self.container.heristicScheduling(), self.container.statisticsService(), self.container.taskListManager(), self.container.categories, self.container.projectManager, chatId)
+        user: UserAgent = UserAgent(id=chatId, name="User", description="User Agent for Telegram Reporting Service")
+        self.container.telegramReportingService = providers.Singleton(TelegramReportingService, self.container.userCommService(), self.container.taskProvider(), self.container.heristicScheduling(), self.container.statisticsService(), self.container.taskListManager(), self.container.categories, self.container.projectManager, self.container.messageBuilder, user)

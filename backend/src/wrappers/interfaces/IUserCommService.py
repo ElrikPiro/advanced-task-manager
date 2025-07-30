@@ -1,6 +1,6 @@
 from abc import ABC, abstractmethod
 
-from ..Messaging import IMessage
+from ..Messaging import IAgent, IMessage
 
 
 class IUserCommService(ABC):
@@ -27,4 +27,8 @@ class IUserCommService(ABC):
 
     @abstractmethod
     async def sendMessage(self, message: IMessage) -> None:
+        pass
+
+    @abstractmethod
+    def getBotAgent(self) -> IAgent:
         pass

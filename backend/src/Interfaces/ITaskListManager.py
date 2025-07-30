@@ -73,7 +73,7 @@ class ITaskListManager(ABC):
         pass
 
     @abstractmethod
-    def get_heuristic_list(self) -> str:
+    def get_heuristic_list_legacy(self) -> str:
         pass
 
     @abstractmethod
@@ -90,4 +90,16 @@ class ITaskListManager(ABC):
 
     @abstractmethod
     def render_day_agenda(self, date: TimePoint, categories: list[dict]) -> str:
+        pass
+
+    @abstractmethod
+    def get_heuristic_list(self) -> dict:
+        pass
+
+    @abstractmethod
+    def get_algorithm_list_legacy(self) -> str:
+        pass
+
+    @abstractmethod
+    def get_algorithm_list(self) -> dict:
         pass

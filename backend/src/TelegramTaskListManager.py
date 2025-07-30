@@ -170,17 +170,37 @@ class TelegramTaskListManager(ITaskListManager):
         filterList = self.render_filter_summary(filterList)
         return filterList
 
-    def get_heuristic_list(self) -> str:
+    def get_heuristic_list_legacy(self) -> str:
         heuristicList = "\n".join([f"/heuristic_{i+1}: {heuristic[0]}" for i, heuristic in enumerate(self.__heuristicList)])
         heuristicList += "\n\n/filter - List filter options"
         heuristicList += "\n/algorithm - List algorithm options"
         return heuristicList
 
-    def get_algorithm_list(self) -> str:
+    def get_heuristic_list(self) -> dict:  # Dict must contain heuristic id, name and description
+        heuristicList = []
+        for i, heuristic in enumerate(self.__heuristicList):
+            heuristicName, heuristicInstance = heuristic
+            heuristicList.append({
+                "name": heuristicName,
+                "description": heuristicInstance.getDescription()
+            })
+        return {"heuristicList": heuristicList}
+
+    def get_algorithm_list_legacy(self) -> str:
         algorithmList = "\n".join([f"/algorithm_{i+1}: {algorithm[0]}" for i, algorithm in enumerate(self.__algorithmList)])
         algorithmList += "\n\n/heuristic - List heuristic options"
         algorithmList += "\n/filter - List filter options"
         return algorithmList
+    
+    def get_algorithm_list(self) -> dict:  # Dict must contain algorithm id, name and description
+        algorithmList = []
+        for i, algorithm in enumerate(self.__algorithmList):
+            algorithmName, algorithmInstance = algorithm
+            algorithmList.append({
+                "name": algorithmName,
+                "description": algorithmInstance.getDescription()
+            })
+        return {"algorithmList": algorithmList}
 
     def get_list_stats(self) -> str:
         statsMessage = "Work done in the last 7 days:\n"

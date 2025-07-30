@@ -110,6 +110,10 @@ class InboundMessage(IMessage):
 # enum for message render modes
 class RenderMode:
     TASK_LIST = 0
+    RAW_TEXT = 1
+    LIST_UPDATED = 2
+    HEURISTIC_LIST = 3
+    ALGORITHM_LIST = 4
 
 
 class OutboundMessage(IMessage):
@@ -117,6 +121,7 @@ class OutboundMessage(IMessage):
         self._source = source
         self._destination = destination
         self._content = content
+        self._content['render_mode'] = render_mode
 
     @property
     def source(self) -> IAgent:
@@ -157,4 +162,37 @@ class InternalMessage(IMessage):
     def type(self) -> str:
         return "InternalMessage"
 
-#TODO: Abstract message factory to create messages based on type
+
+class IMessageBuilder(ABC):
+    @abstractmethod
+    def createInboundMessage(self, source: IAgent, destination: IAgent, command: str, args: list[str]) -> InboundMessage:
+        pass
+
+    @abstractmethod
+    def createOutboundMessage(self, source: IAgent, destination: IAgent, content: dict, render_mode: RenderMode) -> OutboundMessage:
+        pass
+
+    @abstractmethod
+    def createInternalMessage(self, source: IAgent, destination: IAgent, content: dict) -> InternalMessage:
+        pass
+
+
+class MessageBuilder(IMessageBuilder):
+    def createInboundMessage(self, source: IAgent, destination: IAgent, command: str, args: list[str]) -> InboundMessage:
+        return InboundMessage(source, destination, command, args)
+
+    def createOutboundMessage(self, source: IAgent, destination: IAgent, content: dict, render_mode: RenderMode) -> OutboundMessage:
+        return OutboundMessage(source, destination, content, render_mode)
+
+    def createInternalMessage(self, source: IAgent, destination: IAgent, content: dict) -> InternalMessage:
+        return InternalMessage(source, destination, content)
+
+
+class IAgentBuilder(ABC):
+    @abstractmethod
+    def createUserAgent(self, id: str) -> UserAgent:
+        pass
+
+    @abstractmethod
+    def createBotAgent(self, id: str, name: str, description: str) -> BotAgent:
+        pass

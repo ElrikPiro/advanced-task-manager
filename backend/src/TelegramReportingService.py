@@ -9,6 +9,8 @@ import datetime
 from time import sleep as sleepSync
 from typing import List, Coroutine, Any, Tuple
 
+from backend.src.wrappers.Messaging import IAgent, IMessage, IMessageBuilder, RenderMode
+
 from .Interfaces.IProjectManager import IProjectManager, ProjectCommands
 from .Interfaces.ITaskListManager import ITaskListManager
 from .Interfaces.IReportingService import IReportingService
@@ -22,15 +24,17 @@ from .wrappers.TimeManagement import TimeAmount, TimePoint
 
 class TelegramReportingService(IReportingService):
 
-    def __init__(self, bot: IUserCommService, taskProvider: ITaskProvider, scheduling: IScheduling, statiticsProvider: IStatisticsService, task_list_manager: ITaskListManager, categories: list[dict], projectManager: IProjectManager, chatId: int = 0):
+    def __init__(self, bot: IUserCommService, taskProvider: ITaskProvider, scheduling: IScheduling, statiticsProvider: IStatisticsService, task_list_manager: ITaskListManager, categories: list[dict], projectManager: IProjectManager, messageBuilder: IMessageBuilder, user: IAgent):
         # Private Attributes
         self.run = True
         self.bot = bot
-        self.chatId = chatId
+        self.user: IAgent = user
+        self.chatId = int(user.id)
         self.taskProvider = taskProvider
         self.scheduling = scheduling
         self.statiticsProvider = statiticsProvider
         self.__projectManager = projectManager
+        self.__messageBuilder = messageBuilder
 
         self.__lastModelList: List[ITaskModel] = []
         self._updateFlag = False
@@ -100,7 +104,13 @@ class TelegramReportingService(IReportingService):
 
     async def _listenForEvents(self):
         await self.bot.initialize()
-        await self.bot.sendMessage_legacy(chat_id=self.chatId, text=self._lastError)
+        message: IMessage = self.__messageBuilder.createOutboundMessage(
+            source=self.bot.GetBotAgent(),
+            destination=self.user,
+            content={"text": self._lastError},
+            render_mode=RenderMode.RAW_TEXT
+        )
+        self.bot.sendMessage(message)
         while self.run:
             try:
                 await self.runEventLoop()
@@ -123,12 +133,22 @@ class TelegramReportingService(IReportingService):
     async def checkFilteredListChanges(self):
         if self.chatId != 0 and self.hasFilteredListChanged():
             # Send the updated list
-            nextTask = ""
             filteredList = self._taskListManager.filtered_task_list
+            task = None
             if len(filteredList) != 0:
-                nextTask = f"\n\n/task_1: {filteredList[0].getDescription()}"
+                task = {"id": filteredList[0].getId(), "description": filteredList[0].getDescription(), "context": filteredList[0].getContext()}
+            
             self._taskListManager.reset_pagination()
-            await self.bot.sendMessage_legacy(chat_id=self.chatId, text="Task /list updated" + nextTask)
+            message = self.__messageBuilder.createOutboundMessage(
+                source=self.bot.GetBotAgent(),
+                destination=self.user,
+                content={
+                    "algorithm_desc": self._taskListManager.selected_algorithm.description,
+                    "task": task,
+                },
+                render_mode=RenderMode.LIST_UPDATED
+            )
+            await self.bot.sendMessage(message)
 
     async def runEventLoop(self):
 
@@ -216,7 +236,13 @@ class TelegramReportingService(IReportingService):
         if selectedTask is not None:
             await self.sendTaskInformation(selectedTask, True)
         else:
-            await self.bot.sendMessage_legacy(chat_id=self.chatId, text="no task selected.")
+            message: IMessage = self.__messageBuilder.createOutboundMessage(
+                source=self.bot.GetBotAgent(),
+                destination=self.user,
+                content={"text": "No task selected."},
+                render_mode=RenderMode.RAW_TEXT
+            )
+            await self.bot.sendMessage(message=message)
 
     async def helpCommand(self, messageText: str = "", expectAnswer: bool = True):
         """
@@ -304,7 +330,13 @@ class TelegramReportingService(IReportingService):
         if printHelp:
             helpMessage.append(self.helpCommand.__doc__)
 
-        await self.bot.sendMessage_legacy(chat_id=self.chatId, text="\n".join(helpMessage))
+        message: IMessage = self.__messageBuilder.createOutboundMessage(
+            source=self.bot.GetBotAgent(),
+            destination=self.user,
+            content={"text": "\n".join(helpMessage)},
+            render_mode=RenderMode.RAW_TEXT
+        )
+        await self.bot.sendMessage(message=message)
 
     async def heuristicListCommand(self, messageText: str = "", expectAnswer: bool = True):
         """
@@ -313,7 +345,16 @@ class TelegramReportingService(IReportingService):
         Heuristics are used to sort the tasks in the list.
         The selected heuristic will be used to sort the tasks.
         """
-        await self.bot.sendMessage_legacy(chat_id=self.chatId, text=self._taskListManager.get_heuristic_list())
+        heuristic_list_content = self._taskListManager.get_heuristic_list()
+
+        message: IMessage = self.__messageBuilder.createOutboundMessage(
+            source=self.bot.GetBotAgent(),
+            destination=self.user,
+            content=heuristic_list_content,
+            render_mode=RenderMode.HEURISTIC_LIST
+        )
+
+        await self.bot.sendMessage(message=message)
 
     async def algorithmListCommand(self, messageText: str = "", expectAnswer: bool = True):
         """
@@ -322,8 +363,16 @@ class TelegramReportingService(IReportingService):
         Algorithms are used to sort the tasks in the list.
         The selected algorithm will be used to sort the tasks.
         """
-        algorithmList = self._taskListManager.get_algorithm_list()
-        await self.bot.sendMessage_legacy(chat_id=self.chatId, text=algorithmList)
+        algorithm_list = self._taskListManager.get_algorithm_list()
+
+        message: IMessage = self.__messageBuilder.createOutboundMessage(
+            source=self.bot.GetBotAgent(),
+            destination=self.user,
+            content=algorithm_list,
+            render_mode=RenderMode.ALGORITHM_LIST
+        )
+
+        await self.bot.sendMessage(message=message)
 
     async def filterListCommand(self, messageText: str = "", expectAnswer: bool = True):
         """
