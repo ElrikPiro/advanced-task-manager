@@ -69,7 +69,7 @@ class ITaskListManager(ABC):
         pass
 
     @abstractmethod
-    def get_filter_list(self) -> str:
+    def get_filter_list(self) -> dict:
         pass
 
     @abstractmethod

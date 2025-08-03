@@ -381,8 +381,14 @@ class TelegramReportingService(IReportingService):
         Filters are used to show only the tasks that match the criteria.
         The selected filter will be used to show the tasks.
         """
-        filterList = self._taskListManager.get_filter_list()
-        await self.bot.sendMessage_legacy(chat_id=self.chatId, text=filterList)
+        filterListContent = self._taskListManager.get_filter_list()  # Should be a dict
+        message = self.__messageBuilder.createOutboundMessage(
+            source=self.bot.GetBotAgent(),
+            destination=self.user,
+            content=filterListContent,
+            render_mode=RenderMode.FILTER_LIST
+        )
+        await self.bot.sendMessage(message=message)
 
     async def heuristicSelectionCommand(self, messageText: str = "", expectAnswer: bool = True):
         """
@@ -428,7 +434,13 @@ class TelegramReportingService(IReportingService):
             if expectAnswer:
                 await self.sendTaskList()
         else:
-            await self.bot.sendMessage_legacy(chat_id=self.chatId, text="no task selected.")
+            message: IMessage = self.__messageBuilder.createOutboundMessage(
+                source=self.bot.GetBotAgent(),
+                destination=self.user,
+                content={"text": "no task selected."},
+                render_mode=RenderMode.RAW_TEXT
+            )
+            await self.bot.sendMessage(message=message)
 
     async def setCommand(self, messageText: str = "", expectAnswer: bool = True):
         """

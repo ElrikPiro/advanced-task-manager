@@ -17,8 +17,23 @@ class TelegramBotUserCommService(IUserCommService):
             RenderMode.RAW_TEXT: self.__renderRawText,
             RenderMode.LIST_UPDATED: self.__notifyListUpdated,
             RenderMode.HEURISTIC_LIST: self.__renderHeuristicList,
-            RenderMode.ALGORITHM_LIST: self.__renderAlgorithmList
+            RenderMode.ALGORITHM_LIST: self.__renderAlgorithmList,
+            RenderMode.FILTER_LIST: self.__renderFilterList
         }
+
+    async def __renderFilterList(self, message: IMessage):
+        filter_list = message.content.get('filterList', [])
+        chat_id = message.destination.id
+        if not filter_list:
+            await self.bot.send_message(chat_id, "No filters available", parse_mode=None)
+            return
+        text = "Available Filters:\n"
+        for i, filter_info in enumerate(filter_list):
+            name = filter_info.get('name', f'Filter {i+1}')
+            description = filter_info.get('description', '')
+            enabled = filter_info.get('enabled', False)
+            text += f" - (/filter_{i+1}) {name}: {description} [{'ENABLED' if enabled else 'DISABLED'}]\n"
+        await self.bot.send_message(chat_id, text, parse_mode=None)
         pass
 
     async def initialize(self) -> None:

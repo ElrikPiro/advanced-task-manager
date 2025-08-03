@@ -163,12 +163,19 @@ class TelegramTaskListManager(ITaskListManager):
         algorithmIndex = int(messageText.split("_")[1]) - 1
         self.__selectedAlgorithm = self.__algorithmList[algorithmIndex]
 
-    def get_filter_list(self) -> str:
-        filterList = "\n".join([f"/filter_{i+1}: {filter[0]}" for i, filter in enumerate(self.__filterList)])
-        filterList += "\n\n/heuristic - List heuristic options"
-        filterList += "\n/algorithm - List algorithm options"
-        filterList = self.render_filter_summary(filterList)
-        return filterList
+    def get_filter_list(self) -> dict:
+        filterList = []
+        for i, filter_tuple in enumerate(self.__filterList):
+            name = filter_tuple[0]
+            filter_obj = filter_tuple[1]
+            enabled = filter_tuple[2]
+            description = getattr(filter_obj, "getDescription", lambda: str(filter_obj))()
+            filterList.append({
+                "name": name,
+                "description": description,
+                "enabled": enabled
+            })
+        return {"filterList": filterList}
 
     def get_heuristic_list_legacy(self) -> str:
         heuristicList = "\n".join([f"/heuristic_{i+1}: {heuristic[0]}" for i, heuristic in enumerate(self.__heuristicList)])

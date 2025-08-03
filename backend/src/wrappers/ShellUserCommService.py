@@ -13,8 +13,22 @@ class ShellUserCommService(IUserCommService):
             RenderMode.RAW_TEXT: self.__renderRawText,
             RenderMode.LIST_UPDATED: self.__notifyListUpdated,
             RenderMode.HEURISTIC_LIST: self.__renderHeuristicList,
-            RenderMode.ALGORITHM_LIST: self.__renderAlgorithmList
+            RenderMode.ALGORITHM_LIST: self.__renderAlgorithmList,
+            RenderMode.FILTER_LIST: self.__renderFilterList
         }
+
+    def __renderFilterList(self, message: IMessage):
+        self.__botPrint("(Info) Filter List Render Mode")
+        filter_list = message.content.get('filterList', [])
+        if not filter_list:
+            self.__botPrint("No filters available")
+            return
+        self.__botPrint("Available Filters:")
+        for i, filter_info in enumerate(filter_list):
+            name = filter_info.get('name', f'Filter {i+1}')
+            description = filter_info.get('description', '')
+            enabled = filter_info.get('enabled', False)
+            self.__botPrint(f" - (/filter_{i+1}) {name}: {description} [{'ENABLED' if enabled else 'DISABLED'}]")
 
     async def initialize(self) -> None:
         print("ShellUserBotService initialized")
