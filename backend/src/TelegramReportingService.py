@@ -104,13 +104,7 @@ class TelegramReportingService(IReportingService):
 
     async def _listenForEvents(self):
         await self.bot.initialize()
-        message: IMessage = self.__messageBuilder.createOutboundMessage(
-            source=self.bot.GetBotAgent(),
-            destination=self.user,
-            content={"text": self._lastError},
-            render_mode=RenderMode.RAW_TEXT
-        )
-        self.bot.sendMessage(message)
+        await self.__send_raw_text_message(self._lastError)
         while self.run:
             try:
                 await self.runEventLoop()
@@ -236,13 +230,7 @@ class TelegramReportingService(IReportingService):
         if selectedTask is not None:
             await self.sendTaskInformation(selectedTask, True)
         else:
-            message: IMessage = self.__messageBuilder.createOutboundMessage(
-                source=self.bot.GetBotAgent(),
-                destination=self.user,
-                content={"text": "No task selected."},
-                render_mode=RenderMode.RAW_TEXT
-            )
-            await self.bot.sendMessage(message=message)
+            await self.__send_raw_text_message("No task selected.")
 
     async def helpCommand(self, messageText: str = "", expectAnswer: bool = True):
         """
@@ -330,13 +318,7 @@ class TelegramReportingService(IReportingService):
         if printHelp:
             helpMessage.append(self.helpCommand.__doc__)
 
-        message: IMessage = self.__messageBuilder.createOutboundMessage(
-            source=self.bot.GetBotAgent(),
-            destination=self.user,
-            content={"text": "\n".join(helpMessage)},
-            render_mode=RenderMode.RAW_TEXT
-        )
-        await self.bot.sendMessage(message=message)
+        await self.__send_raw_text_message("\n".join(helpMessage))
 
     async def heuristicListCommand(self, messageText: str = "", expectAnswer: bool = True):
         """
@@ -434,13 +416,7 @@ class TelegramReportingService(IReportingService):
             if expectAnswer:
                 await self.sendTaskList()
         else:
-            message: IMessage = self.__messageBuilder.createOutboundMessage(
-                source=self.bot.GetBotAgent(),
-                destination=self.user,
-                content={"text": "no task selected."},
-                render_mode=RenderMode.RAW_TEXT
-            )
-            await self.bot.sendMessage(message=message)
+            await self.__send_raw_text_message("no task selected.")
 
     async def setCommand(self, messageText: str = "", expectAnswer: bool = True):
         """
@@ -475,7 +451,7 @@ class TelegramReportingService(IReportingService):
             if expectAnswer:
                 await self.sendTaskInformation(task)
         else:
-            await self.bot.sendMessage_legacy(chat_id=self.chatId, text="no task selected.")
+            await self.__send_raw_text_message("no task selected.")
 
     async def newCommand(self, messageText: str = "", expectAnswer: bool = True):
         """
@@ -505,7 +481,7 @@ class TelegramReportingService(IReportingService):
             if expectAnswer:
                 await self.sendTaskInformation(selected_task)
         else:
-            await self.bot.sendMessage_legacy(chat_id=self.chatId, text="no description provided.")
+            await self.__send_raw_text_message("no description provided.")
 
     async def scheduleCommand(self, messageText: str = "", expectAnswer: bool = True):
         """
@@ -523,7 +499,7 @@ class TelegramReportingService(IReportingService):
             if expectAnswer:
                 await self.sendTaskInformation(selected_task)
         else:
-            await self.bot.sendMessage_legacy(chat_id=self.chatId, text="no task provided.")
+            await self.__send_raw_text_message("no task provided.")
 
     async def workCommand(self, messageText: str = "", expectAnswer: bool = True):
         """
@@ -544,7 +520,7 @@ class TelegramReportingService(IReportingService):
             if expectAnswer:
                 await self.sendTaskInformation(task)
         else:
-            await self.bot.sendMessage_legacy(chat_id=self.chatId, text="no task provided.")
+            await self.__send_raw_text_message("no task provided.")
 
     async def statsCommand(self, messageText: str = "", expectAnswer: bool = True):
         """
@@ -629,7 +605,7 @@ class TelegramReportingService(IReportingService):
         # get the imported data
         self.taskProvider.importTasks(selectedFormat)
         self._taskListManager.update_taskList(self.taskProvider.getTaskList())
-        await self.bot.sendMessage_legacy(chat_id=self.chatId, text=f"{selectedFormat} file imported", parse_mode="Markdown")
+        await self.__send_raw_text_message(f"{selectedFormat} file imported", parse_mode="Markdown")
         await self.listCommand(messageText, expectAnswer)
 
     async def searchCommand(self, messageText: str = "", expectAnswer: bool = True):
@@ -653,7 +629,7 @@ class TelegramReportingService(IReportingService):
             taskListString = searchResultsManager.render_task_list_str(False)
             await self.bot.sendMessage_legacy(chat_id=self.chatId, text=taskListString)
         else:
-            await self.bot.sendMessage_legacy(chat_id=self.chatId, text="No results found")
+            await self.__send_raw_text_message("No results found")
 
     async def agendaCommand(self, messageText: str = "", expectAnswer: bool = True):
         """
@@ -675,12 +651,12 @@ class TelegramReportingService(IReportingService):
         SUPPORTED_COMMANDS = ProjectCommands.values()
         messageArgs = messageText.split(" ")
         if len(messageArgs) < 2:
-            await self.bot.sendMessage_legacy(chat_id=self.chatId, text="No project command provided")
+            await self.__send_raw_text_message("No project command provided")
             return
 
         command = messageArgs[1]
         if command not in SUPPORTED_COMMANDS:
-            await self.bot.sendMessage_legacy(chat_id=self.chatId, text="Invalid project command")
+            await self.__send_raw_text_message("Invalid project command")
             return
 
         response = self.__projectManager.process_command(command, messageArgs[2:])
@@ -740,7 +716,7 @@ class TelegramReportingService(IReportingService):
             task.setContext(value)
         else:
             errorMessage = f"Invalid context {value}\nvalid contexts would be: {', '.join([category['prefix'] for category in self._categories])}"
-            await self.bot.sendMessage_legacy(chat_id=self.chatId, text=errorMessage)
+            await self.__send_raw_text_message(errorMessage)
 
     async def setStartCommand(self, task: ITaskModel, value: str):
         """
@@ -826,7 +802,7 @@ class TelegramReportingService(IReportingService):
             await command(task, value)
         else:
             errorMessage = f"Invalid parameter {param}\nvalid parameters would be: description, context, start, due, severity, total_cost, effort_invested, calm"
-            await self.bot.sendMessage_legacy(chat_id=self.chatId, text=errorMessage)
+            await self.__send_raw_text_message(errorMessage)
 
     async def sendTaskList(self, interactive: bool = True):
         self._taskListManager.clear_selected_task()
@@ -840,3 +816,19 @@ class TelegramReportingService(IReportingService):
         taskInformation = self._taskListManager.render_task_information(task, self.taskProvider, extended)
 
         await self.bot.sendMessage_legacy(chat_id=self.chatId, text=taskInformation, parse_mode="HTML")
+
+    async def __send_raw_text_message(self, text: str, parse_mode: str = None):
+        """
+        Private helper method to send raw text messages using the structured message approach.
+
+        Args:
+            text: The text content to send
+            parse_mode: Optional formatting mode (e.g., "Markdown", "HTML")
+        """
+        message: IMessage = self.__messageBuilder.createOutboundMessage(
+            source=self.bot.GetBotAgent(),
+            destination=self.user,
+            content={"text": text},
+            render_mode=RenderMode.RAW_TEXT
+        )
+        await self.bot.sendMessage(message=message)
