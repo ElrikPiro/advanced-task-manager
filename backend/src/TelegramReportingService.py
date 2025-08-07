@@ -642,7 +642,6 @@ class TelegramReportingService(IReportingService):
                 render_mode=RenderMode.TASK_LIST
             )
             await self.bot.sendMessage(message=message)
-            # await self.bot.sendMessage_legacy(chat_id=self.chatId, text=taskListString)
         else:
             await self.__send_raw_text_message("No results found")
 
