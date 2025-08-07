@@ -49,7 +49,7 @@ class ITaskListManager(ABC):
         pass
 
     @abstractmethod
-    def render_task_list_str(self, interactive: bool = True) -> str:
+    def render_task_list_str_legacy(self, interactive: bool = True) -> str:
         pass
 
     @abstractmethod
@@ -110,4 +110,12 @@ class ITaskListManager(ABC):
 
     @abstractmethod
     def get_algorithm_list(self) -> dict:
+        pass
+
+    @abstractmethod
+    def get_task_list_content(self) -> dict:
+        """
+        Returns a dictionary with the content needed to render a task list.
+        This includes algorithm information, heuristic information, tasks, pagination details, etc.
+        """
         pass

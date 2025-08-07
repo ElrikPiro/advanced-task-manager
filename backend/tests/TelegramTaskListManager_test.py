@@ -95,7 +95,7 @@ class TestTelegramTaskListManager(unittest.TestCase):
         self.assertNotIn(self.task1, result)
 
     def test__render_other_tasks(self):
-        TelegramTaskListManager.render_task_list_str = MagicMock(return_value="other tasks list")
+        TelegramTaskListManager.render_task_list_str_legacy = MagicMock(return_value="other tasks list")
         agenda_str = "Agenda: "
         other_tasks = [self.task3]
         result = self.task_list_manager._TelegramTaskListManager__render_other_tasks(agenda_str, other_tasks)
@@ -342,7 +342,7 @@ class TestTelegramTaskListManagerAdditional(unittest.TestCase):
         self.assertNotIn(self.task1, result)
 
     def test__render_other_tasks_with_additional_tasks(self):
-        TelegramTaskListManager.render_task_list_str = MagicMock(return_value="other tasks list")
+        TelegramTaskListManager.render_task_list_str_legacy = MagicMock(return_value="other tasks list")
         agenda_str = "Agenda: "
         other_tasks = [self.task3]
         result = self.task_list_manager._TelegramTaskListManager__render_other_tasks(agenda_str, other_tasks)

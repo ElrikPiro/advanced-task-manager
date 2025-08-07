@@ -95,7 +95,7 @@ class TelegramTaskListManager(ITaskListManager):
 
         return TelegramTaskListManager(taskListSearched, [], [], self.__filterList, self.__statistics_service, self.__tasksPerPage)
 
-    def render_task_list_str(self, interactive: bool = True) -> str:
+    def render_task_list_str_legacy(self, interactive: bool = True) -> str:
         task_list = self.filtered_task_list
         interactiveId = "/task_" if interactive else ""
 
@@ -263,6 +263,52 @@ class TelegramTaskListManager(ITaskListManager):
             "offender_max": offenderMax,
             "work_done_log": self.__statistics_service.getWorkDoneLog()
         }
+        
+    def get_task_list_content(self) -> dict:
+        """
+        Returns a dictionary with the content needed to render a task list.
+        This includes algorithm information, heuristic information, tasks, pagination details, etc.
+        """
+        task_list = self.filtered_task_list
+        
+        # Get task details for the current page
+        start_index = self.__taskListPage * self.__tasksPerPage
+        end_index = (self.__taskListPage + 1) * self.__tasksPerPage
+        page_tasks = task_list[start_index:end_index]
+        
+        # Format tasks for display
+        tasks = []
+        for task in page_tasks:
+            tasks.append({
+                "id": task.getId(),
+                "description": task.getDescription(),
+                "context": task.getContext()
+            })
+        
+        # Get pagination information
+        total_pages = (len(task_list) + self.__tasksPerPage - 1) // self.__tasksPerPage
+        current_page = self.__taskListPage + 1
+        
+        # Get algorithm information
+        algorithm_name = self.__selectedAlgorithm[0] if len(self.__algorithmList) > 0 else "None"
+        algorithm_desc = self.__selectedAlgorithm[1].getDescription() if len(self.__algorithmList) > 0 else "No algorithm selected"
+        
+        # Get heuristic information
+        sort_heuristic = self.__selectedHeuristic[0] if len(self.__heuristicList) > 0 else "None"
+        
+        # Get active filters
+        active_filters = [filter[0] for filter in self.__filterList if filter[2]]
+        
+        return {
+            "algorithm_name": algorithm_name,
+            "algorithm_desc": algorithm_desc,
+            "sort_heuristic": sort_heuristic,
+            "tasks": tasks,
+            "current_page": current_page,
+            "total_pages": total_pages,
+            "active_filters": active_filters,
+            "interactive": True  # Default to interactive mode
+        }
 
     def render_task_information(self, task: ITaskModel, taskProvider: ITaskProvider, extended: bool) -> str:
         taskDescription = task.getDescription()
@@ -373,6 +419,6 @@ class TelegramTaskListManager(ITaskListManager):
     def __render_other_tasks(self, agenda_str, other_tasks):
         if len(other_tasks) > 0:
             agenda_str += "# Other tasks:\n"
-            agenda_str += TelegramTaskListManager(other_tasks, self.__algorithmList, self.__heuristicList, self.__filterList, self.__statistics_service).render_task_list_str(False)
+            agenda_str += TelegramTaskListManager(other_tasks, self.__algorithmList, self.__heuristicList, self.__filterList, self.__statistics_service).render_task_list_str_legacy(False)
             agenda_str += "\n\n"
         return agenda_str

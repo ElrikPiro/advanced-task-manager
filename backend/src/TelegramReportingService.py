@@ -633,8 +633,16 @@ class TelegramReportingService(IReportingService):
             self._taskListManager.selected_task = searchResults[0]
             await self.sendTaskInformation(searchResults[0])
         elif len(searchResults) > 0:
-            taskListString = searchResultsManager.render_task_list_str(False)
-            await self.bot.sendMessage_legacy(chat_id=self.chatId, text=taskListString)
+            taskListContent = searchResultsManager.get_task_list_content()
+            taskListContent["interactive"] = False
+            message = self.__messageBuilder.createOutboundMessage(
+                source=self.bot.GetBotAgent(),
+                destination=self.user,
+                content=taskListContent,
+                render_mode=RenderMode.TASK_LIST
+            )
+            await self.bot.sendMessage(message=message)
+            # await self.bot.sendMessage_legacy(chat_id=self.chatId, text=taskListString)
         else:
             await self.__send_raw_text_message("No results found")
 
@@ -814,7 +822,7 @@ class TelegramReportingService(IReportingService):
     async def sendTaskList(self, interactive: bool = True):
         self._taskListManager.clear_selected_task()
 
-        taskListString = self._taskListManager.render_task_list_str(interactive)
+        taskListString = self._taskListManager.render_task_list_str_legacy(interactive)
 
         await self.bot.sendMessage_legacy(chat_id=self.chatId, text=taskListString)
         pass
