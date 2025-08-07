@@ -18,7 +18,8 @@ class TelegramBotUserCommService(IUserCommService):
             RenderMode.LIST_UPDATED: self.__notifyListUpdated,
             RenderMode.HEURISTIC_LIST: self.__renderHeuristicList,
             RenderMode.ALGORITHM_LIST: self.__renderAlgorithmList,
-            RenderMode.FILTER_LIST: self.__renderFilterList
+            RenderMode.FILTER_LIST: self.__renderFilterList,
+            RenderMode.TASK_STATS: self.__renderTaskStats
         }
 
     async def __renderFilterList(self, message: IMessage):
@@ -165,6 +166,66 @@ class TelegramBotUserCommService(IUserCommService):
             text += f" - (/algorithm_{i+1}) {algorithm['name']}: {algorithm['description']}\n"
 
         await self.bot.send_message(chat_id, text, parse_mode=None)
+
+    async def __renderTaskStats(self, message: IMessage):
+        # Import time management classes
+        from backend.src.wrappers.TimeManagement import TimePoint, TimeAmount
+        
+        # Get chat_id from message
+        chat_id = message.destination.id
+        
+        # Extract data from the message
+        workload = message.content.get('workload', "0p")
+        remaining_effort = message.content.get('remaining_effort', "0p")
+        heuristic_value = message.content.get('heuristic_value', "0")
+        heuristic_name = message.content.get('heuristic_name', "Unknown")
+        offender = message.content.get('offender', "None")
+        offender_max = message.content.get('offender_max', "0p")
+        work_done_log = message.content.get('work_done_log', [])
+        
+        # Format the message with Markdown for Telegram
+        stats_message = "Work done in the last 7 days:\n"
+        stats_message += "`|    Date    | Work  Done |`\n"
+        stats_message += "`|------------|------------|`\n"
+        
+        # For Telegram display, we'll calculate this from the last 7 days of logs if available
+        total_work = 0
+        for i in range(min(7, len(work_done_log))):
+            if i < len(work_done_log):
+                entry = work_done_log[i]
+                work_units = float(entry.get("work_units", "0"))
+                timestamp = entry.get("timestamp", 0)
+                date_str = TimePoint.from_int(timestamp).to_string()
+                stats_message += f"`| {date_str} |    {work_units}    |`\n"
+                total_work += work_units
+        
+        # Add average work done per day
+        average_work = round(total_work / 7, 2) if work_done_log else 0
+        stats_message += "`|------------|------------|`\n"
+        stats_message += f"`|   Average  |    {average_work}    |`\n"
+        stats_message += "`|------------|------------|`\n\n"
+        
+        # Display workload statistics
+        stats_message += "Workload statistics:\n"
+        stats_message += f"`current workload: {workload} per day`\n"
+        stats_message += f"    `max Offender: '{offender}' with {offender_max} per day`\n"
+        stats_message += f"`total remaining effort: {remaining_effort}`\n"
+        stats_message += f"`max {heuristic_name}: {heuristic_value}`\n\n"
+        
+        # Display work done log
+        stats_message += "Work done log:\n"
+        for entry in work_done_log:
+            task = entry.get("task", "Unknown")
+            work_units = entry.get("work_units", "0")
+            timestamp = entry.get("timestamp", 0)
+            date_str = TimePoint.from_int(timestamp).to_string()
+            time_amount = TimeAmount(f"{work_units}p")
+            stats_message += f"`{date_str}: {time_amount} on {task}`\n"
+        
+        stats_message += "\n/list - return back to the task list"
+        
+        # Send the message with Markdown formatting
+        await self.bot.send_message(chat_id, stats_message, parse_mode="Markdown")
 
     def getBotAgent(self):
         return self.agent

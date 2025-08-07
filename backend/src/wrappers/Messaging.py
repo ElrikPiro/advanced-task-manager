@@ -115,6 +115,7 @@ class RenderMode:
     HEURISTIC_LIST = 3
     ALGORITHM_LIST = 4
     FILTER_LIST = 5
+    TASK_STATS = 6
 
 
 class OutboundMessage(IMessage):

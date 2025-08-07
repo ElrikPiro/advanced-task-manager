@@ -209,7 +209,7 @@ class TelegramTaskListManager(ITaskListManager):
             })
         return {"algorithmList": algorithmList}
 
-    def get_list_stats(self) -> str:
+    def get_list_stats_legacy(self) -> str:
         statsMessage = "Work done in the last 7 days:\n"
         statsMessage += "`|    Date    | Work  Done |`\n"
         statsMessage += "`|------------|------------|`\n"
@@ -249,6 +249,20 @@ class TelegramTaskListManager(ITaskListManager):
 
         statsMessage += "/list - return back to the task list"
         return statsMessage
+
+    def get_list_stats(self) -> dict:
+        stats = self.__statistics_service.getWorkloadStats(self.__taskModelList)
+        workload, remEffort, heuristicValue, heuristicName, offender, offenderMax = stats
+
+        return {
+            "workload": workload,
+            "remaining_effort": remEffort,
+            "heuristic_value": heuristicValue,
+            "heuristic_name": heuristicName,
+            "offender": offender,
+            "offender_max": offenderMax,
+            "work_done_log": self.__statistics_service.getWorkDoneLog()
+        }
 
     def render_task_information(self, task: ITaskModel, taskProvider: ITaskProvider, extended: bool) -> str:
         taskDescription = task.getDescription()

@@ -528,7 +528,14 @@ class TelegramReportingService(IReportingService):
         This command shows work done statistics.
         It shows the work done today and the average work per day.
         """
-        await self.bot.sendMessage_legacy(chat_id=self.chatId, text=self._taskListManager.get_list_stats(), parse_mode="Markdown")
+        message = self.__messageBuilder.createOutboundMessage(
+            source=self.bot.GetBotAgent(),
+            destination=self.user,
+            content=self._taskListManager.get_list_stats(),
+            render_mode=RenderMode.TASK_STATS
+        )
+
+        await self.bot.sendMessage(message=message)
 
     async def snoozeCommand(self, messageText: str = "", expectAnswer: bool = True):
         """

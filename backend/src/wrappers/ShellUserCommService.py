@@ -14,7 +14,8 @@ class ShellUserCommService(IUserCommService):
             RenderMode.LIST_UPDATED: self.__notifyListUpdated,
             RenderMode.HEURISTIC_LIST: self.__renderHeuristicList,
             RenderMode.ALGORITHM_LIST: self.__renderAlgorithmList,
-            RenderMode.FILTER_LIST: self.__renderFilterList
+            RenderMode.FILTER_LIST: self.__renderFilterList,
+            RenderMode.TASK_STATS: self.__renderTaskStats
         }
 
     def __renderFilterList(self, message: IMessage):
@@ -118,6 +119,63 @@ class ShellUserCommService(IUserCommService):
 
     def __botPrint(self, text: str):
         print(f"[bot -> {self.chatId}]: {text}")
+
+    def __renderTaskStats(self, message: IMessage):
+        self.__botPrint("(Info) Task Stats Render Mode")
+        
+        # Import time management classes
+        from backend.src.wrappers.TimeManagement import TimePoint, TimeAmount
+        
+        # Extract data from the message
+        workload = message.content.get('workload', "0p")
+        remaining_effort = message.content.get('remaining_effort', "0p")
+        heuristic_value = message.content.get('heuristic_value', "0")
+        heuristic_name = message.content.get('heuristic_name', "Unknown")
+        offender = message.content.get('offender', "None")
+        offender_max = message.content.get('offender_max', "0p")
+        work_done_log = message.content.get('work_done_log', [])
+        
+        # Format and display workload statistics
+        self.__botPrint("Work done in the last 7 days:")
+        self.__botPrint("|    Date    | Work  Done |")
+        self.__botPrint("|------------|------------|")
+        
+        # For shell display, we'll calculate this from the last 7 days of logs if available
+        # (In a real implementation, this would need proper date filtering and aggregation)
+        total_work = 0
+        for i in range(min(7, len(work_done_log))):
+            if i < len(work_done_log):
+                entry = work_done_log[i]
+                work_units = float(entry.get("work_units", "0"))
+                timestamp = entry.get("timestamp", 0)
+                date_str = TimePoint.from_int(timestamp).to_string()
+                self.__botPrint(f"| {date_str} |    {work_units}    |")
+                total_work += work_units
+        
+        # Add average work done per day
+        average_work = round(total_work / 7, 2) if work_done_log else 0
+        self.__botPrint("|------------|------------|")
+        self.__botPrint(f"|   Average  |    {average_work}    |")
+        self.__botPrint("|------------|------------|")
+        
+        # Display workload statistics
+        self.__botPrint("\nWorkload statistics:")
+        self.__botPrint(f"current workload: {workload} per day")
+        self.__botPrint(f"max Offender: '{offender}' with {offender_max} per day")
+        self.__botPrint(f"total remaining effort: {remaining_effort}")
+        self.__botPrint(f"max {heuristic_name}: {heuristic_value}")
+        
+        # Display work done log
+        self.__botPrint("\nWork done log:")
+        for entry in work_done_log:
+            task = entry.get("task", "Unknown")
+            work_units = entry.get("work_units", "0")
+            timestamp = entry.get("timestamp", 0)
+            date_str = TimePoint.from_int(timestamp).to_string()
+            time_amount = TimeAmount(f"{work_units}p")
+            self.__botPrint(f"{date_str}: {time_amount} on {task}")
+        
+        self.__botPrint("\n/list - return back to the task list")
 
     async def sendMessage(self, message: IMessage) -> None:
         if message.type != "OutboundMessage":

@@ -279,7 +279,7 @@ class TestTelegramTaskListManagerAdditional(unittest.TestCase):
         self.statistics_service.getWorkDoneLog.return_value = work_done_log
 
         # Act
-        result = self.task_list_manager.get_list_stats()
+        result = self.task_list_manager.get_list_stats_legacy()
 
         # Assert
         self.assertIn("Work done in the last 7 days:", result)
