@@ -67,7 +67,7 @@ class TelegramReportingService(IReportingService):
             ("/import", self.importCommand),
             ("/search", self.searchCommand),
             ("/agenda", self.agendaCommand),
-            ("/project", self.projectCommand),
+            ("/project", self.projectCommand_legacy),
             ("/algorithm_", self.algorithmSelectionCommand),
             ("/algorithm", self.algorithmListCommand),
         ]
@@ -161,7 +161,7 @@ class TelegramReportingService(IReportingService):
             if self.chatId == 0:
                 self.chatId = result[0]
             elif result[0] == int(self.chatId):
-                await self.processMessage(result[1])
+                await self.processMessage_legacy(result[1])
 
     # Each command must be made into an object and injected into this class
     async def listCommand(self, messageText: str = "", expectAnswer: bool = True):
@@ -662,7 +662,7 @@ class TelegramReportingService(IReportingService):
         )
         await self.bot.sendMessage(message=message)
 
-    async def projectCommand(self, messageText: str = "", expectAnswer: bool = True):
+    async def projectCommand_legacy(self, messageText: str = "", expectAnswer: bool = True):
         """
         # Command /project [command]
         This command manages projects.
@@ -679,10 +679,11 @@ class TelegramReportingService(IReportingService):
             await self.__send_raw_text_message("Invalid project command")
             return
 
-        response = self.__projectManager.process_command(command, messageArgs[2:])
-        await self.bot.sendMessage_legacy(chat_id=self.chatId, text=response)
+        response = self.__projectManager.process_command_legacy(command, messageArgs[2:])
 
-    async def processMessage(self, messageText: str):
+        await self.__send_raw_text_message(response)
+
+    async def processMessage_legacy(self, messageText: str):
         commands: List[Tuple[str, Coroutine[Any, Any, None]]] = self.commands
 
         messageTextLines = messageText.strip().splitlines()

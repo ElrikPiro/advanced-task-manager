@@ -25,7 +25,7 @@ class IProjectManager(ABC):
     """
 
     @abstractmethod
-    def process_command(self, command: str, messageArgs: List[str]) -> str:
+    def process_command_legacy(self, command: str, messageArgs: List[str]) -> str:
         """
         Process a command with its arguments.
 
