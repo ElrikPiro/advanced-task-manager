@@ -422,3 +422,87 @@ class TelegramTaskListManager(ITaskListManager):
             agenda_str += TelegramTaskListManager(other_tasks, self.__algorithmList, self.__heuristicList, self.__filterList, self.__statistics_service).render_task_list_str_legacy(False)
             agenda_str += "\n\n"
         return agenda_str
+        
+    def get_day_agenda_content(self, date: TimePoint, categories: list[dict]) -> dict:
+        """
+        Returns a dictionary with the content needed to render a day agenda.
+        This includes active urgent tasks, planned urgent tasks, and other tasks.
+        
+        Args:
+            date: The date for which to get the agenda
+            categories: A list of category dictionaries to use for sorting tasks
+            
+        Returns:
+            A dictionary containing the agenda data
+        """
+        # Get tasks by different criteria
+        urgent_tasks = self.__filter_urgent_tasks(date)
+        current_urgent_tasks = self.__filter_current_tasks(urgent_tasks)
+        current_urgents_by_categories = self.__sort_by_categories(current_urgent_tasks, categories)
+        urgent_tasks_by_start = self.__filter_and_sort_future_tasks(urgent_tasks, date)
+        other_tasks = self.__filter_high_heuristic_tasks(urgent_tasks)
+        
+        # Format the active urgent tasks
+        active_urgent_tasks = []
+        for task in current_urgents_by_categories:
+            active_urgent_tasks.append({
+                "id": task.getId(),
+                "description": task.getDescription(),
+                "context": task.getContext(),
+                "due": str(task.getDue()),
+                "start": str(task.getStart())
+            })
+            
+        # Format the planned urgent tasks
+        planned_urgent_tasks = []
+        planned_tasks_by_date = {}
+        
+        for task in urgent_tasks_by_start:
+            task_data = {
+                "id": task.getId(),
+                "description": task.getDescription(),
+                "context": task.getContext(),
+                "due": str(task.getDue()),
+                "start": str(task.getStart())
+            }
+            
+            start_date = str(task.getStart())
+            if start_date not in planned_tasks_by_date:
+                planned_tasks_by_date[start_date] = []
+            
+            planned_tasks_by_date[start_date].append(task_data)
+            planned_urgent_tasks.append(task_data)
+            
+        # Format the other tasks
+        other_tasks_formatted = []
+        for task in other_tasks:
+            other_tasks_formatted.append({
+                "id": task.getId(),
+                "description": task.getDescription(),
+                "context": task.getContext(),
+                "due": str(task.getDue()),
+                "start": str(task.getStart())
+            })
+            
+        # If needed, get task list information for other tasks
+        other_task_list_info = None
+        if other_tasks:
+            other_task_manager = TelegramTaskListManager(
+                other_tasks,
+                self.__algorithmList,
+                self.__heuristicList,
+                self.__filterList,
+                self.__statistics_service
+            )
+            other_task_list_info = other_task_manager.get_task_list_content()
+            other_task_list_info["interactive"] = False
+        
+        # Return the complete agenda data structure
+        return {
+            "date": str(date),
+            "active_urgent_tasks": active_urgent_tasks,
+            "planned_urgent_tasks": planned_urgent_tasks,
+            "planned_tasks_by_date": planned_tasks_by_date,
+            "other_tasks": other_tasks_formatted,
+            "other_task_list_info": other_task_list_info
+        }

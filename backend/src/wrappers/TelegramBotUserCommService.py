@@ -19,7 +19,8 @@ class TelegramBotUserCommService(IUserCommService):
             RenderMode.HEURISTIC_LIST: self.__renderHeuristicList,
             RenderMode.ALGORITHM_LIST: self.__renderAlgorithmList,
             RenderMode.FILTER_LIST: self.__renderFilterList,
-            RenderMode.TASK_STATS: self.__renderTaskStats
+            RenderMode.TASK_STATS: self.__renderTaskStats,
+            RenderMode.TASK_AGENDA: self.__renderTaskAgenda
         }
 
     async def __renderFilterList(self, message: IMessage):
@@ -226,6 +227,47 @@ class TelegramBotUserCommService(IUserCommService):
         
         # Send the message with Markdown formatting
         await self.bot.send_message(chat_id, stats_message, parse_mode="Markdown")
+        
+    async def __renderTaskAgenda(self, message: IMessage):
+        # Get chat_id from message
+        chat_id = message.destination.id
+        
+        # Extract data from the message
+        date = message.content.get('date', "Unknown Date")
+        active_urgent_tasks = message.content.get('active_urgent_tasks', [])
+        planned_tasks_by_date = message.content.get('planned_tasks_by_date', {})
+        other_tasks = message.content.get('other_tasks', [])
+        
+        # Format the message with Markdown for Telegram
+        agenda_message = f"*Agenda for {date}*\n\n"
+        
+        # Display active urgent tasks
+        if active_urgent_tasks:
+            agenda_message += "*Active Urgent tasks:*\n"
+            for task in active_urgent_tasks:
+                agenda_message += f"- {task['description']} (Context: {task['context']})\n"
+            agenda_message += "\n"
+        
+        # Display planned urgent tasks by date
+        if planned_tasks_by_date:
+            agenda_message += "*Planned tasks:*\n"
+            for date, tasks in planned_tasks_by_date.items():
+                agenda_message += f"*{date}*\n"
+                for task in tasks:
+                    agenda_message += f"- {task['description']} (Context: {task['context']})\n"
+            agenda_message += "\n"
+        
+        # Display other tasks
+        if other_tasks:
+            agenda_message += "*Other tasks:*\n"
+            for task in other_tasks:
+                agenda_message += f"- {task['description']} (Context: {task['context']})\n"
+            agenda_message += "\n"
+        
+        agenda_message += "/list - return back to the task list"
+        
+        # Send the message with Markdown formatting
+        await self.bot.send_message(chat_id, agenda_message, parse_mode="Markdown")
 
     def getBotAgent(self):
         return self.agent

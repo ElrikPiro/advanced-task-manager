@@ -653,8 +653,14 @@ class TelegramReportingService(IReportingService):
         It will show the times they are available
         Finally it will show which non-urgent tasks are available next
         """
-        agenda = self._taskListManager.render_day_agenda(TimePoint.today(), self._categories)
-        await self.bot.sendMessage_legacy(chat_id=self.chatId, text=agenda)
+        agenda_content = self._taskListManager.get_day_agenda_content(TimePoint.today(), self._categories)
+        message = self.__messageBuilder.createOutboundMessage(
+            source=self.bot.GetBotAgent(),
+            destination=self.user,
+            content=agenda_content,
+            render_mode=RenderMode.TASK_AGENDA
+        )
+        await self.bot.sendMessage(message=message)
 
     async def projectCommand(self, messageText: str = "", expectAnswer: bool = True):
         """

@@ -15,7 +15,8 @@ class ShellUserCommService(IUserCommService):
             RenderMode.HEURISTIC_LIST: self.__renderHeuristicList,
             RenderMode.ALGORITHM_LIST: self.__renderAlgorithmList,
             RenderMode.FILTER_LIST: self.__renderFilterList,
-            RenderMode.TASK_STATS: self.__renderTaskStats
+            RenderMode.TASK_STATS: self.__renderTaskStats,
+            RenderMode.TASK_AGENDA: self.__renderTaskAgenda
         }
 
     def __renderFilterList(self, message: IMessage):
@@ -176,6 +177,44 @@ class ShellUserCommService(IUserCommService):
             self.__botPrint(f"{date_str}: {time_amount} on {task}")
         
         self.__botPrint("\n/list - return back to the task list")
+        
+    def __renderTaskAgenda(self, message: IMessage):
+        self.__botPrint("(Info) Task Agenda Render Mode")
+        
+        # Get content from message
+        date = message.content.get('date', "Today")
+        active_urgent_tasks = message.content.get('active_urgent_tasks', [])
+        planned_urgent_tasks = message.content.get('planned_urgent_tasks', [])
+        planned_tasks_by_date = message.content.get('planned_tasks_by_date', {})
+        other_tasks = message.content.get('other_tasks', [])
+        
+        # Display the agenda header
+        self.__botPrint(f"Agenda for {date}:\n")
+        
+        # Display active urgent tasks
+        if active_urgent_tasks:
+            self.__botPrint("# Active Urgent tasks:")
+            for task in active_urgent_tasks:
+                self.__botPrint(f"- {task['description']} (Context: {task['context']})")
+            self.__botPrint("")
+        
+        # Display planned urgent tasks
+        if planned_urgent_tasks:
+            self.__botPrint("# Planned Urgent tasks:")
+            for date, tasks in planned_tasks_by_date.items():
+                self.__botPrint(f"## {date}")
+                for task in tasks:
+                    self.__botPrint(f"\t- {task['description']} (Context: {task['context']})")
+            self.__botPrint("")
+        
+        # Display other tasks
+        if other_tasks:
+            self.__botPrint("# Other tasks:")
+            for task in other_tasks:
+                self.__botPrint(f"- {task['description']} (Context: {task['context']})")
+            self.__botPrint("")
+        
+        self.__botPrint("/list - return back to the task list")
 
     async def sendMessage(self, message: IMessage) -> None:
         if message.type != "OutboundMessage":

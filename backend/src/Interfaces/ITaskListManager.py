@@ -119,3 +119,18 @@ class ITaskListManager(ABC):
         This includes algorithm information, heuristic information, tasks, pagination details, etc.
         """
         pass
+        
+    @abstractmethod
+    def get_day_agenda_content(self, date: TimePoint, categories: list[dict]) -> dict:
+        """
+        Returns a dictionary with the content needed to render a day agenda.
+        This includes active urgent tasks, planned urgent tasks, and other tasks.
+        
+        Args:
+            date: The date for which to get the agenda
+            categories: A list of category dictionaries to use for sorting tasks
+            
+        Returns:
+            A dictionary containing the agenda data
+        """
+        pass

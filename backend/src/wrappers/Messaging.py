@@ -116,6 +116,7 @@ class RenderMode:
     ALGORITHM_LIST = 4
     FILTER_LIST = 5
     TASK_STATS = 6
+    TASK_AGENDA = 7
 
 
 class OutboundMessage(IMessage):
