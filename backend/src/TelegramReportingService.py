@@ -828,10 +828,20 @@ class TelegramReportingService(IReportingService):
     async def sendTaskList(self, interactive: bool = True):
         self._taskListManager.clear_selected_task()
 
-        taskListString = self._taskListManager.render_task_list_str_legacy(interactive)
+        # Get structured task list content
+        task_list_content = self._taskListManager.get_task_list_content()
+        task_list_content["interactive"] = interactive
 
-        await self.bot.sendMessage_legacy(chat_id=self.chatId, text=taskListString)
-        pass
+        # Create a structured message
+        message = self.__messageBuilder.createOutboundMessage(
+            source=self.bot.GetBotAgent(),
+            destination=self.user,
+            content=task_list_content,
+            render_mode=RenderMode.TASK_LIST
+        )
+
+        # Send the structured message
+        await self.bot.sendMessage(message=message)
 
     async def sendTaskInformation(self, task: ITaskModel, extended: bool = False):
         taskInformation = self._taskListManager.render_task_information(task, self.taskProvider, extended)

@@ -276,17 +276,32 @@ class TelegramTaskListManager(ITaskListManager):
         end_index = (self.__taskListPage + 1) * self.__tasksPerPage
         page_tasks = task_list[start_index:end_index]
         
-        # Format tasks for display
+        # Format tasks with complete information
         tasks = []
-        for task in page_tasks:
+        for i, task in enumerate(page_tasks):
+            # Get heuristic value for the task
+            heuristic_value = None
+            if len(self.__heuristicList) > 0:
+                heuristic_value = self.__selectedHeuristic[1].calculate(task)
+            
+            # Use hash of description as ID if getId is not available
+            task_id = getattr(task, "getId", lambda: str(i + 1))()
+            
             tasks.append({
-                "id": task.getId(),
+                "id": task_id,
                 "description": task.getDescription(),
-                "context": task.getContext()
+                "context": task.getContext(),
+                "start": str(task.getStart()),
+                "due": str(task.getDue()),
+                "severity": task.getSeverity(),
+                "status": task.getStatus(),
+                "total_cost": task.getTotalCost().as_pomodoros(),
+                "effort_invested": task.getInvestedEffort().as_pomodoros(),
+                "heuristic_value": heuristic_value
             })
         
         # Get pagination information
-        total_pages = (len(task_list) + self.__tasksPerPage - 1) // self.__tasksPerPage
+        total_pages = (len(task_list) + self.__tasksPerPage - 1) // self.__tasksPerPage if self.__tasksPerPage > 0 else 1
         current_page = self.__taskListPage + 1
         
         # Get algorithm information
@@ -297,13 +312,21 @@ class TelegramTaskListManager(ITaskListManager):
         sort_heuristic = self.__selectedHeuristic[0] if len(self.__heuristicList) > 0 else "None"
         
         # Get active filters
-        active_filters = [filter[0] for filter in self.__filterList if filter[2]]
+        active_filters = []
+        for i, filter_tuple in enumerate(self.__filterList):
+            if filter_tuple[2]:  # If filter is enabled
+                active_filters.append({
+                    "name": filter_tuple[0],
+                    "index": i + 1,
+                    "description": getattr(filter_tuple[1], "getDescription", lambda: str(filter_tuple[1]))()
+                })
         
         return {
             "algorithm_name": algorithm_name,
             "algorithm_desc": algorithm_desc,
             "sort_heuristic": sort_heuristic,
             "tasks": tasks,
+            "total_tasks": len(task_list),
             "current_page": current_page,
             "total_pages": total_pages,
             "active_filters": active_filters,
@@ -444,9 +467,12 @@ class TelegramTaskListManager(ITaskListManager):
         
         # Format the active urgent tasks
         active_urgent_tasks = []
-        for task in current_urgents_by_categories:
+        for i, task in enumerate(current_urgents_by_categories):
+            # Use task description hash as ID if getId is not available
+            task_id = getattr(task, "getId", lambda: f"active_{i}")()
+            
             active_urgent_tasks.append({
-                "id": task.getId(),
+                "id": task_id,
                 "description": task.getDescription(),
                 "context": task.getContext(),
                 "due": str(task.getDue()),
@@ -457,9 +483,12 @@ class TelegramTaskListManager(ITaskListManager):
         planned_urgent_tasks = []
         planned_tasks_by_date = {}
         
-        for task in urgent_tasks_by_start:
+        for i, task in enumerate(urgent_tasks_by_start):
+            # Use task description hash as ID if getId is not available
+            task_id = getattr(task, "getId", lambda: f"planned_{i}")()
+            
             task_data = {
-                "id": task.getId(),
+                "id": task_id,
                 "description": task.getDescription(),
                 "context": task.getContext(),
                 "due": str(task.getDue()),
@@ -475,9 +504,12 @@ class TelegramTaskListManager(ITaskListManager):
             
         # Format the other tasks
         other_tasks_formatted = []
-        for task in other_tasks:
+        for i, task in enumerate(other_tasks):
+            # Use task description hash as ID if getId is not available
+            task_id = getattr(task, "getId", lambda: f"other_{i}")()
+            
             other_tasks_formatted.append({
-                "id": task.getId(),
+                "id": task_id,
                 "description": task.getDescription(),
                 "context": task.getContext(),
                 "due": str(task.getDue()),
