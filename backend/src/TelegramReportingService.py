@@ -844,9 +844,19 @@ class TelegramReportingService(IReportingService):
         await self.bot.sendMessage(message=message)
 
     async def sendTaskInformation(self, task: ITaskModel, extended: bool = False):
-        taskInformation = self._taskListManager.render_task_information(task, self.taskProvider, extended)
-
-        await self.bot.sendMessage_legacy(chat_id=self.chatId, text=taskInformation, parse_mode="HTML")
+        # Get structured task information
+        task_info = self._taskListManager.get_task_information(task, self.taskProvider, extended)
+        
+        # Create a structured message with the TASK_INFORMATION render mode
+        message = self.__messageBuilder.createOutboundMessage(
+            source=self.bot.GetBotAgent(),
+            destination=self.user,
+            content=task_info,
+            render_mode=RenderMode.TASK_INFORMATION
+        )
+        
+        # Send the structured message
+        await self.bot.sendMessage(message=message)
 
     async def __send_raw_text_message(self, text: str, parse_mode: str = None):
         """

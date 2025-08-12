@@ -538,3 +538,56 @@ class TelegramTaskListManager(ITaskListManager):
             "other_tasks": other_tasks_formatted,
             "other_task_list_info": other_task_list_info
         }
+        
+    def get_task_information(self, task: ITaskModel, taskProvider: ITaskProvider, extended: bool) -> dict:
+        """
+        Returns a dictionary with the content needed to render task information.
+        This includes task details like description, context, start date, due date,
+        total cost, remaining cost, severity, and optional extended information like
+        heuristic values and metadata.
+        
+        Args:
+            task: The task for which to get information
+            taskProvider: The task provider to get metadata from
+            extended: Whether to include extended information like heuristics and metadata
+            
+        Returns:
+            A dictionary containing the task information data
+        """
+        # Get task ID safely
+        task_id = getattr(task, "getId", lambda: "unknown")()
+        
+        # Calculate task costs
+        remaining_cost = max(task.getTotalCost().as_pomodoros(), 0.0)
+        effort_invested = max(task.getInvestedEffort().as_pomodoros(), 0.0)
+        total_cost = remaining_cost + effort_invested
+        
+        # Basic task information
+        task_info = {
+            "id": task_id,
+            "description": task.getDescription(),
+            "context": task.getContext(),
+            "start_date": str(task.getStart()),
+            "due_date": str(task.getDue()),
+            "severity": task.getSeverity(),
+            "total_cost": total_cost,
+            "remaining_cost": remaining_cost,
+            "effort_invested": effort_invested,
+            "status": task.getStatus(),
+            "calm": task.getCalm()
+        }
+        
+        # Extended information (heuristics and metadata)
+        if extended:
+            heuristics = []
+            for heuristic_name, heuristic_instance in self.__heuristicList:
+                heuristics.append({
+                    "name": heuristic_name,
+                    "value": heuristic_instance.calculate(task),
+                    "comment": heuristic_instance.getComment(task)
+                })
+            
+            task_info["heuristics"] = heuristics
+            task_info["metadata"] = taskProvider.getTaskMetadata(task)
+        
+        return task_info

@@ -16,7 +16,8 @@ class ShellUserCommService(IUserCommService):
             RenderMode.ALGORITHM_LIST: self.__renderAlgorithmList,
             RenderMode.FILTER_LIST: self.__renderFilterList,
             RenderMode.TASK_STATS: self.__renderTaskStats,
-            RenderMode.TASK_AGENDA: self.__renderTaskAgenda
+            RenderMode.TASK_AGENDA: self.__renderTaskAgenda,
+            RenderMode.TASK_INFORMATION: self.__renderTaskInformation
         }
 
     def __renderFilterList(self, message: IMessage):
@@ -215,6 +216,48 @@ class ShellUserCommService(IUserCommService):
             self.__botPrint("")
         
         self.__botPrint("/list - return back to the task list")
+        
+    def __renderTaskInformation(self, message: IMessage):
+        self.__botPrint("(Info) Task Information Render Mode")
+        
+        # Extract task information from the message
+        task_description = message.content.get('description', 'No description')
+        task_context = message.content.get('context', 'No context')
+        task_start_date = message.content.get('start_date', 'No start date')
+        task_due_date = message.content.get('due_date', 'No due date')
+        task_total_cost = message.content.get('total_cost', 0)
+        task_remaining_cost = message.content.get('remaining_cost', 0)
+        task_severity = message.content.get('severity', 0)
+        # Unused for now, but may be needed in future enhancements
+        # task_status = message.content.get('status', '')
+        # task_calm = message.content.get('calm', False)
+        
+        # Format the basic task information
+        self.__botPrint(f"Task: {task_description}")
+        self.__botPrint(f"Context: {task_context}")
+        self.__botPrint(f"Start Date: {task_start_date}")
+        self.__botPrint(f"Due Date: {task_due_date}")
+        self.__botPrint(f"Total Cost: {task_total_cost}")
+        self.__botPrint(f"Remaining: {task_remaining_cost}")
+        self.__botPrint(f"Severity: {task_severity}")
+        
+        # Include extended information if available
+        if 'heuristics' in message.content:
+            self.__botPrint("\nHeuristic Values:")
+            for heuristic in message.content.get('heuristics', []):
+                self.__botPrint(f"- {heuristic['name']}: {heuristic['comment']}")
+        
+        if 'metadata' in message.content:
+            self.__botPrint("\nMetadata:")
+            self.__botPrint(message.content['metadata'])
+        
+        # Add command options
+        self.__botPrint("\n/list - Return to list")
+        self.__botPrint("/done - Mark task as done")
+        self.__botPrint("/set [param] [value] - Set task parameter")
+        self.__botPrint("/work [work_units] - Invest work units in the task")
+        self.__botPrint("/snooze - Snooze the task for 5 minutes")
+        self.__botPrint("/info - Show extended information")
 
     async def sendMessage(self, message: IMessage) -> None:
         if message.type != "OutboundMessage":

@@ -20,7 +20,8 @@ class TelegramBotUserCommService(IUserCommService):
             RenderMode.ALGORITHM_LIST: self.__renderAlgorithmList,
             RenderMode.FILTER_LIST: self.__renderFilterList,
             RenderMode.TASK_STATS: self.__renderTaskStats,
-            RenderMode.TASK_AGENDA: self.__renderTaskAgenda
+            RenderMode.TASK_AGENDA: self.__renderTaskAgenda,
+            RenderMode.TASK_INFORMATION: self.__renderTaskInformation
         }
 
     async def __renderFilterList(self, message: IMessage):
@@ -268,6 +269,51 @@ class TelegramBotUserCommService(IUserCommService):
         
         # Send the message with Markdown formatting
         await self.bot.send_message(chat_id, agenda_message, parse_mode="Markdown")
+        
+    async def __renderTaskInformation(self, message: IMessage):
+        # Get chat_id from message
+        chat_id = message.destination.id
+        
+        # Extract task information from the message
+        task_description = message.content.get('description', 'No description')
+        task_context = message.content.get('context', 'No context')
+        task_start_date = message.content.get('start_date', 'No start date')
+        task_due_date = message.content.get('due_date', 'No due date')
+        task_total_cost = message.content.get('total_cost', 0)
+        task_remaining_cost = message.content.get('remaining_cost', 0)
+        task_severity = message.content.get('severity', 0)
+        # Unused for now, but may be needed in future enhancements
+        # task_status = message.content.get('status', '')
+        # task_calm = message.content.get('calm', False)
+        
+        # Format the basic task information
+        task_info = f"*Task:* {task_description}\n"
+        task_info += f"*Context:* {task_context}\n"
+        task_info += f"*Start Date:* {task_start_date}\n"
+        task_info += f"*Due Date:* {task_due_date}\n"
+        task_info += f"*Total Cost:* {task_total_cost}\n"
+        task_info += f"*Remaining:* {task_remaining_cost}\n"
+        task_info += f"*Severity:* {task_severity}\n"
+        
+        # Include extended information if available
+        if 'heuristics' in message.content:
+            task_info += "\n*Heuristic Values:*\n"
+            for heuristic in message.content.get('heuristics', []):
+                task_info += f"- *{heuristic['name']}:* {heuristic['comment']}\n"
+        
+        if 'metadata' in message.content:
+            task_info += f"\n*Metadata:*\n`{message.content['metadata']}`\n"
+        
+        # Add command options
+        task_info += "\n/list - Return to list"
+        task_info += "\n/done - Mark task as done"
+        task_info += "\n/set [param] [value] - Set task parameter"
+        task_info += "\n/work [work_units] - Invest work units in the task"
+        task_info += "\n/snooze - Snooze the task for 5 minutes"
+        task_info += "\n/info - Show extended information"
+        
+        # Send the message with Markdown formatting
+        await self.bot.send_message(chat_id, task_info, parse_mode="Markdown")
 
     def getBotAgent(self):
         return self.agent

@@ -134,3 +134,21 @@ class ITaskListManager(ABC):
             A dictionary containing the agenda data
         """
         pass
+        
+    @abstractmethod
+    def get_task_information(self, task: ITaskModel, taskProvider: ITaskProvider, extended: bool) -> dict:
+        """
+        Returns a dictionary with the content needed to render task information.
+        This includes task details like description, context, start date, due date,
+        total cost, remaining cost, severity, and optional extended information like
+        heuristic values and metadata.
+        
+        Args:
+            task: The task for which to get information
+            taskProvider: The task provider to get metadata from
+            extended: Whether to include extended information like heuristics and metadata
+            
+        Returns:
+            A dictionary containing the task information data
+        """
+        pass
