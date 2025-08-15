@@ -34,7 +34,7 @@ class TestTelegramReportingService(unittest.TestCase):
         messageText = "/project"
 
         # Act
-        asyncio.run(self.telegramReportingService.projectCommand_legacy(messageText))
+        asyncio.run(self.telegramReportingService.projectCommand(messageText))
 
         # Assert
         self.bot.sendMessage.assert_called_once_with(
@@ -47,7 +47,7 @@ class TestTelegramReportingService(unittest.TestCase):
         messageText = "/project invalid_command"
 
         # Act
-        asyncio.run(self.telegramReportingService.projectCommand_legacy(messageText))
+        asyncio.run(self.telegramReportingService.projectCommand(messageText))
 
         # Assert
         self.bot.sendMessage.assert_called_once_with(
@@ -61,7 +61,7 @@ class TestTelegramReportingService(unittest.TestCase):
         self.projectManager.process_command.return_value = "Project list response"
 
         # Act
-        asyncio.run(self.telegramReportingService.projectCommand_legacy(messageText))
+        asyncio.run(self.telegramReportingService.projectCommand(messageText))
 
         # Assert
         self.projectManager.process_command.assert_called_once_with("list", [])
@@ -76,7 +76,7 @@ class TestTelegramReportingService(unittest.TestCase):
         self.projectManager.process_command.return_value = "Project created"
 
         # Act
-        asyncio.run(self.telegramReportingService.projectCommand_legacy(messageText))
+        asyncio.run(self.telegramReportingService.projectCommand(messageText))
 
         # Assert
         self.projectManager.process_command.assert_called_once_with("cat", ["test_project"])

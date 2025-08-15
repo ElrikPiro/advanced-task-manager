@@ -67,7 +67,7 @@ class TelegramReportingService(IReportingService):
             ("/import", self.importCommand),
             ("/search", self.searchCommand),
             ("/agenda", self.agendaCommand),
-            ("/project", self.projectCommand_legacy),
+            ("/project", self.projectCommand),
             ("/algorithm_", self.algorithmSelectionCommand),
             ("/algorithm", self.algorithmListCommand),
         ]
@@ -152,16 +152,18 @@ class TelegramReportingService(IReportingService):
             await self.checkFilteredListChanges()
 
         # Reads every message received by the bot
-        result = await self.bot.getMessageUpdates_legacy()
+        messages = await self.bot.getMessageUpdates()
 
         with self._lock:
-            if result is None:
+            if not messages:  # If the list is empty
                 return
 
-            if self.chatId == 0:
-                self.chatId = result[0]
-            elif result[0] == int(self.chatId):
-                await self.processMessage_legacy(result[1])
+            for message in messages:
+                isLastIteration = message == messages[-1]
+                if self.chatId == 0:
+                    self.chatId = message.source.id
+                elif message.source.id == int(self.chatId):
+                    await self.processMessage(message, isLastIteration)
 
     # Each command must be made into an object and injected into this class
     async def listCommand(self, messageText: str = "", expectAnswer: bool = True):
@@ -662,7 +664,7 @@ class TelegramReportingService(IReportingService):
         )
         await self.bot.sendMessage(message=message)
 
-    async def projectCommand_legacy(self, messageText: str = "", expectAnswer: bool = True):
+    async def projectCommand(self, messageText: str = "", expectAnswer: bool = True):
         """
         # Command /project [command]
         This command manages projects.
@@ -683,18 +685,30 @@ class TelegramReportingService(IReportingService):
 
         await self.__send_raw_text_message(response)
 
-    async def processMessage_legacy(self, messageText: str):
+    async def processMessage(self, message: IMessage, isLastIteration: bool):
+        """
+        Process a single IMessage object, executing the appropriate command.
+
+        Args:
+            message: The IMessage object containing the command and arguments
+            isLastIteration: A boolean indicating if this is the last message in the batch.
+        """
         commands: List[Tuple[str, Coroutine[Any, Any, None]]] = self.commands
 
-        messageTextLines = messageText.strip().splitlines()
+        # Extract the command and arguments from the IMessage
+        command_name = f"/{message.content.get('command', 'help')}"
+        args = message.content.get('args', [])
 
-        # get first command that starts with the messageText
-        iteration = 0
-        for message in messageTextLines:
-            command = next((command for command in commands if message.startswith(command[0])), ("/help", self.helpCommand))[1]
-            isLastIteration = iteration == len(messageTextLines) - 1
-            await command(message, isLastIteration)
-            iteration += 1
+        # Rebuild the message text in the format expected by the command handlers
+        message_text = command_name
+        if args:
+            message_text += " " + " ".join(args)
+
+        # Find the command handler that matches the command name
+        command_handler = next((command[1] for command in commands if command_name.startswith(command[0])), self.helpCommand)
+
+        # Execute the command
+        await command_handler(message_text, isLastIteration)
 
     def processRelativeTimeSet(self, current: TimePoint, value: str) -> TimePoint:
         """
@@ -846,7 +860,7 @@ class TelegramReportingService(IReportingService):
     async def sendTaskInformation(self, task: ITaskModel, extended: bool = False):
         # Get structured task information
         task_info = self._taskListManager.get_task_information(task, self.taskProvider, extended)
-        
+
         # Create a structured message with the TASK_INFORMATION render mode
         message = self.__messageBuilder.createOutboundMessage(
             source=self.bot.GetBotAgent(),
@@ -854,7 +868,7 @@ class TelegramReportingService(IReportingService):
             content=task_info,
             render_mode=RenderMode.TASK_INFORMATION
         )
-        
+
         # Send the structured message
         await self.bot.sendMessage(message=message)
 

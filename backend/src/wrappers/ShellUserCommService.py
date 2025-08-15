@@ -53,18 +53,16 @@ class ShellUserCommService(IUserCommService):
         self.offset += 1
         return (self.chatId, self.__preprocessMessageText(text))
 
-    async def getMessageUpdates(self) -> IMessage:
+    async def getMessageUpdates(self) -> list[IMessage]:
         """
         Gets messages from the user via the shell interface.
-
-        Returns:
-            An InboundMessage with the user's command and arguments.
+        Returns a list containing a single InboundMessage with the user's command and arguments.
         """
         # Get the raw input using the legacy method
         chat_id, message_text = await self.getMessageUpdates_legacy()
 
         if not message_text:
-            return None
+            return []
 
         # Extract command and arguments
         parts = message_text.split()
@@ -75,8 +73,8 @@ class ShellUserCommService(IUserCommService):
         source_agent = UserAgent(str(chat_id))
         destination_agent = self.getBotAgent()
 
-        # Create and return the inbound message
-        return InboundMessage(source_agent, destination_agent, command, args)
+        # Create and return a list with the inbound message
+        return [InboundMessage(source_agent, destination_agent, command, args)]
 
     async def sendFile_legacy(self, chat_id: int, data: bytearray) -> None:
         print(f"[bot -> {chat_id}]: File sent")

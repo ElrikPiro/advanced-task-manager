@@ -22,7 +22,7 @@ class IUserCommService(ABC):
         pass
 
     @abstractmethod
-    async def getMessageUpdates(self) -> IMessage:
+    async def getMessageUpdates(self) -> list[IMessage]:
         pass
 
     @abstractmethod

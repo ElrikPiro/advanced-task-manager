@@ -82,32 +82,44 @@ class TelegramBotUserCommService(IUserCommService):
             self.offset = result[0].update_id + 1
             return None
 
-    async def getMessageUpdates(self) -> IMessage:
+    async def getMessageUpdates(self) -> list[IMessage]:
         """
         Gets messages from the Telegram Bot API.
+        Splits the message by lines and creates an InboundMessage for each line.
 
         Returns:
-            An InboundMessage with the user's command and arguments, or None if no updates.
+            A list of InboundMessage objects, one per line in the original message.
+            Returns an empty list if no updates.
         """
         # Get the raw message using the legacy method
         result = await self.getMessageUpdates_legacy()
 
         if result is None:
-            return None
+            return []
 
         chat_id, message_text = result
-
-        # Extract command and arguments
-        parts = message_text.split()
-        command = parts[0].strip('/')  # Remove the leading '/'
-        args = parts[1:] if len(parts) > 1 else []
 
         # Create source and destination agents
         source_agent = UserAgent(str(chat_id))
         destination_agent = self.getBotAgent()
 
-        # Create and return the inbound message
-        return InboundMessage(source_agent, destination_agent, command, args)
+        # Split the message by lines and create an InboundMessage for each non-empty line
+        messages = []
+        for line in message_text.strip().split('\n'):
+            line = line.strip()
+            if not line:
+                continue
+
+            # Extract command and arguments for this line
+            parts = line.split()
+            command = parts[0].strip('/')  # Remove the leading '/'
+            args = parts[1:] if len(parts) > 1 else []
+
+            # Create and add the inbound message
+            messages.append(InboundMessage(source_agent, destination_agent, command, args))
+
+        # If no valid messages were created, return an empty list
+        return messages
 
     async def sendFile_legacy(self, chat_id: int, data: bytearray) -> None:
         import io
