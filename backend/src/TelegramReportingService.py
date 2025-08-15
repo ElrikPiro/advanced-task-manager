@@ -131,7 +131,7 @@ class TelegramReportingService(IReportingService):
             task = None
             if len(filteredList) != 0:
                 task = {"id": filteredList[0].getId(), "description": filteredList[0].getDescription(), "context": filteredList[0].getContext()}
-            
+
             self._taskListManager.reset_pagination()
             message = self.__messageBuilder.createOutboundMessage(
                 source=self.bot.GetBotAgent(),

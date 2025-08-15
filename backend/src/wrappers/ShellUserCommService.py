@@ -1,4 +1,4 @@
-from backend.src.wrappers.Messaging import IAgent, IMessage, RenderMode
+from src.wrappers.Messaging import IAgent, IMessage, RenderMode, UserAgent, InboundMessage
 from src.wrappers.interfaces.IUserCommService import IUserCommService
 
 
@@ -52,6 +52,31 @@ class ShellUserCommService(IUserCommService):
         text = input(f"[User({self.chatId})]: ")
         self.offset += 1
         return (self.chatId, self.__preprocessMessageText(text))
+
+    async def getMessageUpdates(self) -> IMessage:
+        """
+        Gets messages from the user via the shell interface.
+
+        Returns:
+            An InboundMessage with the user's command and arguments.
+        """
+        # Get the raw input using the legacy method
+        chat_id, message_text = await self.getMessageUpdates_legacy()
+
+        if not message_text:
+            return None
+
+        # Extract command and arguments
+        parts = message_text.split()
+        command = parts[0].strip('/')  # Remove the leading '/'
+        args = parts[1:] if len(parts) > 1 else []
+
+        # Create source and destination agents
+        source_agent = UserAgent(str(chat_id))
+        destination_agent = self.getBotAgent()
+
+        # Create and return the inbound message
+        return InboundMessage(source_agent, destination_agent, command, args)
 
     async def sendFile_legacy(self, chat_id: int, data: bytearray) -> None:
         print(f"[bot -> {chat_id}]: File sent")

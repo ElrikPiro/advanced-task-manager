@@ -1,6 +1,6 @@
 import telegram
 
-from backend.src.wrappers.Messaging import IAgent, IMessage, RenderMode
+from src.wrappers.Messaging import IAgent, IMessage, RenderMode, UserAgent, InboundMessage
 from src.wrappers.interfaces.IUserCommService import IUserCommService
 from src.Interfaces.IFileBroker import IFileBroker, FileRegistry
 
@@ -81,6 +81,33 @@ class TelegramBotUserCommService(IUserCommService):
         else:
             self.offset = result[0].update_id + 1
             return None
+
+    async def getMessageUpdates(self) -> IMessage:
+        """
+        Gets messages from the Telegram Bot API.
+
+        Returns:
+            An InboundMessage with the user's command and arguments, or None if no updates.
+        """
+        # Get the raw message using the legacy method
+        result = await self.getMessageUpdates_legacy()
+
+        if result is None:
+            return None
+
+        chat_id, message_text = result
+
+        # Extract command and arguments
+        parts = message_text.split()
+        command = parts[0].strip('/')  # Remove the leading '/'
+        args = parts[1:] if len(parts) > 1 else []
+
+        # Create source and destination agents
+        source_agent = UserAgent(str(chat_id))
+        destination_agent = self.getBotAgent()
+
+        # Create and return the inbound message
+        return InboundMessage(source_agent, destination_agent, command, args)
 
     async def sendFile_legacy(self, chat_id: int, data: bytearray) -> None:
         import io

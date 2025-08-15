@@ -22,6 +22,10 @@ class IUserCommService(ABC):
         pass
 
     @abstractmethod
+    async def getMessageUpdates(self) -> IMessage:
+        pass
+
+    @abstractmethod
     async def sendFile_legacy(self, chat_id: int, data: bytearray) -> None:
         pass
 
