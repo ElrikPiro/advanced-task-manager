@@ -34,3 +34,14 @@ class IProjectManager(ABC):
             messageArgs (List[str]): Arguments for the command.
         """
         pass
+
+    @abstractmethod
+    def process_command(self, command: str, messageArgs: List[str]) -> dict:
+        """
+        Process a command with its arguments.
+
+        Args:
+            command (str): The command to process.
+            messageArgs (List[str]): Arguments for the command.
+        """
+        pass
