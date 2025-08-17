@@ -47,10 +47,6 @@ class TelegramBotUserCommService(IUserCommService):
         await self.bot.shutdown()
         pass
 
-    async def sendMessage_legacy(self, chat_id: int, text: str, parse_mode: str = None) -> None:
-        await self.bot.send_message(chat_id, text, parse_mode=parse_mode)
-        pass
-
     def __preprocessMessageText(self, text: str) -> str:
         if not text.startswith("/"):
             text = "/" + text
@@ -63,7 +59,7 @@ class TelegramBotUserCommService(IUserCommService):
         text = ' '.join(parts)
         return text
 
-    async def getMessageUpdates_legacy(self) -> tuple[int, str]:
+    async def __getMessageUpdates_legacy(self) -> tuple[int, str]:
         result = await self.bot.getUpdates(limit=1, timeout=1, allowed_updates=['message'], offset=self.offset)
         if len(result) == 0:
             return None
@@ -92,7 +88,7 @@ class TelegramBotUserCommService(IUserCommService):
             Returns an empty list if no updates.
         """
         # Get the raw message using the legacy method
-        result = await self.getMessageUpdates_legacy()
+        result = await self.__getMessageUpdates_legacy()
 
         if result is None:
             return []
@@ -121,7 +117,7 @@ class TelegramBotUserCommService(IUserCommService):
         # If no valid messages were created, return an empty list
         return messages
 
-    async def sendFile_legacy(self, chat_id: int, data: bytearray) -> None:
+    async def sendFile(self, chat_id: int, data: bytearray) -> None:
         import io
         f = io.BufferedReader(io.BytesIO(data))
 

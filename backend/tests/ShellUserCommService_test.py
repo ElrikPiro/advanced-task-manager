@@ -26,14 +26,14 @@ class TestShellUserCommService(unittest.IsolatedAsyncioTestCase):
 
     async def test_getMessageUpdates(self):
         with patch("builtins.input", return_value="test message"):
-            result = await self.service.getMessageUpdates_legacy()
+            result = await self.service.__getMessageUpdates_legacy()
             assert result == (self.chat_id, "/test message")
             assert self.service.offset == 1
 
     async def test_sendFile(self):
         test_data = bytearray(b"Test file content")
         with patch("builtins.print") as mock_print:
-            await self.service.sendFile_legacy(self.chat_id, test_data)
+            await self.service.sendFile(self.chat_id, test_data)
             mock_print.assert_any_call(f"[bot -> {self.chat_id}]: File sent")
             mock_print.assert_any_call(f"File content: {test_data[:128]}... ({len(test_data)} bytes)")
 

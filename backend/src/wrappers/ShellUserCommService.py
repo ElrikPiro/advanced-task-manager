@@ -39,16 +39,13 @@ class ShellUserCommService(IUserCommService):
     async def shutdown(self) -> None:
         print("ShellUserBotService shutdown")
 
-    async def sendMessage_legacy(self, chat_id: int, text: str, parse_mode: str = None) -> None:
-        print(f"[bot -> {chat_id}]: {text}")
-
     def __preprocessMessageText(self, text: str) -> str:
         if not text.startswith("/"):
             text = "/" + text
 
         return text
 
-    async def getMessageUpdates_legacy(self) -> tuple[int, str]:
+    async def __getMessageUpdates_legacy(self) -> tuple[int, str]:
         text = input(f"[User({self.chatId})]: ")
         self.offset += 1
         return (self.chatId, self.__preprocessMessageText(text))
@@ -59,7 +56,7 @@ class ShellUserCommService(IUserCommService):
         Returns a list containing a single InboundMessage with the user's command and arguments.
         """
         # Get the raw input using the legacy method
-        chat_id, message_text = await self.getMessageUpdates_legacy()
+        chat_id, message_text = await self.__getMessageUpdates_legacy()
 
         if not message_text:
             return []
@@ -76,7 +73,7 @@ class ShellUserCommService(IUserCommService):
         # Create and return a list with the inbound message
         return [InboundMessage(source_agent, destination_agent, command, args)]
 
-    async def sendFile_legacy(self, chat_id: int, data: bytearray) -> None:
+    async def sendFile(self, chat_id: int, data: bytearray) -> None:
         print(f"[bot -> {chat_id}]: File sent")
         # show the first 128 bytes of the file with a decoration that indicates the file size
         print(f"File content: {data[:128]}... ({len(data)} bytes)")

@@ -584,7 +584,7 @@ class TelegramReportingService(IReportingService):
         exportData: bytearray = self.taskProvider.exportTasks(selectedFormat)
 
         # send the exported data
-        await self.bot.sendFile_legacy(chat_id=self.chatId, data=exportData)
+        await self.bot.sendFile(chat_id=self.chatId, data=exportData)
 
     async def importCommand(self, messageText: str = "", expectAnswer: bool = True):
         """

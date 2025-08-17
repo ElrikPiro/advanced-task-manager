@@ -93,7 +93,7 @@ class TestTelegramBotUserCommServiceAsync(unittest.IsolatedAsyncioTestCase):
     async def test_getMessageUpdates_no_messages(self):
         # Test when no messages are available
         self.telegram_bot.getUpdates = AsyncMock(return_value=[])
-        result = await self.service.getMessageUpdates_legacy()
+        result = await self.service.__getMessageUpdates_legacy()
         assert result is None
         self.telegram_bot.getUpdates.assert_called_once_with(
             limit=1, timeout=1, allowed_updates=['message'], offset=None)
@@ -108,7 +108,7 @@ class TestTelegramBotUserCommServiceAsync(unittest.IsolatedAsyncioTestCase):
 
         self.telegram_bot.getUpdates = AsyncMock(return_value=[mock_update])
 
-        result = await self.service.getMessageUpdates_legacy()
+        result = await self.service.__getMessageUpdates_legacy()
         assert result == (67890, "/hello world")
         assert self.service.offset == 12346  # update_id + 1
 
@@ -126,7 +126,7 @@ class TestTelegramBotUserCommServiceAsync(unittest.IsolatedAsyncioTestCase):
         self.telegram_bot.getUpdates = AsyncMock(return_value=[mock_update])
         self.telegram_bot.get_file = AsyncMock(return_value=mock_file)
 
-        result = await self.service.getMessageUpdates_legacy()
+        result = await self.service.__getMessageUpdates_legacy()
         assert result == (67890, "/import json")
         assert self.service.offset == 12346  # update_id + 1
         self.file_broker.writeFileContent.assert_called_once()
@@ -140,7 +140,7 @@ class TestTelegramBotUserCommServiceAsync(unittest.IsolatedAsyncioTestCase):
 
         self.telegram_bot.getUpdates = AsyncMock(return_value=[mock_update])
 
-        result = await self.service.getMessageUpdates_legacy()
+        result = await self.service.__getMessageUpdates_legacy()
         assert result is None
         assert self.service.offset == 12346  # update_id + 1
 
@@ -183,7 +183,7 @@ class TestTelegramBotUserCommServiceAsync(unittest.IsolatedAsyncioTestCase):
                 mock_buffered_reader_instance = mock_buffered_reader.return_value
                 mock_buffered_reader.return_value = mock_buffered_reader_instance
 
-                await self.service.sendFile_legacy(chat_id, test_data)
+                await self.service.sendFile(chat_id, test_data)
 
                 mock_bytesio.assert_called_once_with(test_data)
                 mock_buffered_reader.assert_called_once_with(mock_bytesio_instance)
