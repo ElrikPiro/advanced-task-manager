@@ -40,14 +40,14 @@ class TestJsonProjectManager(unittest.TestCase):
     def test_process_command_valid(self):
         """Test processing a valid command."""
         self.project_manager.commands["mock"] = MagicMock(return_value="Mock command")
-        result = self.project_manager.process_command_legacy("mock", [])
+        result = self.project_manager.process_command("mock", [])
         self.assertEqual(result, "Mock command")
         self.project_manager.commands["mock"].assert_called_once_with([])
 
     def test_process_command_invalid(self):
         """Test processing an invalid command."""
         self.project_manager._get_help = MagicMock(return_value="Help text")
-        result = self.project_manager.process_command_legacy("invalid_command", [])
+        result = self.project_manager.process_command("invalid_command", [])
         self.assertEqual(result, "Help text")
         self.project_manager._get_help.assert_called_once()
 

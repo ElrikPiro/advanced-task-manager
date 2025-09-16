@@ -681,7 +681,7 @@ class TelegramReportingService(IReportingService):
             await self.__send_raw_text_message("Invalid project command")
             return
 
-        response = self.__projectManager.process_command_legacy(command, messageArgs[2:])
+        response = self.__projectManager.process_command(command, messageArgs[2:])
 
         await self.__send_raw_text_message(response)
 

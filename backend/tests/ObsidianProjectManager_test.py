@@ -31,7 +31,7 @@ class TestObsidianProjectManager(unittest.TestCase):
         self.project_manager.commands[ProjectCommands.LIST.value] = callableMock
 
         # Test process_command with a valid command
-        result = self.project_manager.process_command_legacy(ProjectCommands.LIST.value, ["open"])
+        result = self.project_manager.process_command(ProjectCommands.LIST.value, ["open"])
 
         # Verify the _list_projects method was called with the correct arguments
         callableMock.assert_called_once_with(["open"])
@@ -39,7 +39,7 @@ class TestObsidianProjectManager(unittest.TestCase):
 
     def test_process_command_with_invalid_command(self):
         # Test process_command with an invalid command
-        result = self.project_manager.process_command_legacy("invalid_command", [])
+        result = self.project_manager.process_command("invalid_command", [])
 
         # Should return help message
         self.assertIn("# Projects Command Manual", result)
