@@ -1,5 +1,6 @@
 import telegram
 
+from src.wrappers.TimeManagement import TimePoint, TimeAmount
 from src.wrappers.Messaging import IAgent, IMessage, RenderMode, UserAgent, InboundMessage
 from src.wrappers.interfaces.IUserCommService import IUserCommService
 from src.Interfaces.IFileBroker import IFileBroker, FileRegistry
@@ -141,9 +142,11 @@ class TelegramBotUserCommService(IUserCommService):
         tasks = message.content.get('tasks', [])  # id, description, context
 
         interactiveId = "/task_" if interactive else ""
-        subTaskListDescriptions = [(f"{interactiveId}{i+1}: {description}") for i, description in enumerate(tasks)]
+        subTaskListDescriptions = [(f"{interactiveId}{i+1}: {task['description']}") for i, task in enumerate(tasks)]
 
-        taskListString = f"Task List\n\nAlgorithm: {algorithm_name}\nDescription: {algorithm_desc}\nSort Heuristic: {sort_heuristic}\nActive Filters: {', '.join(active_filters) if active_filters else 'None'}\nTasks:\n"
+        active_filters_name = [filt.get('name', f'Filter {i+1}') for i, filt in enumerate(active_filters)]
+
+        taskListString = f"Task List\n\nAlgorithm: {algorithm_name}\nDescription: {algorithm_desc}\nSort Heuristic: {sort_heuristic}\nActive Filters: {', '.join(active_filters_name) if active_filters_name else 'None'}\nTasks:\n"
         for desc in subTaskListDescriptions:
             taskListString += f"  - {desc}\n"
 
@@ -171,7 +174,7 @@ class TelegramBotUserCommService(IUserCommService):
 
         chat_id = message.destination.id
 
-        text = f"List updated with algorithm: {algorithm_desc}\nMost prioritary task: {most_priority_task['description']} (ID: /task_{most_priority_task['id']}, Context: {most_priority_task['context']})"
+        text = f"List updated with algorithm: {algorithm_desc}\nMost prioritary task: {most_priority_task['description']} (ID: /task_1, Context: {most_priority_task['context']})"
         await self.bot.send_message(chat_id, text, parse_mode=None)
 
     async def __renderHeuristicList(self, message: IMessage):
@@ -205,9 +208,6 @@ class TelegramBotUserCommService(IUserCommService):
         await self.bot.send_message(chat_id, text, parse_mode=None)
 
     async def __renderTaskStats(self, message: IMessage):
-        # Import time management classes
-        from backend.src.wrappers.TimeManagement import TimePoint, TimeAmount
-        
         # Get chat_id from message
         chat_id = message.destination.id
         
@@ -232,7 +232,7 @@ class TelegramBotUserCommService(IUserCommService):
                 entry = work_done_log[i]
                 work_units = float(entry.get("work_units", "0"))
                 timestamp = entry.get("timestamp", 0)
-                date_str = TimePoint.from_int(timestamp).to_string()
+                date_str = TimePoint.from_int(timestamp).strip_time()
                 stats_message += f"`| {date_str} |    {work_units}    |`\n"
                 total_work += work_units
         
@@ -255,7 +255,7 @@ class TelegramBotUserCommService(IUserCommService):
             task = entry.get("task", "Unknown")
             work_units = entry.get("work_units", "0")
             timestamp = entry.get("timestamp", 0)
-            date_str = TimePoint.from_int(timestamp).to_string()
+            date_str = TimePoint.from_int(timestamp)
             time_amount = TimeAmount(f"{work_units}p")
             stats_message += f"`{date_str}: {time_amount} on {task}`\n"
         
@@ -268,43 +268,52 @@ class TelegramBotUserCommService(IUserCommService):
         # Get chat_id from message
         chat_id = message.destination.id
         
-        # Extract data from the message
-        date = message.content.get('date', "Unknown Date")
+        agenda_message = "(Info) Task Agenda Render Mode\n"
+        
+        # Get content from message
+        date = message.content.get('date', "Today")
         active_urgent_tasks = message.content.get('active_urgent_tasks', [])
+        planned_urgent_tasks = message.content.get('planned_urgent_tasks', [])
         planned_tasks_by_date = message.content.get('planned_tasks_by_date', {})
         other_tasks = message.content.get('other_tasks', [])
         
-        # Format the message with Markdown for Telegram
-        agenda_message = f"*Agenda for {date}*\n\n"
+        # Display the agenda header
+        agenda_message += f"Agenda for {date}:\n"
         
         # Display active urgent tasks
         if active_urgent_tasks:
-            agenda_message += "*Active Urgent tasks:*\n"
+            agenda_message += "# Active Urgent tasks:\n"
             for task in active_urgent_tasks:
                 agenda_message += f"- {task['description']} (Context: {task['context']})\n"
             agenda_message += "\n"
-        
-        # Display planned urgent tasks by date
-        if planned_tasks_by_date:
-            agenda_message += "*Planned tasks:*\n"
+
+        # Display planned urgent tasks
+        if planned_urgent_tasks:
+            agenda_message += "# Planned Urgent tasks:\n"
             for date, tasks in planned_tasks_by_date.items():
-                agenda_message += f"*{date}*\n"
+                agenda_message += f"\n## {date}\n"
                 for task in tasks:
                     agenda_message += f"- {task['description']} (Context: {task['context']})\n"
             agenda_message += "\n"
-        
+
         # Display other tasks
         if other_tasks:
-            agenda_message += "*Other tasks:*\n"
+            agenda_message += "# Other tasks:\n"
             for task in other_tasks:
                 agenda_message += f"- {task['description']} (Context: {task['context']})\n"
             agenda_message += "\n"
-        
-        agenda_message += "/list - return back to the task list"
-        
+
+        agenda_message += "/list - return back to the task list\n"
+
+        if len(agenda_message) > 4096:
+            agenda_message = agenda_message[:4092] + "\n...\n"
+
         # Send the message with Markdown formatting
-        await self.bot.send_message(chat_id, agenda_message, parse_mode="Markdown")
-        
+        try:
+            await self.bot.send_message(chat_id, agenda_message, parse_mode="Markdown")
+        except Exception:
+            await self.bot.send_message(chat_id, agenda_message)
+
     async def __renderTaskInformation(self, message: IMessage):
         # Get chat_id from message
         chat_id = message.destination.id
@@ -314,8 +323,9 @@ class TelegramBotUserCommService(IUserCommService):
         task_context = message.content.get('context', 'No context')
         task_start_date = message.content.get('start_date', 'No start date')
         task_due_date = message.content.get('due_date', 'No due date')
-        task_total_cost = message.content.get('total_cost', 0)
-        task_remaining_cost = message.content.get('remaining_cost', 0)
+
+        task_total_cost = TimeAmount(str(message.content.get('total_cost', 0)) + "p")
+        task_remaining_cost = TimeAmount(str(message.content.get('remaining_cost', 0)) + "p")
         task_severity = message.content.get('severity', 0)
         # Unused for now, but may be needed in future enhancements
         # task_status = message.content.get('status', '')

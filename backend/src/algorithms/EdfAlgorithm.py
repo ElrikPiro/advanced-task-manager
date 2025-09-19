@@ -40,4 +40,4 @@ class EdfAlgorithm(IAlgorithm):
         return sorted_tasks
 
     def getDescription(self) -> str:
-        return self.description
+        return "This algorithm prioritizes tasks based on their due dates."

@@ -147,6 +147,17 @@ class TelegramTaskListManager(ITaskListManager):
                     self.__selectedTask = task
                     break
 
+    @property
+    def selected_algorithm(self):
+        """Returns the currently selected algorithm."""
+        if not self.__selectedAlgorithm:
+            return None
+        
+        # Create a wrapper object with a description property
+        algorithm = self.__selectedAlgorithm[1]
+        algorithm.description = algorithm.getDescription()
+        return algorithm
+
     def select_heuristic(self, messageText: str):
         heuristicIndex = int(messageText.split("_")[1]) - 1
         self.__selectedHeuristic = self.__heuristicList[heuristicIndex]
@@ -282,7 +293,7 @@ class TelegramTaskListManager(ITaskListManager):
             # Get heuristic value for the task
             heuristic_value = None
             if len(self.__heuristicList) > 0:
-                heuristic_value = self.__selectedHeuristic[1].calculate(task)
+                heuristic_value = self.__selectedHeuristic[1].evaluate(task)
             
             # Use hash of description as ID if getId is not available
             task_id = getattr(task, "getId", lambda: str(i + 1))()
@@ -434,7 +445,7 @@ class TelegramTaskListManager(ITaskListManager):
         high_heuristic_tasks = []
 
         for task in self.__taskModelList:
-            if task not in urgent_tasks and task.getStatus() != "x":
+            if task not in urgent_tasks and task.getStatus() != "x" and task.getStart().as_int() < TimePoint.now().as_int() and task.getDue().as_int() >= TimePoint.tomorrow().as_int():
                 high_heuristic_tasks.append(task)
 
         return high_heuristic_tasks
@@ -583,7 +594,7 @@ class TelegramTaskListManager(ITaskListManager):
             for heuristic_name, heuristic_instance in self.__heuristicList:
                 heuristics.append({
                     "name": heuristic_name,
-                    "value": heuristic_instance.calculate(task),
+                    "value": heuristic_instance.evaluate(task),
                     "comment": heuristic_instance.getComment(task)
                 })
             

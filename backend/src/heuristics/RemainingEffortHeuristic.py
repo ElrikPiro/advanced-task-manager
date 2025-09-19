@@ -35,3 +35,9 @@ class RemainingEffortHeuristic(IHeuristic):
         remaining_effort = self.evaluate(task)
         time_amount = TimeAmount(str(remaining_effort) + "p")
         return str(time_amount)
+        
+    def getDescription(self) -> str:
+        """
+        Returns a description of the heuristic.
+        """
+        return f"Remaining effort heuristic with dedication of {self.dedication} and desired H of {self.desiredH}"

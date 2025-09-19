@@ -9,7 +9,7 @@ import datetime
 from time import sleep as sleepSync
 from typing import List, Coroutine, Any, Tuple
 
-from backend.src.wrappers.Messaging import IAgent, IMessage, IMessageBuilder, RenderMode
+from .wrappers.Messaging import IAgent, IMessage, IMessageBuilder, RenderMode
 
 from .Interfaces.IProjectManager import IProjectManager, ProjectCommands
 from .Interfaces.ITaskListManager import ITaskListManager
@@ -130,11 +130,11 @@ class TelegramReportingService(IReportingService):
             filteredList = self._taskListManager.filtered_task_list
             task = None
             if len(filteredList) != 0:
-                task = {"id": filteredList[0].getId(), "description": filteredList[0].getDescription(), "context": filteredList[0].getContext()}
+                task = {"id": filteredList[0].getProject(), "description": filteredList[0].getDescription(), "context": filteredList[0].getContext()}
 
             self._taskListManager.reset_pagination()
             message = self.__messageBuilder.createOutboundMessage(
-                source=self.bot.GetBotAgent(),
+                source=self.bot.getBotAgent(),
                 destination=self.user,
                 content={
                     "algorithm_desc": self._taskListManager.selected_algorithm.description,
@@ -162,7 +162,7 @@ class TelegramReportingService(IReportingService):
                 isLastIteration = message == messages[-1]
                 if self.chatId == 0:
                     self.chatId = message.source.id
-                elif message.source.id == int(self.chatId):
+                elif message.source.id == str(self.chatId):
                     await self.processMessage(message, isLastIteration)
 
     # Each command must be made into an object and injected into this class
@@ -332,7 +332,7 @@ class TelegramReportingService(IReportingService):
         heuristic_list_content = self._taskListManager.get_heuristic_list()
 
         message: IMessage = self.__messageBuilder.createOutboundMessage(
-            source=self.bot.GetBotAgent(),
+            source=self.bot.getBotAgent(),
             destination=self.user,
             content=heuristic_list_content,
             render_mode=RenderMode.HEURISTIC_LIST
@@ -350,7 +350,7 @@ class TelegramReportingService(IReportingService):
         algorithm_list = self._taskListManager.get_algorithm_list()
 
         message: IMessage = self.__messageBuilder.createOutboundMessage(
-            source=self.bot.GetBotAgent(),
+            source=self.bot.getBotAgent(),
             destination=self.user,
             content=algorithm_list,
             render_mode=RenderMode.ALGORITHM_LIST
@@ -367,7 +367,7 @@ class TelegramReportingService(IReportingService):
         """
         filterListContent = self._taskListManager.get_filter_list()  # Should be a dict
         message = self.__messageBuilder.createOutboundMessage(
-            source=self.bot.GetBotAgent(),
+            source=self.bot.getBotAgent(),
             destination=self.user,
             content=filterListContent,
             render_mode=RenderMode.FILTER_LIST
@@ -531,7 +531,7 @@ class TelegramReportingService(IReportingService):
         It shows the work done today and the average work per day.
         """
         message = self.__messageBuilder.createOutboundMessage(
-            source=self.bot.GetBotAgent(),
+            source=self.bot.getBotAgent(),
             destination=self.user,
             content=self._taskListManager.get_list_stats(),
             render_mode=RenderMode.TASK_STATS
@@ -638,7 +638,7 @@ class TelegramReportingService(IReportingService):
             taskListContent = searchResultsManager.get_task_list_content()
             taskListContent["interactive"] = False
             message = self.__messageBuilder.createOutboundMessage(
-                source=self.bot.GetBotAgent(),
+                source=self.bot.getBotAgent(),
                 destination=self.user,
                 content=taskListContent,
                 render_mode=RenderMode.TASK_LIST
@@ -657,7 +657,7 @@ class TelegramReportingService(IReportingService):
         """
         agenda_content = self._taskListManager.get_day_agenda_content(TimePoint.today(), self._categories)
         message = self.__messageBuilder.createOutboundMessage(
-            source=self.bot.GetBotAgent(),
+            source=self.bot.getBotAgent(),
             destination=self.user,
             content=agenda_content,
             render_mode=RenderMode.TASK_AGENDA
@@ -681,7 +681,7 @@ class TelegramReportingService(IReportingService):
             await self.__send_raw_text_message("Invalid project command")
             return
 
-        response = self.__projectManager.process_command(command, messageArgs[2:])
+        response = self.__projectManager.process_command(command, messageArgs[2:])  # TODO: technical debt, this should be returning a dict with enought info to build a message
 
         await self.__send_raw_text_message(response)
 
@@ -848,7 +848,7 @@ class TelegramReportingService(IReportingService):
 
         # Create a structured message
         message = self.__messageBuilder.createOutboundMessage(
-            source=self.bot.GetBotAgent(),
+            source=self.bot.getBotAgent(),
             destination=self.user,
             content=task_list_content,
             render_mode=RenderMode.TASK_LIST
@@ -863,7 +863,7 @@ class TelegramReportingService(IReportingService):
 
         # Create a structured message with the TASK_INFORMATION render mode
         message = self.__messageBuilder.createOutboundMessage(
-            source=self.bot.GetBotAgent(),
+            source=self.bot.getBotAgent(),
             destination=self.user,
             content=task_info,
             render_mode=RenderMode.TASK_INFORMATION
@@ -881,7 +881,7 @@ class TelegramReportingService(IReportingService):
             parse_mode: Optional formatting mode (e.g., "Markdown", "HTML")
         """
         message: IMessage = self.__messageBuilder.createOutboundMessage(
-            source=self.bot.GetBotAgent(),
+            source=self.bot.getBotAgent(),
             destination=self.user,
             content={"text": text},
             render_mode=RenderMode.RAW_TEXT

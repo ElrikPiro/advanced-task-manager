@@ -146,7 +146,7 @@ class ShellUserCommService(IUserCommService):
         self.__botPrint("(Info) Task Stats Render Mode")
         
         # Import time management classes
-        from backend.src.wrappers.TimeManagement import TimePoint, TimeAmount
+        from src.wrappers.TimeManagement import TimePoint, TimeAmount
         
         # Extract data from the message
         workload = message.content.get('workload', "0p")
@@ -170,7 +170,7 @@ class ShellUserCommService(IUserCommService):
                 entry = work_done_log[i]
                 work_units = float(entry.get("work_units", "0"))
                 timestamp = entry.get("timestamp", 0)
-                date_str = TimePoint.from_int(timestamp).to_string()
+                date_str = TimePoint.from_int(timestamp).__str__()
                 self.__botPrint(f"| {date_str} |    {work_units}    |")
                 total_work += work_units
         
@@ -193,7 +193,7 @@ class ShellUserCommService(IUserCommService):
             task = entry.get("task", "Unknown")
             work_units = entry.get("work_units", "0")
             timestamp = entry.get("timestamp", 0)
-            date_str = TimePoint.from_int(timestamp).to_string()
+            date_str = TimePoint.from_int(timestamp).__str__()
             time_amount = TimeAmount(f"{work_units}p")
             self.__botPrint(f"{date_str}: {time_amount} on {task}")
         

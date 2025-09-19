@@ -29,4 +29,4 @@ class HeuristicAlgorithm(IAlgorithm):
         return sorted_tasks
 
     def getDescription(self) -> str:
-        return self.description
+        return "Algorithm that uses a heuristic to sort tasks."

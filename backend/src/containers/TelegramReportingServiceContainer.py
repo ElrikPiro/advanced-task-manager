@@ -3,7 +3,7 @@ import os
 from dependency_injector import containers, providers
 import telegram
 
-from backend.src.wrappers.Messaging import BotAgent, IAgent, MessageBuilder, UserAgent
+from src.wrappers.Messaging import BotAgent, IAgent, MessageBuilder, UserAgent
 from src.wrappers.TimeManagement import TimeAmount
 from src.taskjsonproviders.ObsidianVaultTaskJsonProvider import ObsidianVaultTaskJsonProvider
 from src.TelegramTaskListManager import TelegramTaskListManager

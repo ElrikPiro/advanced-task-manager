@@ -72,7 +72,7 @@ class GtdAlgorithm(IAlgorithm):
         return retval
 
     def getDescription(self) -> str:
-        return self.description
+        return "This algorithm filters tasks based on their urgency and heuristic values."
 
     def _filterUrgents(self, tasks: List[ITaskModel]) -> list:
         retval = []

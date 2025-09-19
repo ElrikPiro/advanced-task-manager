@@ -19,10 +19,10 @@ class IAgent(ABC):
 
 
 class UserAgent(IAgent):
-    def __init__(self, id: str):
+    def __init__(self, id: str, name: str = "user", description: str = "User agent for interacting with the system"):
         self._id = id
-        self._name = "user"
-        self._description = "User agent for interacting with the system"
+        self._name = name
+        self._description = description
 
     @property
     def id(self) -> str:
