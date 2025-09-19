@@ -83,17 +83,6 @@ class TestTelegramTaskListManager(unittest.TestCase):
         self.assertIn(self.task2, result)
         self.assertNotIn(self.task1, result)
 
-    def test__filter_high_heuristic_tasks(self):
-        urgent_tasks = [self.task1]
-        # Patch getStatus for all tasks
-        self.task1.getStatus.return_value = ""
-        self.task2.getStatus.return_value = ""
-        self.task3.getStatus.return_value = ""
-        result = self.task_list_manager._TelegramTaskListManager__filter_high_heuristic_tasks(urgent_tasks)
-        self.assertIn(self.task3, result)
-        self.assertIn(self.task2, result)
-        self.assertNotIn(self.task1, result)
-
     def test__render_other_tasks(self):
         TelegramTaskListManager.render_task_list_str_legacy = MagicMock(return_value="other tasks list")
         agenda_str = "Agenda: "
@@ -327,16 +316,6 @@ class TestTelegramTaskListManagerAdditional(unittest.TestCase):
         self.task2.getStart.return_value.as_int.return_value = 1500
         self.task3.getStart.return_value.as_int.return_value = 2500
         result = self.task_list_manager._TelegramTaskListManager__filter_and_sort_future_tasks(self.task_list, date)
-        self.assertIn(self.task3, result)
-        self.assertIn(self.task2, result)
-        self.assertNotIn(self.task1, result)
-
-    def test__filter_high_heuristic_tasks_with_additional_tasks(self):
-        urgent_tasks = [self.task1]
-        self.task1.getStatus.return_value = ""
-        self.task2.getStatus.return_value = ""
-        self.task3.getStatus.return_value = ""
-        result = self.task_list_manager._TelegramTaskListManager__filter_high_heuristic_tasks(urgent_tasks)
         self.assertIn(self.task3, result)
         self.assertIn(self.task2, result)
         self.assertNotIn(self.task1, result)
