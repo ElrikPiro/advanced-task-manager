@@ -4,6 +4,8 @@
 
 Elrikpiro's Advanced Task Manager is a tool designed to help users manage and automate their tasks efficiently. It integrates with Telegram to send notifications and updates about task statuses directly to your chat. This project aims to streamline task management and improve productivity by providing a user-friendly interface and robust automation features.
 
+![Diagrama Arquitectura](https://github.com/user-attachments/assets/26fad6b0-b45f-4be0-a6fb-dba612fa2aaf)
+
 ## Before starting
 
 ### Configure the config.json file
