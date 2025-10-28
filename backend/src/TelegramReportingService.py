@@ -122,7 +122,7 @@ class TelegramReportingService(IReportingService):
 
     def hasFilteredListChanged(self):
         filteredList = self._taskListManager.filtered_task_list
-        if self.taskProvider.compare(self._taskListManager.filtered_task_list, self.__lastModelList):
+        if self.taskProvider.compare(filteredList, self.__lastModelList):
             return False
         self.__lastModelList = filteredList
         return True
