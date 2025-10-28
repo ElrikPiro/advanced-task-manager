@@ -90,7 +90,47 @@ class TestTelegramReportingService(unittest.TestCase):
         self.taskProvider.registerTaskListUpdatedCallback.assert_called_once_with(self.telegramReportingService.onTaskListUpdated)
         self.task_list_manager.update_taskList.assert_called_once_with(mockTaskList)
         self.telegramReportingService._listenForEvents.assert_awaited_once()
+
+    def test_internalListenForEvents_normal(self) -> None:
+        # Arrange
+        def _stop_after_first_call() -> None:
+            self.telegramReportingService.run = False
+
+        MockLastError = MagicMock()
+        self.telegramReportingService._lastError = MockLastError
+        self.telegramReportingService.runEventLoop = AsyncMock(side_effect=_stop_after_first_call)
+
+        self.bot.initialize = AsyncMock()
+
+        # Act
+        asyncio.run(self.telegramReportingService._listenForEvents())
+
+        # Assert
+        self.bot.initialize.assert_awaited_once()
+
+    def test_internalListenForEvents_exception(self) -> None:
+        # Arrange
+        def _stop_after_first_call() -> None:
+            raise Exception("Test Exception")
+
+        MockLastError = MagicMock()
+        self.telegramReportingService._lastError = MockLastError
+        self.telegramReportingService.runEventLoop = AsyncMock(side_effect=_stop_after_first_call)
+
+        self.bot.initialize = AsyncMock()
+        self.bot.shutdown = AsyncMock(side_effect=Exception("Shutdown Exception"))
+
+        # Act
+        try:
+            asyncio.run(self.telegramReportingService._listenForEvents())
+        except Exception:
+            pass
+
+        # Assert
+        self.bot.initialize.assert_awaited_once()
+        self.bot.shutdown.assert_awaited_once()
         
+        self.assertFalse(self.telegramReportingService.run)
 
 if __name__ == '__main__':
     unittest.main()

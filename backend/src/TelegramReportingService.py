@@ -111,14 +111,14 @@ class TelegramReportingService(IReportingService):
         while self.run:
             try:
                 await self.runEventLoop()
-            except Exception as e:
+            except Exception:
                 try:
                     await self.bot.shutdown()
                 except Exception as e:
                     print(f"Fatal error: {repr(e)} shutting down.")
                     self.run = False
                 finally:
-                    raise e
+                    raise
 
     def hasFilteredListChanged(self):
         filteredList = self._taskListManager.filtered_task_list
