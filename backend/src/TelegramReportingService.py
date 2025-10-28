@@ -26,6 +26,9 @@ class TelegramReportingService(IReportingService):
 
     def __init__(self, bot: IUserCommService, taskProvider: ITaskProvider, scheduling: IScheduling, statiticsProvider: IStatisticsService, task_list_manager: ITaskListManager, categories: list[dict[str, str]], projectManager: IProjectManager, messageBuilder: IMessageBuilder, user: IAgent):
         # Private Attributes
+        self.MAX_ERRORS = 30
+        self.ERROR_TIMEOUT = 10
+
         self.run = True
         self.bot = bot
         self.user: IAgent = user
@@ -95,9 +98,9 @@ class TelegramReportingService(IReportingService):
             except Exception as e:
                 self._lastError = f"Error: {repr(e)}"
                 print(self._lastError)
-                sleepSync(10)
+                sleepSync(self.ERROR_TIMEOUT)
                 errCount += 1
-                if errCount > 30:
+                if errCount > self.MAX_ERRORS:
                     print("stopping container")
                     self.run = False
                     break

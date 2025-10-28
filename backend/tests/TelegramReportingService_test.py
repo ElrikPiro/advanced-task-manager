@@ -1,3 +1,4 @@
+from typing import NoReturn
 import unittest
 import asyncio
 from unittest.mock import MagicMock, AsyncMock
@@ -54,6 +55,42 @@ class TestTelegramReportingService(unittest.TestCase):
         self.assertTrue(self.telegramReportingService._updateFlag)
         self.task_list_manager.update_taskList.assert_called_once_with(mockTaskList)
 
+    def test_listenForEvents_normal(self) -> None:
+        # Arrange
+        def stop_after_first_call() -> None:
+            self.telegramReportingService.run = False
+
+        mockTaskList = [MagicMock(), MagicMock()]
+        self.taskProvider.getTaskList.return_value = mockTaskList
+        self.telegramReportingService._listenForEvents = AsyncMock(side_effect=stop_after_first_call)
+
+        # Act
+        self.telegramReportingService.listenForEvents()
+
+        # Assert
+        self.taskProvider.registerTaskListUpdatedCallback.assert_called_once_with(self.telegramReportingService.onTaskListUpdated)
+        self.task_list_manager.update_taskList.assert_called_once_with(mockTaskList)
+        self.telegramReportingService._listenForEvents.assert_awaited_once()
+
+    def test_listenForEvents_exception(self) -> None:
+        # Arrange
+        def stop_after_first_call() -> NoReturn:
+            self.telegramReportingService.MAX_ERRORS = 0  # To speed up the test
+            self.telegramReportingService.ERROR_TIMEOUT = 0  # To speed up the test
+            raise Exception("Test Exception")
+
+        mockTaskList = [MagicMock(), MagicMock()]
+        self.taskProvider.getTaskList.return_value = mockTaskList
+        self.telegramReportingService._listenForEvents = AsyncMock(side_effect=stop_after_first_call)
+
+        # Act
+        self.telegramReportingService.listenForEvents()
+
+        # Assert
+        self.taskProvider.registerTaskListUpdatedCallback.assert_called_once_with(self.telegramReportingService.onTaskListUpdated)
+        self.task_list_manager.update_taskList.assert_called_once_with(mockTaskList)
+        self.telegramReportingService._listenForEvents.assert_awaited_once()
+        
 
 if __name__ == '__main__':
     unittest.main()
