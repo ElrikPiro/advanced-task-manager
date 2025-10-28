@@ -1,4 +1,5 @@
 import unittest
+import asyncio
 from unittest.mock import MagicMock, AsyncMock
 from src.TelegramReportingService import TelegramReportingService
 
@@ -40,6 +41,18 @@ class TestTelegramReportingService(unittest.TestCase):
         self.taskProvider.dispose.assert_called_once()
         # assert run is set to False
         self.assertFalse(self.telegramReportingService.run)
+
+    def test_onTaskListUpdated(self) -> None:
+        # Arrange
+        mockTaskList = [MagicMock(), MagicMock()]
+        self.taskProvider.getTaskList.return_value = mockTaskList
+
+        # Act
+        self.telegramReportingService.onTaskListUpdated()
+
+        # Assert
+        self.assertTrue(self.telegramReportingService._updateFlag)
+        self.task_list_manager.update_taskList.assert_called_once_with(mockTaskList)
 
 
 if __name__ == '__main__':

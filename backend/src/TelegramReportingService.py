@@ -79,7 +79,7 @@ class TelegramReportingService(IReportingService):
         self.taskProvider.dispose()
         pass
 
-    def onTaskListUpdated(self):
+    def onTaskListUpdated(self) -> None:
         with self._lock:
             self._updateFlag = True
             self._taskListManager.update_taskList(self.taskProvider.getTaskList())
