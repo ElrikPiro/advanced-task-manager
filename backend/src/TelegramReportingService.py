@@ -24,7 +24,7 @@ from .wrappers.TimeManagement import TimeAmount, TimePoint
 
 class TelegramReportingService(IReportingService):
 
-    def __init__(self, bot: IUserCommService, taskProvider: ITaskProvider, scheduling: IScheduling, statiticsProvider: IStatisticsService, task_list_manager: ITaskListManager, categories: list[dict], projectManager: IProjectManager, messageBuilder: IMessageBuilder, user: IAgent):
+    def __init__(self, bot: IUserCommService, taskProvider: ITaskProvider, scheduling: IScheduling, statiticsProvider: IStatisticsService, task_list_manager: ITaskListManager, categories: list[dict[str, str]], projectManager: IProjectManager, messageBuilder: IMessageBuilder, user: IAgent):
         # Private Attributes
         self.run = True
         self.bot = bot
@@ -73,9 +73,9 @@ class TelegramReportingService(IReportingService):
         ]
         pass
 
-    def dispose(self):
+    def dispose(self) -> None:
         self.run = False
-        self.bot.shutdown()
+        asyncio.run(self.bot.shutdown())
         self.taskProvider.dispose()
         pass
 
