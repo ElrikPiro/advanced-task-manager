@@ -444,7 +444,7 @@ class TelegramTaskListManager(ITaskListManager):
 
     def __filter_high_heuristic_tasks(self, urgent_tasks) -> List[ITaskModel]:
         high_heuristic_tasks = []
-        taskModelListTupled:  List[Tuple[ITaskModel, float]] = self.__selectedHeuristic[1].sort(self.__taskModelList)
+        taskModelListTupled: List[Tuple[ITaskModel, float]] = self.__selectedHeuristic[1].sort(self.__taskModelList)
         taskModelList: List[ITaskModel] = [task for task, _ in taskModelListTupled]
 
         for task in taskModelList:
