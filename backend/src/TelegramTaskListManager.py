@@ -263,7 +263,7 @@ class TelegramTaskListManager(ITaskListManager):
 
     def get_list_stats(self) -> dict:
         stats = self.__statistics_service.getWorkloadStats(self.__taskModelList)
-        workload, remEffort, heuristicValue, heuristicName, offender, offenderMax = stats
+        workload, remEffort, heuristicValue, heuristicName, offender, offenderMax, workDoneDays = stats
 
         return {
             "workload": workload,
@@ -272,7 +272,8 @@ class TelegramTaskListManager(ITaskListManager):
             "heuristic_name": heuristicName,
             "offender": offender,
             "offender_max": offenderMax,
-            "work_done_log": self.__statistics_service.getWorkDoneLog()
+            "work_done_log": self.__statistics_service.getWorkDoneLog(),
+            "work_done_days": workDoneDays
         }
         
     def get_task_list_content(self) -> dict:

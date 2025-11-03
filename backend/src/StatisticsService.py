@@ -62,7 +62,7 @@ class StatisticsService(IStatisticsService):
                 offenderMax = taskWL
                 offender = task.getDescription()
 
-        retval = [workload, remainingEffort, maxHeuristic, HeuristicName, offender, offenderMax]
+        retval = [workload, remainingEffort, maxHeuristic, HeuristicName, offender, offenderMax, self.workDone]
         return retval
 
     def getWorkDoneLog(self) -> list:

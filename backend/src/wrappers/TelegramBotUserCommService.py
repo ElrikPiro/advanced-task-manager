@@ -219,6 +219,7 @@ class TelegramBotUserCommService(IUserCommService):
         offender = message.content.get('offender', "None")
         offender_max = message.content.get('offender_max', "0p")
         work_done_log = message.content.get('work_done_log', [])
+        work_done_days = message.content.get('work_done_days', {})
         
         # Format the message with Markdown for Telegram
         stats_message = "Work done in the last 7 days:\n"
@@ -227,15 +228,12 @@ class TelegramBotUserCommService(IUserCommService):
         
         # For Telegram display, we'll calculate this from the last 7 days of logs if available
         total_work = 0
-        for i in range(min(7, len(work_done_log))):
-            if i < len(work_done_log):
-                entry = work_done_log[i]
-                work_units = float(entry.get("work_units", "0"))
-                timestamp = entry.get("timestamp", 0)
-                date_str = TimePoint.from_int(timestamp).strip_time()
-                stats_message += f"`| {date_str} |    {work_units}    |`\n"
-                total_work += work_units
-        
+        for i in range(min(7, len(work_done_days))):
+            date: TimePoint = TimePoint.today() + TimeAmount(f"-{i}d")
+            workDone: float = work_done_days.get(str(date), 0.0)
+            total_work += workDone
+            stats_message += f"`| {date} |    {round(workDone, 1)}    |`\n"
+
         # Add average work done per day
         average_work = round(total_work / 7, 2) if work_done_log else 0
         stats_message += "`|------------|------------|`\n"
