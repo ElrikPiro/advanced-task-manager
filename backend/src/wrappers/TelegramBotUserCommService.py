@@ -131,6 +131,9 @@ class TelegramBotUserCommService(IUserCommService):
             command = parts[0].strip('/')  # Remove the leading '/'
             args = parts[1:] if len(parts) > 1 else []
 
+            if command == "start":  # We ignore this command because telegram uses to get bugged and show you the start button when it shouldn't
+                continue
+
             # Create and add the inbound message
             messages.append(InboundMessage(source_agent, destination_agent, command, args))
 
