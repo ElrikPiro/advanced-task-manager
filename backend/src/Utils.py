@@ -1,3 +1,15 @@
+from typing import TypeAlias
+
+TaskJsonElementType = dict[str, str]
+TaskJsonListType = list[TaskJsonElementType]
+ProjectJsonElementType = dict[str, str]
+ProjectJsonListType = list[ProjectJsonElementType]
+TaskJsonType: TypeAlias = dict[str, TaskJsonListType | ProjectJsonListType]
+
+MarkdownFileContent = str
+FileContent: TypeAlias = TaskJsonType | MarkdownFileContent  # StatisticsJsonType
+
+
 def stripDoc(docstring: str) -> str:
     """
     Strip the leading whitespace from the docstring.

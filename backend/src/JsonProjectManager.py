@@ -3,7 +3,7 @@ from .Interfaces.IProjectManager import IProjectManager, ProjectCommands
 from .Interfaces.ITaskJsonProvider import VALID_PROJECT_STATUS, ITaskJsonProvider
 from .Utils import stripDoc
 
-from typing import List
+from typing import List, Callable
 
 
 class JsonProjectManager(IProjectManager):
@@ -17,7 +17,7 @@ class JsonProjectManager(IProjectManager):
         Initialize the ProjectManager with an empty projects dictionary.
         """
         self.__taskListProvider = taskListProvider
-        self.commands: dict[str, callable] = {
+        self.commands: dict[str, Callable[[List[str]], str]] = {
             ProjectCommands.LIST.value: self._list_projects,
             ProjectCommands.CAT.value: self._cat_project,
             ProjectCommands.EDIT.value: self._edit_project_description,
@@ -66,10 +66,10 @@ class JsonProjectManager(IProjectManager):
         if len(messageArgs) > 0:
             command = messageArgs[0]
             if command in ProjectCommands.values():
-                return stripDoc(self.commands[command].__doc__)
+                return stripDoc(str(self.commands[command].__doc__))
             else:
                 return f"Command {command} not found"
-        return stripDoc(self._get_help.__doc__)
+        return stripDoc(str(self._get_help.__doc__))
 
     def _list_projects(self, messageArgs: List[str]) -> str:
         """

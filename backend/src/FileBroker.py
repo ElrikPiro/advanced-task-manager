@@ -1,13 +1,14 @@
 import json
 import os
+from Utils import FileContent
 from .Interfaces.IFileBroker import IFileBroker, FileRegistry, VaultRegistry
 
 
 class FileBroker(IFileBroker):
     def __init__(self, jsonPath: str, appdata: str, vaultPath: str):
-        defaultTaskJson = '{"tasks": []}'
+        defaultTaskJson: FileContent = '{"tasks": []}'
 
-        self.filePaths: dict[FileRegistry, dict] = {
+        self.filePaths: dict[FileRegistry, dict[str, FileContent]] = {
             FileRegistry.STANDALONE_TASKS_JSON: {
                 "path": os.path.join(jsonPath, "tasks.json"),
                 "default": defaultTaskJson
@@ -42,21 +43,21 @@ class FileBroker(IFileBroker):
         except FileNotFoundError:
             print(f"File not found: {self.filePaths[fileRegistry]['path']}")
             self.__createFile(fileRegistry)
-            return self.filePaths[fileRegistry]["default"]
+            return str(self.filePaths[fileRegistry]["default"])
 
     def writeFileContent(self,
                          fileRegistry: FileRegistry, content: str) -> None:
         with open(self.filePaths[fileRegistry]["path"], 'w+') as file:
             file.write(content)
 
-    def readFileContentJson(self, fileRegistry: FileRegistry) -> dict:
+    def readFileContentJson(self, fileRegistry: FileRegistry) -> FileContent:
         try:
             with open(self.filePaths[fileRegistry]["path"], "r", errors="ignore") as file:
                 return json.load(file)
         except FileNotFoundError:
             print(f"File not found: {self.filePaths[fileRegistry]['path']}")
             self.__createFile(fileRegistry)
-            return json.loads(self.filePaths[fileRegistry]["default"])
+            return json.loads(str(self.filePaths[fileRegistry]["default"]))
 
     def __createFile(self, fileRegistry: FileRegistry) -> None:
         with open(self.filePaths[fileRegistry]["path"], 'w+') as file:
@@ -64,9 +65,9 @@ class FileBroker(IFileBroker):
 
     def writeFileContentJson(self,
                              fileRegistry: FileRegistry,
-                             content: dict) -> None:
+                             content: FileContent) -> None:
         with open(self.filePaths[fileRegistry]["path"], 'w+') as file:
-            json.dump(content, file, indent=4)
+            json.dump(dict(content), file, indent=4)
 
     def getVaultFileLines(self,
                           vaultRegistry: VaultRegistry,

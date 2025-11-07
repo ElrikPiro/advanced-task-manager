@@ -1,7 +1,6 @@
 from abc import ABC, abstractmethod
 from enum import Enum
-from typing import TypeAlias
-from ITaskJsonProvider import TaskJsonType
+from Utils import TaskJsonType, FileContent
 
 
 # Enumeration of files that can be read
@@ -15,10 +14,6 @@ class FileRegistry(Enum):
 
 class VaultRegistry(Enum):
     OBSIDIAN = 1
-
-
-MarkdownFileContent = str
-FileContent: TypeAlias = TaskJsonType | MarkdownFileContent  # StatisticsJsonType
 
 
 class IFileBroker(ABC):

@@ -1,5 +1,6 @@
-from ..Interfaces.ITaskJsonProvider import ITaskJsonProvider, TaskJsonType
-from ..Interfaces.IFileBroker import FileContent, IFileBroker, FileRegistry
+from Utils import TaskJsonType, FileContent
+from ..Interfaces.ITaskJsonProvider import ITaskJsonProvider
+from ..Interfaces.IFileBroker import IFileBroker, FileRegistry
 
 
 class ObsidianDataviewTaskJsonProvider(ITaskJsonProvider):
