@@ -1,6 +1,7 @@
 # class interface
 
 from abc import ABC, abstractmethod
+from typing import TypeAlias
 
 VALID_PROJECT_STATUS = [
     "open",
@@ -12,7 +13,7 @@ TaskJsonElementType = dict[str, str]
 TaskJsonListType = list[TaskJsonElementType]
 ProjectJsonElementType = dict[str, str]
 ProjectJsonListType = list[ProjectJsonElementType]
-TaskJsonType = dict[str, TaskJsonListType | ProjectJsonListType]
+TaskJsonType: TypeAlias = dict[str, TaskJsonListType | ProjectJsonListType]
 
 
 class ITaskJsonProvider(ABC):
