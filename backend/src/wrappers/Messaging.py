@@ -1,6 +1,21 @@
 from abc import ABC, abstractmethod
 
 
+class RenderMode:
+    TASK_LIST = 0
+    RAW_TEXT = 1
+    LIST_UPDATED = 2
+    HEURISTIC_LIST = 3
+    ALGORITHM_LIST = 4
+    FILTER_LIST = 5
+    TASK_STATS = 6
+    TASK_AGENDA = 7
+    TASK_INFORMATION = 8
+
+
+MessageContent = dict[str, str | list[str] | RenderMode]
+
+
 class IAgent(ABC):
     @property
     @abstractmethod
@@ -70,7 +85,7 @@ class IMessage(ABC):
 
     @property
     @abstractmethod
-    def content(self) -> dict:
+    def content(self) -> MessageContent:
         pass
 
     @property
@@ -83,7 +98,7 @@ class InboundMessage(IMessage):
     def __init__(self, source: IAgent, destination: IAgent, command: str, args: list[str]):
         self._source = source
         self._destination = destination
-        self._content = {
+        self._content: MessageContent = {
             "command": command,
             "args": args
         }
@@ -97,9 +112,7 @@ class InboundMessage(IMessage):
         return self._destination
 
     @property
-    def content(self) -> dict:
-        if self._content is None:
-            raise ValueError("Content must contain 'command' and 'args'")
+    def content(self) -> MessageContent:
         return self._content
 
     @property
@@ -107,21 +120,8 @@ class InboundMessage(IMessage):
         return "InboundMessage"
 
 
-# enum for message render modes
-class RenderMode:
-    TASK_LIST = 0
-    RAW_TEXT = 1
-    LIST_UPDATED = 2
-    HEURISTIC_LIST = 3
-    ALGORITHM_LIST = 4
-    FILTER_LIST = 5
-    TASK_STATS = 6
-    TASK_AGENDA = 7
-    TASK_INFORMATION = 8
-
-
 class OutboundMessage(IMessage):
-    def __init__(self, source: IAgent, destination: IAgent, content: dict, render_mode: RenderMode):
+    def __init__(self, source: IAgent, destination: IAgent, content: MessageContent, render_mode: RenderMode):
         self._source = source
         self._destination = destination
         self._content = content
@@ -136,7 +136,7 @@ class OutboundMessage(IMessage):
         return self._destination
 
     @property
-    def content(self) -> dict:
+    def content(self) -> MessageContent:
         return self._content
 
     @property
@@ -145,7 +145,7 @@ class OutboundMessage(IMessage):
 
 
 class InternalMessage(IMessage):
-    def __init__(self, source: IAgent, destination: IAgent, content: dict):
+    def __init__(self, source: IAgent, destination: IAgent, content: MessageContent):
         self._source = source
         self._destination = destination
         self._content = content
@@ -159,7 +159,7 @@ class InternalMessage(IMessage):
         return self._destination
 
     @property
-    def content(self) -> dict:
+    def content(self) -> MessageContent:
         return self._content
 
     @property
@@ -173,11 +173,11 @@ class IMessageBuilder(ABC):
         pass
 
     @abstractmethod
-    def createOutboundMessage(self, source: IAgent, destination: IAgent, content: dict, render_mode: RenderMode) -> OutboundMessage:
+    def createOutboundMessage(self, source: IAgent, destination: IAgent, content: MessageContent, render_mode: RenderMode) -> OutboundMessage:
         pass
 
     @abstractmethod
-    def createInternalMessage(self, source: IAgent, destination: IAgent, content: dict) -> InternalMessage:
+    def createInternalMessage(self, source: IAgent, destination: IAgent, content: MessageContent) -> InternalMessage:
         pass
 
 
@@ -185,10 +185,10 @@ class MessageBuilder(IMessageBuilder):
     def createInboundMessage(self, source: IAgent, destination: IAgent, command: str, args: list[str]) -> InboundMessage:
         return InboundMessage(source, destination, command, args)
 
-    def createOutboundMessage(self, source: IAgent, destination: IAgent, content: dict, render_mode: RenderMode) -> OutboundMessage:
+    def createOutboundMessage(self, source: IAgent, destination: IAgent, content: MessageContent, render_mode: RenderMode) -> OutboundMessage:
         return OutboundMessage(source, destination, content, render_mode)
 
-    def createInternalMessage(self, source: IAgent, destination: IAgent, content: dict) -> InternalMessage:
+    def createInternalMessage(self, source: IAgent, destination: IAgent, content: MessageContent) -> InternalMessage:
         return InternalMessage(source, destination, content)
 
 
