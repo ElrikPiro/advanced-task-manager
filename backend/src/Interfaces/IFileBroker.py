@@ -1,5 +1,7 @@
 from abc import ABC, abstractmethod
 from enum import Enum
+from typing import TypeAlias
+from ITaskJsonProvider import TaskJsonType
 
 
 # Enumeration of files that can be read
@@ -15,6 +17,10 @@ class VaultRegistry(Enum):
     OBSIDIAN = 1
 
 
+MarkdownFileContent = str
+FileContent: TypeAlias = TaskJsonType | MarkdownFileContent  # StatisticsJsonType
+
+
 class IFileBroker(ABC):
 
     @abstractmethod
@@ -22,7 +28,7 @@ class IFileBroker(ABC):
         pass
 
     @abstractmethod
-    def readFileContentJson(self, fileRegistry: FileRegistry) -> dict:
+    def readFileContentJson(self, fileRegistry: FileRegistry) -> FileContent:
         pass
 
     @abstractmethod
@@ -30,7 +36,7 @@ class IFileBroker(ABC):
         pass
 
     @abstractmethod
-    def writeFileContentJson(self, fileRegistry: FileRegistry, content: dict) -> None:
+    def writeFileContentJson(self, fileRegistry: FileRegistry, content: FileContent) -> None:
         pass
 
     @abstractmethod
