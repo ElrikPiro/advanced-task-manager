@@ -12,7 +12,7 @@ class ObsidianDataviewTaskJsonProvider(ITaskJsonProvider):
         if isinstance(retval, dict):
             return retval
         
-        return {"": []}
+        return {"tasks": []}
         
     def saveJson(self, json: TaskJsonType) -> None:
         # do nothing
