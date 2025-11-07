@@ -35,3 +35,9 @@ class DaysToThresholdHeuristic(IHeuristic):
     def getComment(self, task: ITaskModel) -> str:
         days_remaining = ceil(self.evaluate(task))
         return f"{days_remaining} days"
+        
+    def getDescription(self) -> str:
+        """
+        Returns a description of the heuristic.
+        """
+        return f"Days to threshold heuristic with dedication of {self.dedication} and threshold of {self.threshold}"

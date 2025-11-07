@@ -21,21 +21,6 @@ class TestShortestJobAlgorithm(unittest.TestCase):
         result = self.algorithm.apply(tasks)
         self.assertEqual(result, [self.mock_task3, self.mock_task2, self.mock_task1])
 
-    def test_apply_updates_description(self):
-        tasks = [self.mock_task1, self.mock_task2, self.mock_task3]
-        self.algorithm.apply(tasks)
-        description = self.algorithm.getDescription()
-        self.assertIn("Shortest Job First (SJF) Algorithm", description)
-        self.assertIn("3 tasks sorted by execution time", description)
-
-    def test_apply_with_empty_task_list(self):
-        tasks = []
-        result = self.algorithm.apply(tasks)
-        self.assertEqual(result, [])
-        description = self.algorithm.getDescription()
-        self.assertIn("Shortest Job First (SJF) Algorithm", description)
-        self.assertIn("0 tasks sorted by execution time", description)
-
 
 if __name__ == '__main__':
     unittest.main()

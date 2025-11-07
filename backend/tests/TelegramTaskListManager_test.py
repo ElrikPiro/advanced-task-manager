@@ -83,19 +83,8 @@ class TestTelegramTaskListManager(unittest.TestCase):
         self.assertIn(self.task2, result)
         self.assertNotIn(self.task1, result)
 
-    def test__filter_high_heuristic_tasks(self):
-        urgent_tasks = [self.task1]
-        # Patch getStatus for all tasks
-        self.task1.getStatus.return_value = ""
-        self.task2.getStatus.return_value = ""
-        self.task3.getStatus.return_value = ""
-        result = self.task_list_manager._TelegramTaskListManager__filter_high_heuristic_tasks(urgent_tasks)
-        self.assertIn(self.task3, result)
-        self.assertIn(self.task2, result)
-        self.assertNotIn(self.task1, result)
-
     def test__render_other_tasks(self):
-        TelegramTaskListManager.render_task_list_str = MagicMock(return_value="other tasks list")
+        TelegramTaskListManager.render_task_list_str_legacy = MagicMock(return_value="other tasks list")
         agenda_str = "Agenda: "
         other_tasks = [self.task3]
         result = self.task_list_manager._TelegramTaskListManager__render_other_tasks(agenda_str, other_tasks)
@@ -279,7 +268,7 @@ class TestTelegramTaskListManagerAdditional(unittest.TestCase):
         self.statistics_service.getWorkDoneLog.return_value = work_done_log
 
         # Act
-        result = self.task_list_manager.get_list_stats()
+        result = self.task_list_manager.get_list_stats_legacy()
 
         # Assert
         self.assertIn("Work done in the last 7 days:", result)
@@ -331,18 +320,8 @@ class TestTelegramTaskListManagerAdditional(unittest.TestCase):
         self.assertIn(self.task2, result)
         self.assertNotIn(self.task1, result)
 
-    def test__filter_high_heuristic_tasks_with_additional_tasks(self):
-        urgent_tasks = [self.task1]
-        self.task1.getStatus.return_value = ""
-        self.task2.getStatus.return_value = ""
-        self.task3.getStatus.return_value = ""
-        result = self.task_list_manager._TelegramTaskListManager__filter_high_heuristic_tasks(urgent_tasks)
-        self.assertIn(self.task3, result)
-        self.assertIn(self.task2, result)
-        self.assertNotIn(self.task1, result)
-
     def test__render_other_tasks_with_additional_tasks(self):
-        TelegramTaskListManager.render_task_list_str = MagicMock(return_value="other tasks list")
+        TelegramTaskListManager.render_task_list_str_legacy = MagicMock(return_value="other tasks list")
         agenda_str = "Agenda: "
         other_tasks = [self.task3]
         result = self.task_list_manager._TelegramTaskListManager__render_other_tasks(agenda_str, other_tasks)

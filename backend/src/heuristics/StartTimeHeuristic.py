@@ -24,3 +24,10 @@ class StartTimeHeuristic(IHeuristic):
 
     def getComment(self, task: ITaskModel) -> str:
         return str(task.getStart())
+        
+    def getDescription(self) -> str:
+        """
+        Returns a string with a description of the heuristic.
+        Used for displaying information about the currently selected algorithm.
+        """
+        return "StartTime Heuristic: Orders tasks by their start time (FIFO)."

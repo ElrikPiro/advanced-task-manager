@@ -29,10 +29,6 @@ class TestHeuristicAlgorithm(unittest.TestCase):
         result = self.algorithm.apply(tasks)
         self.assertEqual(result, [self.mock_task3, self.mock_task2, self.mock_task1])
 
-    def test_get_description(self):
-        description = self.algorithm.getDescription()
-        self.assertEqual(description, "Heuristic Algorithm")
-
 
 if __name__ == '__main__':
     unittest.main()

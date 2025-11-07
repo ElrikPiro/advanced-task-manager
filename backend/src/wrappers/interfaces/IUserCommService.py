@@ -1,5 +1,7 @@
 from abc import ABC, abstractmethod
 
+from ..Messaging import IAgent, IMessage
+
 
 class IUserCommService(ABC):
 
@@ -12,13 +14,17 @@ class IUserCommService(ABC):
         pass
 
     @abstractmethod
-    async def sendMessage(self, chat_id: int, text: str) -> None:
-        pass
-
-    @abstractmethod
-    async def getMessageUpdates(self) -> tuple[int, str]:
+    async def getMessageUpdates(self) -> list[IMessage]:
         pass
 
     @abstractmethod
     async def sendFile(self, chat_id: int, data: bytearray) -> None:
+        pass
+
+    @abstractmethod
+    async def sendMessage(self, message: IMessage) -> None:
+        pass
+
+    @abstractmethod
+    def getBotAgent(self) -> IAgent:
         pass

@@ -49,7 +49,7 @@ class ITaskListManager(ABC):
         pass
 
     @abstractmethod
-    def render_task_list_str(self, interactive: bool = True) -> str:
+    def render_task_list_str_legacy(self, interactive: bool = True) -> str:
         pass
 
     @abstractmethod
@@ -69,17 +69,25 @@ class ITaskListManager(ABC):
         pass
 
     @abstractmethod
-    def get_filter_list(self) -> str:
+    def get_filter_list(self) -> dict:
         pass
 
     @abstractmethod
-    def get_heuristic_list(self) -> str:
+    def get_heuristic_list_legacy(self) -> str:
         pass
 
     @abstractmethod
-    def get_list_stats(self) -> str:
+    def get_list_stats_legacy(self) -> str:
         """
         Returns a string with the statistics of the task list.
+        This includes workload, remaining effort, heuristic value, and offender task.
+        """
+        pass
+
+    @abstractmethod
+    def get_list_stats(self) -> dict:
+        """
+        Returns a dictionary with the statistics of the task list.
         This includes workload, remaining effort, heuristic value, and offender task.
         """
         pass
@@ -90,4 +98,57 @@ class ITaskListManager(ABC):
 
     @abstractmethod
     def render_day_agenda(self, date: TimePoint, categories: list[dict]) -> str:
+        pass
+
+    @abstractmethod
+    def get_heuristic_list(self) -> dict:
+        pass
+
+    @abstractmethod
+    def get_algorithm_list_legacy(self) -> str:
+        pass
+
+    @abstractmethod
+    def get_algorithm_list(self) -> dict:
+        pass
+
+    @abstractmethod
+    def get_task_list_content(self) -> dict:
+        """
+        Returns a dictionary with the content needed to render a task list.
+        This includes algorithm information, heuristic information, tasks, pagination details, etc.
+        """
+        pass
+        
+    @abstractmethod
+    def get_day_agenda_content(self, date: TimePoint, categories: list[dict]) -> dict:
+        """
+        Returns a dictionary with the content needed to render a day agenda.
+        This includes active urgent tasks, planned urgent tasks, and other tasks.
+        
+        Args:
+            date: The date for which to get the agenda
+            categories: A list of category dictionaries to use for sorting tasks
+            
+        Returns:
+            A dictionary containing the agenda data
+        """
+        pass
+        
+    @abstractmethod
+    def get_task_information(self, task: ITaskModel, taskProvider: ITaskProvider, extended: bool) -> dict:
+        """
+        Returns a dictionary with the content needed to render task information.
+        This includes task details like description, context, start date, due date,
+        total cost, remaining cost, severity, and optional extended information like
+        heuristic values and metadata.
+        
+        Args:
+            task: The task for which to get information
+            taskProvider: The task provider to get metadata from
+            extended: Whether to include extended information like heuristics and metadata
+            
+        Returns:
+            A dictionary containing the task information data
+        """
         pass

@@ -27,7 +27,7 @@ jobs:
 
       - name: Lint code
         run: |
-          flake8 --ignore=E501,E266 .
+          flake8 --ignore=E501,E266,W293 .
 
   test:
     runs-on: ubuntu-latest

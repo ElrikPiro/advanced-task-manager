@@ -95,7 +95,7 @@ class TelegramTaskListManager(ITaskListManager):
 
         return TelegramTaskListManager(taskListSearched, [], [], self.__filterList, self.__statistics_service, self.__tasksPerPage)
 
-    def render_task_list_str(self, interactive: bool = True) -> str:
+    def render_task_list_str_legacy(self, interactive: bool = True) -> str:
         task_list = self.filtered_task_list
         interactiveId = "/task_" if interactive else ""
 
@@ -147,6 +147,17 @@ class TelegramTaskListManager(ITaskListManager):
                     self.__selectedTask = task
                     break
 
+    @property
+    def selected_algorithm(self):
+        """Returns the currently selected algorithm."""
+        if not self.__selectedAlgorithm:
+            return None
+        
+        # Create a wrapper object with a description property
+        algorithm = self.__selectedAlgorithm[1]
+        algorithm.description = algorithm.getDescription()
+        return algorithm
+
     def select_heuristic(self, messageText: str):
         heuristicIndex = int(messageText.split("_")[1]) - 1
         self.__selectedHeuristic = self.__heuristicList[heuristicIndex]
@@ -163,26 +174,53 @@ class TelegramTaskListManager(ITaskListManager):
         algorithmIndex = int(messageText.split("_")[1]) - 1
         self.__selectedAlgorithm = self.__algorithmList[algorithmIndex]
 
-    def get_filter_list(self) -> str:
-        filterList = "\n".join([f"/filter_{i+1}: {filter[0]}" for i, filter in enumerate(self.__filterList)])
-        filterList += "\n\n/heuristic - List heuristic options"
-        filterList += "\n/algorithm - List algorithm options"
-        filterList = self.render_filter_summary(filterList)
-        return filterList
+    def get_filter_list(self) -> dict:
+        filterList = []
+        for i, filter_tuple in enumerate(self.__filterList):
+            name = filter_tuple[0]
+            filter_obj = filter_tuple[1]
+            enabled = filter_tuple[2]
+            description = getattr(filter_obj, "getDescription", lambda: str(filter_obj))()
+            filterList.append({
+                "name": name,
+                "description": description,
+                "enabled": enabled
+            })
+        return {"filterList": filterList}
 
-    def get_heuristic_list(self) -> str:
+    def get_heuristic_list_legacy(self) -> str:
         heuristicList = "\n".join([f"/heuristic_{i+1}: {heuristic[0]}" for i, heuristic in enumerate(self.__heuristicList)])
         heuristicList += "\n\n/filter - List filter options"
         heuristicList += "\n/algorithm - List algorithm options"
         return heuristicList
 
-    def get_algorithm_list(self) -> str:
+    def get_heuristic_list(self) -> dict:  # Dict must contain heuristic id, name and description
+        heuristicList = []
+        for i, heuristic in enumerate(self.__heuristicList):
+            heuristicName, heuristicInstance = heuristic
+            heuristicList.append({
+                "name": heuristicName,
+                "description": heuristicInstance.getDescription()
+            })
+        return {"heuristicList": heuristicList}
+
+    def get_algorithm_list_legacy(self) -> str:
         algorithmList = "\n".join([f"/algorithm_{i+1}: {algorithm[0]}" for i, algorithm in enumerate(self.__algorithmList)])
         algorithmList += "\n\n/heuristic - List heuristic options"
         algorithmList += "\n/filter - List filter options"
         return algorithmList
+    
+    def get_algorithm_list(self) -> dict:  # Dict must contain algorithm id, name and description
+        algorithmList = []
+        for i, algorithm in enumerate(self.__algorithmList):
+            algorithmName, algorithmInstance = algorithm
+            algorithmList.append({
+                "name": algorithmName,
+                "description": algorithmInstance.getDescription()
+            })
+        return {"algorithmList": algorithmList}
 
-    def get_list_stats(self) -> str:
+    def get_list_stats_legacy(self) -> str:
         statsMessage = "Work done in the last 7 days:\n"
         statsMessage += "`|    Date    | Work  Done |`\n"
         statsMessage += "`|------------|------------|`\n"
@@ -222,6 +260,90 @@ class TelegramTaskListManager(ITaskListManager):
 
         statsMessage += "/list - return back to the task list"
         return statsMessage
+
+    def get_list_stats(self) -> dict:
+        stats = self.__statistics_service.getWorkloadStats(self.__taskModelList)
+        workload, remEffort, heuristicValue, heuristicName, offender, offenderMax, workDoneDays = stats
+
+        return {
+            "workload": workload,
+            "remaining_effort": remEffort,
+            "heuristic_value": heuristicValue,
+            "heuristic_name": heuristicName,
+            "offender": offender,
+            "offender_max": offenderMax,
+            "work_done_log": self.__statistics_service.getWorkDoneLog(),
+            "work_done_days": workDoneDays
+        }
+        
+    def get_task_list_content(self) -> dict:
+        """
+        Returns a dictionary with the content needed to render a task list.
+        This includes algorithm information, heuristic information, tasks, pagination details, etc.
+        """
+        task_list = self.filtered_task_list
+        
+        # Get task details for the current page
+        start_index = self.__taskListPage * self.__tasksPerPage
+        end_index = (self.__taskListPage + 1) * self.__tasksPerPage
+        page_tasks = task_list[start_index:end_index]
+        
+        # Format tasks with complete information
+        tasks = []
+        for i, task in enumerate(page_tasks):
+            # Get heuristic value for the task
+            heuristic_value = None
+            if len(self.__heuristicList) > 0:
+                heuristic_value = self.__selectedHeuristic[1].evaluate(task)
+            
+            # Use hash of description as ID if getId is not available
+            task_id = getattr(task, "getId", lambda: str(i + 1))()
+            
+            tasks.append({
+                "id": task_id,
+                "description": task.getDescription(),
+                "context": task.getContext(),
+                "start": str(task.getStart()),
+                "due": str(task.getDue()),
+                "severity": task.getSeverity(),
+                "status": task.getStatus(),
+                "total_cost": task.getTotalCost().as_pomodoros(),
+                "effort_invested": task.getInvestedEffort().as_pomodoros(),
+                "heuristic_value": heuristic_value
+            })
+        
+        # Get pagination information
+        total_pages = (len(task_list) + self.__tasksPerPage - 1) // self.__tasksPerPage if self.__tasksPerPage > 0 else 1
+        current_page = self.__taskListPage + 1
+        
+        # Get algorithm information
+        algorithm_name = self.__selectedAlgorithm[0] if len(self.__algorithmList) > 0 else "None"
+        algorithm_desc = self.__selectedAlgorithm[1].getDescription() if len(self.__algorithmList) > 0 else "No algorithm selected"
+        
+        # Get heuristic information
+        sort_heuristic = self.__selectedHeuristic[0] if len(self.__heuristicList) > 0 else "None"
+        
+        # Get active filters
+        active_filters = []
+        for i, filter_tuple in enumerate(self.__filterList):
+            if filter_tuple[2]:  # If filter is enabled
+                active_filters.append({
+                    "name": filter_tuple[0],
+                    "index": i + 1,
+                    "description": getattr(filter_tuple[1], "getDescription", lambda: str(filter_tuple[1]))()
+                })
+        
+        return {
+            "algorithm_name": algorithm_name,
+            "algorithm_desc": algorithm_desc,
+            "sort_heuristic": sort_heuristic,
+            "tasks": tasks,
+            "total_tasks": len(task_list),
+            "current_page": current_page,
+            "total_pages": total_pages,
+            "active_filters": active_filters,
+            "interactive": True  # Default to interactive mode
+        }
 
     def render_task_information(self, task: ITaskModel, taskProvider: ITaskProvider, extended: bool) -> str:
         taskDescription = task.getDescription()
@@ -322,9 +444,11 @@ class TelegramTaskListManager(ITaskListManager):
 
     def __filter_high_heuristic_tasks(self, urgent_tasks) -> List[ITaskModel]:
         high_heuristic_tasks = []
+        taskModelListTupled: List[Tuple[ITaskModel, float]] = self.__selectedHeuristic[1].sort(self.__taskModelList)
+        taskModelList: List[ITaskModel] = [task for task, _ in taskModelListTupled]
 
-        for task in self.__taskModelList:
-            if task not in urgent_tasks and task.getStatus() != "x":
+        for task in taskModelList:
+            if task not in urgent_tasks and task.getStatus() != "x" and task.getStart().as_int() < TimePoint.now().as_int() and task.getDue().as_int() >= TimePoint.tomorrow().as_int():
                 high_heuristic_tasks.append(task)
 
         return high_heuristic_tasks
@@ -332,6 +456,152 @@ class TelegramTaskListManager(ITaskListManager):
     def __render_other_tasks(self, agenda_str, other_tasks):
         if len(other_tasks) > 0:
             agenda_str += "# Other tasks:\n"
-            agenda_str += TelegramTaskListManager(other_tasks, self.__algorithmList, self.__heuristicList, self.__filterList, self.__statistics_service).render_task_list_str(False)
+            agenda_str += TelegramTaskListManager(other_tasks, self.__algorithmList, self.__heuristicList, self.__filterList, self.__statistics_service).render_task_list_str_legacy(False)
             agenda_str += "\n\n"
         return agenda_str
+        
+    def get_day_agenda_content(self, date: TimePoint, categories: list[dict]) -> dict:
+        """
+        Returns a dictionary with the content needed to render a day agenda.
+        This includes active urgent tasks, planned urgent tasks, and other tasks.
+        
+        Args:
+            date: The date for which to get the agenda
+            categories: A list of category dictionaries to use for sorting tasks
+            
+        Returns:
+            A dictionary containing the agenda data
+        """
+        # Get tasks by different criteria
+        urgent_tasks = self.__filter_urgent_tasks(date)
+        current_urgent_tasks = self.__filter_current_tasks(urgent_tasks)
+        current_urgents_by_categories = self.__sort_by_categories(current_urgent_tasks, categories)
+        urgent_tasks_by_start = self.__filter_and_sort_future_tasks(urgent_tasks, date)
+        other_tasks = self.__filter_high_heuristic_tasks(urgent_tasks)
+        
+        # Format the active urgent tasks
+        active_urgent_tasks = []
+        for i, task in enumerate(current_urgents_by_categories):
+            # Use task description hash as ID if getId is not available
+            task_id = getattr(task, "getId", lambda: f"active_{i}")()
+            
+            active_urgent_tasks.append({
+                "id": task_id,
+                "description": task.getDescription(),
+                "context": task.getContext(),
+                "due": str(task.getDue()),
+                "start": str(task.getStart())
+            })
+            
+        # Format the planned urgent tasks
+        planned_urgent_tasks = []
+        planned_tasks_by_date = {}
+        
+        for i, task in enumerate(urgent_tasks_by_start):
+            # Use task description hash as ID if getId is not available
+            task_id = getattr(task, "getId", lambda: f"planned_{i}")()
+            
+            task_data = {
+                "id": task_id,
+                "description": task.getDescription(),
+                "context": task.getContext(),
+                "due": str(task.getDue()),
+                "start": str(task.getStart())
+            }
+            
+            start_date = str(task.getStart())
+            if start_date not in planned_tasks_by_date:
+                planned_tasks_by_date[start_date] = []
+            
+            planned_tasks_by_date[start_date].append(task_data)
+            planned_urgent_tasks.append(task_data)
+            
+        # Format the other tasks
+        other_tasks_formatted = []
+        for i, task in enumerate(other_tasks):
+            # Use task description hash as ID if getId is not available
+            task_id = getattr(task, "getId", lambda: f"other_{i}")()
+            
+            other_tasks_formatted.append({
+                "id": task_id,
+                "description": task.getDescription(),
+                "context": task.getContext(),
+                "due": str(task.getDue()),
+                "start": str(task.getStart())
+            })
+            
+        # If needed, get task list information for other tasks
+        other_task_list_info = None
+        if other_tasks:
+            other_task_manager = TelegramTaskListManager(
+                other_tasks,
+                self.__algorithmList,
+                self.__heuristicList,
+                self.__filterList,
+                self.__statistics_service
+            )
+            other_task_list_info = other_task_manager.get_task_list_content()
+            other_task_list_info["interactive"] = False
+        
+        # Return the complete agenda data structure
+        return {
+            "date": str(date),
+            "active_urgent_tasks": active_urgent_tasks,
+            "planned_urgent_tasks": planned_urgent_tasks,
+            "planned_tasks_by_date": planned_tasks_by_date,
+            "other_tasks": other_tasks_formatted,
+            "other_task_list_info": other_task_list_info
+        }
+        
+    def get_task_information(self, task: ITaskModel, taskProvider: ITaskProvider, extended: bool) -> dict:
+        """
+        Returns a dictionary with the content needed to render task information.
+        This includes task details like description, context, start date, due date,
+        total cost, remaining cost, severity, and optional extended information like
+        heuristic values and metadata.
+        
+        Args:
+            task: The task for which to get information
+            taskProvider: The task provider to get metadata from
+            extended: Whether to include extended information like heuristics and metadata
+            
+        Returns:
+            A dictionary containing the task information data
+        """
+        # Get task ID safely
+        task_id = getattr(task, "getId", lambda: "unknown")()
+        
+        # Calculate task costs
+        remaining_cost = max(task.getTotalCost().as_pomodoros(), 0.0)
+        effort_invested = max(task.getInvestedEffort().as_pomodoros(), 0.0)
+        total_cost = remaining_cost + effort_invested
+        
+        # Basic task information
+        task_info = {
+            "id": task_id,
+            "description": task.getDescription(),
+            "context": task.getContext(),
+            "start_date": str(task.getStart()),
+            "due_date": str(task.getDue()),
+            "severity": task.getSeverity(),
+            "total_cost": total_cost,
+            "remaining_cost": remaining_cost,
+            "effort_invested": effort_invested,
+            "status": task.getStatus(),
+            "calm": task.getCalm()
+        }
+        
+        # Extended information (heuristics and metadata)
+        if extended:
+            heuristics = []
+            for heuristic_name, heuristic_instance in self.__heuristicList:
+                heuristics.append({
+                    "name": heuristic_name,
+                    "value": heuristic_instance.evaluate(task),
+                    "comment": heuristic_instance.getComment(task)
+                })
+            
+            task_info["heuristics"] = heuristics
+            task_info["metadata"] = taskProvider.getTaskMetadata(task)
+        
+        return task_info

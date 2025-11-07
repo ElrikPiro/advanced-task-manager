@@ -38,3 +38,9 @@ class SlackHeuristic(IHeuristic):
 
     def getComment(self, task: ITaskModel) -> str:
         return f"{round(self.evaluate(task), 2)}"
+        
+    def getDescription(self) -> str:
+        """
+        Returns a description of the heuristic.
+        """
+        return f"Slack heuristic with dedication of {self.dedication} and days offset of {self.daysOffset}"
