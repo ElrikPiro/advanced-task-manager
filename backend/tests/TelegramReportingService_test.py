@@ -936,7 +936,7 @@ class TestTelegramReportingService(unittest.TestCase):
         # Act & Assert - This tests that the method handles invalid date formats gracefully
         # The actual implementation may throw an error for malformed datetime strings
         with self.assertRaises((ValueError, Exception)):
-            asyncio.run(self.telegramReportingService.setStartCommand(mock_task, "2024-01-01T10:00"))
+            asyncio.run(self.telegramReportingService.setStartCommand(mock_task, "invalid-date-format"))
 
     def test_setDueCommand_relative_format(self) -> None:
         # Arrange
