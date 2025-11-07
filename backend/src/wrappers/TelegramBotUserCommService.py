@@ -60,6 +60,25 @@ class TelegramBotUserCommService(IUserCommService):
         text = ' '.join(parts)
         return text
 
+    def __escapeMarkdown(self, text: str) -> str:
+        """
+        Escapes common markdown format characters to prevent formatting issues.
+        
+        Args:
+            text: The input text that may contain markdown characters
+            
+        Returns:
+            The text with markdown characters properly escaped
+        """
+        # Characters that need escaping in Telegram's MarkdownV2
+        markdown_chars = ['*', '_', '~', '`']
+        
+        escaped_text = text
+        for char in markdown_chars:
+            escaped_text = escaped_text.replace(char, f'\\{char}')
+            
+        return escaped_text
+
     async def __getMessageUpdates_legacy(self) -> tuple[int, str]:
         result = await self.bot.getUpdates(limit=1, timeout=1, allowed_updates=['message'], offset=self.offset)
         if len(result) == 0:
@@ -215,8 +234,8 @@ class TelegramBotUserCommService(IUserCommService):
         workload = message.content.get('workload', "0p")
         remaining_effort = message.content.get('remaining_effort', "0p")
         heuristic_value = message.content.get('heuristic_value', "0")
-        heuristic_name = message.content.get('heuristic_name', "Unknown")
-        offender = message.content.get('offender', "None")
+        heuristic_name = self.__escapeMarkdown(message.content.get('heuristic_name', "Unknown"))
+        offender = self.__escapeMarkdown(message.content.get('offender', "None"))
         offender_max = message.content.get('offender_max', "0p")
         work_done_log = message.content.get('work_done_log', [])
         work_done_days = message.content.get('work_done_days', {})
@@ -250,7 +269,7 @@ class TelegramBotUserCommService(IUserCommService):
         # Display work done log
         stats_message += "Work done log:\n"
         for entry in work_done_log:
-            task = entry.get("task", "Unknown")
+            task = self.__escapeMarkdown(entry.get("task", "Unknown"))
             work_units = entry.get("work_units", "0")
             timestamp = entry.get("timestamp", 0)
             date_str = TimePoint.from_int(timestamp)
@@ -269,7 +288,7 @@ class TelegramBotUserCommService(IUserCommService):
         agenda_message = "(Info) Task Agenda Render Mode\n"
         
         # Get content from message
-        date = message.content.get('date', "Today")
+        date = self.__escapeMarkdown(message.content.get('date', "Today"))
         active_urgent_tasks = message.content.get('active_urgent_tasks', [])
         planned_urgent_tasks = message.content.get('planned_urgent_tasks', [])
         planned_tasks_by_date = message.content.get('planned_tasks_by_date', {})
@@ -282,23 +301,30 @@ class TelegramBotUserCommService(IUserCommService):
         if active_urgent_tasks:
             agenda_message += "# Active Urgent tasks:\n"
             for task in active_urgent_tasks:
-                agenda_message += f"- {task['description']} (Context: {task['context']})\n"
+                task_description = self.__escapeMarkdown(task['description'])
+                task_context = self.__escapeMarkdown(task['context'])
+                agenda_message += f"- {task_description} (Context: {task_context})\n"
             agenda_message += "\n"
 
         # Display planned urgent tasks
         if planned_urgent_tasks:
             agenda_message += "# Planned Urgent tasks:\n"
-            for date, tasks in planned_tasks_by_date.items():
-                agenda_message += f"\n## {date}\n"
+            for date_key, tasks in planned_tasks_by_date.items():
+                escaped_date = self.__escapeMarkdown(date_key)
+                agenda_message += f"\n## {escaped_date}\n"
                 for task in tasks:
-                    agenda_message += f"- {task['description']} (Context: {task['context']})\n"
+                    task_description = self.__escapeMarkdown(task['description'])
+                    task_context = self.__escapeMarkdown(task['context'])
+                    agenda_message += f"- {task_description} (Context: {task_context})\n"
             agenda_message += "\n"
 
         # Display other tasks
         if other_tasks:
             agenda_message += "# Other tasks:\n"
             for task in other_tasks:
-                agenda_message += f"- {task['description']} (Context: {task['context']})\n"
+                task_description = self.__escapeMarkdown(task['description'])
+                task_context = self.__escapeMarkdown(task['context'])
+                agenda_message += f"- {task_description} (Context: {task_context})\n"
             agenda_message += "\n"
 
         agenda_message += "/list - return back to the task list\n"
@@ -317,10 +343,10 @@ class TelegramBotUserCommService(IUserCommService):
         chat_id = message.destination.id
         
         # Extract task information from the message
-        task_description = message.content.get('description', 'No description')
-        task_context = message.content.get('context', 'No context')
-        task_start_date = message.content.get('start_date', 'No start date')
-        task_due_date = message.content.get('due_date', 'No due date')
+        task_description = self.__escapeMarkdown(message.content.get('description', 'No description'))
+        task_context = self.__escapeMarkdown(message.content.get('context', 'No context'))
+        task_start_date = self.__escapeMarkdown(message.content.get('start_date', 'No start date'))
+        task_due_date = self.__escapeMarkdown(message.content.get('due_date', 'No due date'))
 
         task_total_cost = TimeAmount(str(message.content.get('total_cost', 0)) + "p")
         task_remaining_cost = TimeAmount(str(message.content.get('remaining_cost', 0)) + "p")
@@ -342,10 +368,13 @@ class TelegramBotUserCommService(IUserCommService):
         if 'heuristics' in message.content:
             task_info += "\n*Heuristic Values:*\n"
             for heuristic in message.content.get('heuristics', []):
-                task_info += f"- *{heuristic['name']}:* {heuristic['comment']}\n"
+                heuristic_name = self.__escapeMarkdown(heuristic['name'])
+                heuristic_comment = self.__escapeMarkdown(heuristic['comment'])
+                task_info += f"- *{heuristic_name}:* {heuristic_comment}\n"
         
         if 'metadata' in message.content:
-            task_info += f"\n*Metadata:*\n`{message.content['metadata']}`\n"
+            escaped_metadata = self.__escapeMarkdown(message.content['metadata'])
+            task_info += f"\n*Metadata:*\n`{escaped_metadata}`\n"
         
         # Add command options
         task_info += "\n/list - Return to list"
