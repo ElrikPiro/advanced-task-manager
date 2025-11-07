@@ -8,11 +8,17 @@ VALID_PROJECT_STATUS = [
     "on-hold",
 ]
 
+TaskJsonElementType = dict[str, str]
+TaskJsonListType = list[TaskJsonElementType]
+ProjectJsonElementType = dict[str, str]
+ProjectJsonListType = list[ProjectJsonElementType]
+TaskJsonType = dict[str, TaskJsonListType | ProjectJsonListType]
+
 
 class ITaskJsonProvider(ABC):
 
     @abstractmethod
-    def getJson(self) -> dict:
+    def getJson(self) -> TaskJsonType:
         """
         Gets the tasks json.
 
@@ -22,5 +28,5 @@ class ITaskJsonProvider(ABC):
         pass
 
     @abstractmethod
-    def saveJson(self, json: dict):
+    def saveJson(self, json: TaskJsonType) -> None:
         pass
