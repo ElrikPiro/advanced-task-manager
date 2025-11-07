@@ -1,6 +1,6 @@
 import json
 import os
-from Utils import FileContent
+from .Utils import FileContent
 from .Interfaces.IFileBroker import IFileBroker, FileRegistry, VaultRegistry
 
 

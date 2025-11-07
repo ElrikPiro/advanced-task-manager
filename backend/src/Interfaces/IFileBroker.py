@@ -1,6 +1,6 @@
 from abc import ABC, abstractmethod
 from enum import Enum
-from Utils import TaskJsonType, FileContent
+from ..Utils import TaskJsonType, FileContent
 
 
 # Enumeration of files that can be read

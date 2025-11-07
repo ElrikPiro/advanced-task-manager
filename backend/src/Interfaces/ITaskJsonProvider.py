@@ -1,7 +1,7 @@
 # class interface
 
 from abc import ABC, abstractmethod
-from Utils import TaskJsonType
+from ..Utils import TaskJsonType
 
 VALID_PROJECT_STATUS = [
     "open",
