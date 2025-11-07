@@ -771,7 +771,7 @@ class TelegramReportingService(IReportingService):
                 - Absolute date format (YYYY-MM-DDTHH:MM)
                 - Combined values separated by semicolons (e.g., "today;+2h")
         """
-        if value.startswith("+") or value.startswith("-") or value.startswith("now") or value.startswith("today") or value.startswith("tomorrow") or value.count(":") == 1:
+        if value.startswith("+") or value.startswith("-") or value.startswith("now") or value.startswith("today") or value.startswith("tomorrow") or (value.count(":") == 1 and value.count("T") == 0):
             start_timestamp = self.processRelativeTimeSet(task.getStart(), value)
             task.setStart(start_timestamp)
         else:
