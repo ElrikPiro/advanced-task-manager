@@ -6,8 +6,9 @@ ProjectJsonElementType = dict[str, str]
 ProjectJsonListType = list[ProjectJsonElementType]
 TaskJsonType: TypeAlias = dict[str, TaskJsonListType | ProjectJsonListType]
 
-MarkdownFileContent = str
-FileContent: TypeAlias = TaskJsonType | MarkdownFileContent  # StatisticsJsonType
+FileContentString = str
+FileContentJson = TaskJsonType  # StatisticsJsonType
+FileContent: TypeAlias = FileContentJson | FileContentString
 
 
 def stripDoc(docstring: str) -> str:

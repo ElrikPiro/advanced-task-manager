@@ -1,6 +1,6 @@
 from abc import ABC, abstractmethod
 from enum import Enum
-from ..Utils import TaskJsonType, FileContent
+from ..Utils import FileContentJson, FileContentString
 
 
 # Enumeration of files that can be read
@@ -23,15 +23,15 @@ class IFileBroker(ABC):
         pass
 
     @abstractmethod
-    def readFileContentJson(self, fileRegistry: FileRegistry) -> FileContent:
+    def readFileContentJson(self, fileRegistry: FileRegistry) -> FileContentJson:
         pass
 
     @abstractmethod
-    def writeFileContent(self, fileRegistry: FileRegistry, content: str) -> None:
+    def writeFileContent(self, fileRegistry: FileRegistry, content: FileContentString) -> None:
         pass
 
     @abstractmethod
-    def writeFileContentJson(self, fileRegistry: FileRegistry, content: FileContent) -> None:
+    def writeFileContentJson(self, fileRegistry: FileRegistry, content: FileContentJson) -> None:
         pass
 
     @abstractmethod
