@@ -5,6 +5,7 @@ for time amounts and time points, respectively.
 """
 
 import datetime
+import typing
 from math import ceil
 
 
@@ -15,33 +16,33 @@ class TimeAmount:
     It allows for easy manipulation of time amounts in a human-readable format.
     """
 
-    def __init__(self, str_representation: str):
+    def __init__(self, str_representation: str) -> None:
         conversionFunc = _convert_time_string_to_miliseconds if str_representation.find(":") == -1 else _convert_hour_string_to_miliseconds
         self.int_representation = conversionFunc(
             str_representation
         )
 
-    def __add__(self, other):
+    def __add__(self, other: "TimeAmount") -> "TimeAmount":
         result = TimeAmount("0.0p")
         result.int_representation = self.int_representation + other.int_representation
         return result
 
-    def __sub__(self, other):
+    def __sub__(self, other: "TimeAmount") -> "TimeAmount":
         result = TimeAmount("0.0p")
         result.int_representation = self.int_representation - other.int_representation
         return result
 
-    def __mul__(self, other):
+    def __mul__(self, other: "TimeAmount") -> "TimeAmount":
         result = TimeAmount("0.0p")
         result.int_representation = self.int_representation * other.int_representation
         return result
 
-    def __truediv__(self, other):
+    def __truediv__(self, other: "TimeAmount") -> "TimeAmount":
         result = TimeAmount("0.0p")
         result.int_representation = int(self.int_representation / other.int_representation)
         return result
 
-    def __str__(self):
+    def __str__(self) -> str:
         return _convert_seconds_to_time_string(self.int_representation)
 
     def as_pomodoros(self) -> float:
@@ -63,47 +64,48 @@ class TimePoint:
     It allows for easy manipulation of time points in a human-readable format.
     """
 
-    def __init__(self, datetime_representation: datetime.datetime):
+    def __init__(self, datetime_representation: datetime.datetime) -> None:
         self.datetime_representation = datetime_representation
 
-    def __add__(self, other: TimeAmount):
+    def __add__(self, other: TimeAmount) -> "TimePoint":
         return TimePoint(datetime.datetime.fromtimestamp(self.datetime_representation.timestamp() + other.int_representation / 1000))
 
-    def __eq__(self, other):
+    @typing.no_type_check
+    def __eq__(self, other) -> bool:
         return self.datetime_representation == other.datetime_representation
 
-    def __str__(self):
+    def __str__(self) -> str:
         fullFormat = self.datetime_representation.strftime("%Y-%m-%dT%H:%M")
         shortFormat = self.datetime_representation.strftime("%Y-%m-%d")
         return fullFormat if self.datetime_representation.hour > 0 or self.datetime_representation.minute > 0 else shortFormat
 
     @staticmethod
-    def now():
+    def now() -> "TimePoint":
         return TimePoint(datetime.datetime.now())
 
     @staticmethod
-    def today():
+    def today() -> "TimePoint":
         return TimePoint(datetime.datetime.now().replace(hour=0, minute=0, second=0, microsecond=0))
 
     @staticmethod
-    def tomorrow():
+    def tomorrow() -> "TimePoint":
         return TimePoint(datetime.datetime.now().replace(hour=0, minute=0, second=0, microsecond=0) + datetime.timedelta(days=1))
 
     @staticmethod
-    def from_string(string: str):
+    def from_string(string: str) -> "TimePoint":
         try:
             return TimePoint(datetime.datetime.strptime(string, "%Y-%m-%dT%H:%M"))
         except ValueError:
             return TimePoint(datetime.datetime.strptime(string, "%Y-%m-%d"))
 
     @staticmethod
-    def from_int(value: int):
+    def from_int(value: int) -> "TimePoint":
         return TimePoint(datetime.datetime.fromtimestamp(value / 1e3))
 
-    def as_int(self):
+    def as_int(self) -> int:
         return int(self.datetime_representation.timestamp() * 1e3)
 
-    def strip_time(self):
+    def strip_time(self) -> "TimePoint":
         return TimePoint(self.datetime_representation.replace(hour=0, minute=0, second=0, microsecond=0))
 
 

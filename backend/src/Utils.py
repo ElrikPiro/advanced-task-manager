@@ -1,4 +1,5 @@
 from typing import TypeAlias
+from dataclasses import dataclass
 
 TaskJsonElementType = dict[str, str]
 TaskJsonListType = list[TaskJsonElementType]
@@ -9,6 +10,16 @@ TaskJsonType: TypeAlias = dict[str, TaskJsonListType | ProjectJsonListType]
 FileContentString = str
 FileContentJson = TaskJsonType  # StatisticsJsonType
 FileContent: TypeAlias = FileContentJson | FileContentString
+
+@dataclass
+class FilterEntry:
+    name: str
+    description: str
+    enabled: bool
+
+
+FilterList: TypeAlias = list[FilterEntry]
+FilterListDict: TypeAlias = dict[str, FilterList]
 
 
 def stripDoc(docstring: str) -> str:

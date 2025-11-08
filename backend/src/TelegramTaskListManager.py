@@ -1,5 +1,6 @@
 from typing import List, Tuple
 
+from .Utils import FilterListDict, FilterEntry
 
 from .wrappers.TimeManagement import TimeAmount, TimePoint
 
@@ -174,18 +175,17 @@ class TelegramTaskListManager(ITaskListManager):
         algorithmIndex = int(messageText.split("_")[1]) - 1
         self.__selectedAlgorithm = self.__algorithmList[algorithmIndex]
 
-    def get_filter_list(self) -> dict:
-        filterList = []
-        for i, filter_tuple in enumerate(self.__filterList):
+    def get_filter_list(self) -> FilterListDict:
+        retval: FilterListDict = {}
+        filterList = retval.get("filterList", [])
+        for _, filter_tuple in enumerate(self.__filterList):
             name = filter_tuple[0]
             filter_obj = filter_tuple[1]
             enabled = filter_tuple[2]
             description = getattr(filter_obj, "getDescription", lambda: str(filter_obj))()
-            filterList.append({
-                "name": name,
-                "description": description,
-                "enabled": enabled
-            })
+            filterList.append(
+                FilterEntry(name, description, enabled)
+            )
         return {"filterList": filterList}
 
     def get_heuristic_list_legacy(self) -> str:

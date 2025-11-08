@@ -1,9 +1,10 @@
+from src.Utils import FilterEntry
 from src.wrappers.Messaging import IAgent, IMessage, RenderMode, UserAgent, InboundMessage
 from src.wrappers.interfaces.IUserCommService import IUserCommService
 
 
 class ShellUserCommService(IUserCommService):
-    def __init__(self, chatId: int, agent: IAgent):
+    def __init__(self, chatId: int, agent: IAgent) -> None:
         self.offset = 0
         self.chatId = int(chatId)
         self.agent = agent
@@ -20,17 +21,19 @@ class ShellUserCommService(IUserCommService):
             RenderMode.TASK_INFORMATION: self.__renderTaskInformation
         }
 
-    def __renderFilterList(self, message: IMessage):
+    def __renderFilterList(self, message: IMessage) -> None:
         self.__botPrint("(Info) Filter List Render Mode")
         filter_list = message.content.get('filterList', [])
-        if not filter_list:
+        if not isinstance(filter_list, list) or not filter_list:
             self.__botPrint("No filters available")
             return
         self.__botPrint("Available Filters:")
         for i, filter_info in enumerate(filter_list):
-            name = filter_info.get('name', f'Filter {i+1}')
-            description = filter_info.get('description', '')
-            enabled = filter_info.get('enabled', False)
+            if not isinstance(filter_info, FilterEntry):
+                continue
+            name = filter_info.name
+            description = filter_info.description
+            enabled = filter_info.enabled
             self.__botPrint(f" - (/filter_{i+1}) {name}: {description} [{'ENABLED' if enabled else 'DISABLED'}]")
 
     async def initialize(self) -> None:
@@ -78,10 +81,10 @@ class ShellUserCommService(IUserCommService):
         # show the first 128 bytes of the file with a decoration that indicates the file size
         print(f"File content: {data[:128]}... ({len(data)} bytes)")
 
-    def getBotAgent(self):
+    def getBotAgent(self) -> IAgent:
         return self.agent
 
-    def __renderTaskList(self, message: IMessage):
+    def __renderTaskList(self, message: IMessage) -> None:
         self.__botPrint("(Info) Task List Render Mode")
         # TODO: Implement actual task list rendering logic
         algorithm_name = message.content.get('algorithm_name', 'Unknown Algorithm')
@@ -98,11 +101,11 @@ class ShellUserCommService(IUserCommService):
             task_context = task.get('context', 'No context')
             print(f"  - Task ID: {task_id}, Description: {task_desc}, Context: {task_context}")
 
-    def __renderRawText(self, message: IMessage):
+    def __renderRawText(self, message: IMessage) -> None:
         self.__botPrint("(Info) Raw Text Render Mode")
         self.__botPrint(message.content.get('text', 'No message'))
 
-    def __notifyListUpdated(self, message: IMessage):
+    def __notifyListUpdated(self, message: IMessage) -> None:
         self.__botPrint("(Info) List Updated Render Mode")
 
         algorithm_desc = message.content.get('algorithm_desc', 'No description provided')
@@ -115,7 +118,7 @@ class ShellUserCommService(IUserCommService):
 
         self.__botPrint(f"Most priority task: {most_priority_task['description']} (ID: {most_priority_task['id']}, Context: {most_priority_task['context']})")
 
-    def __renderHeuristicList(self, message: IMessage):
+    def __renderHeuristicList(self, message: IMessage) -> None:
         self.__botPrint("(Info) Heuristic List Render Mode")
         heuristic_list = message.content.get('heuristicList', [])
 
@@ -127,7 +130,7 @@ class ShellUserCommService(IUserCommService):
         for i, heuristic in enumerate(heuristic_list):
             self.__botPrint(f" - (/heuristic_{i+1}) {heuristic['name']}: {heuristic['description']}")
 
-    def __renderAlgorithmList(self, message: IMessage):
+    def __renderAlgorithmList(self, message: IMessage) -> None:
         self.__botPrint("(Info) Algorithm List Render Mode")
         algorithm_list = message.content.get('algorithmList', [])
 
@@ -139,10 +142,10 @@ class ShellUserCommService(IUserCommService):
         for i, algorithm in enumerate(algorithm_list):
             self.__botPrint(f" - (/algorithm_{i+1}) {algorithm['name']}: {algorithm['description']}")
 
-    def __botPrint(self, text: str):
+    def __botPrint(self, text: str) -> None:
         print(f"[bot -> {self.chatId}]: {text}")
 
-    def __renderTaskStats(self, message: IMessage):
+    def __renderTaskStats(self, message: IMessage) -> None:
         self.__botPrint("(Info) Task Stats Render Mode")
         
         # Import time management classes
@@ -199,7 +202,7 @@ class ShellUserCommService(IUserCommService):
         
         self.__botPrint("\n/list - return back to the task list")
         
-    def __renderTaskAgenda(self, message: IMessage):
+    def __renderTaskAgenda(self, message: IMessage) -> None:
         self.__botPrint("(Info) Task Agenda Render Mode")
         
         # Get content from message
@@ -237,7 +240,7 @@ class ShellUserCommService(IUserCommService):
         
         self.__botPrint("/list - return back to the task list")
         
-    def __renderTaskInformation(self, message: IMessage):
+    def __renderTaskInformation(self, message: IMessage) -> None:
         self.__botPrint("(Info) Task Information Render Mode")
         
         # Extract task information from the message

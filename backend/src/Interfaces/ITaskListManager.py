@@ -2,6 +2,7 @@ from abc import ABC, abstractmethod
 from typing import List
 
 from ..wrappers.TimeManagement import TimePoint
+from ..Utils import FilterListDict
 
 from .ITaskProvider import ITaskProvider
 from .ITaskModel import ITaskModel
@@ -69,7 +70,7 @@ class ITaskListManager(ABC):
         pass
 
     @abstractmethod
-    def get_filter_list(self) -> dict:
+    def get_filter_list(self) -> FilterListDict:
         pass
 
     @abstractmethod

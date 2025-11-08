@@ -1,4 +1,5 @@
 from abc import ABC, abstractmethod
+from ..Utils import FilterList
 
 
 class RenderMode:
@@ -13,7 +14,7 @@ class RenderMode:
     TASK_INFORMATION = 8
 
 
-MessageContent = dict[str, str | list[str] | RenderMode]
+MessageContent = dict[str, str | list[str] | RenderMode | FilterList]
 
 
 class IAgent(ABC):
