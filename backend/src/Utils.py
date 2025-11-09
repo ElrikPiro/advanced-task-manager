@@ -11,6 +11,7 @@ FileContentString = str
 FileContentJson = TaskJsonType  # StatisticsJsonType
 FileContent: TypeAlias = FileContentJson | FileContentString
 
+
 @dataclass
 class FilterEntry:
     name: str
@@ -20,6 +21,40 @@ class FilterEntry:
 
 FilterList: TypeAlias = list[FilterEntry]
 FilterListDict: TypeAlias = dict[str, FilterList]
+
+
+@dataclass
+class TaskEntry:
+    id: str
+    description: str
+    context: str
+    start: str
+    due: str
+    severity: float
+    status: str
+    total_cost: float
+    effort_invested: float
+    heuristic_value: float
+
+
+@dataclass
+class ActiveFilterEntry:
+    name: str
+    index: int
+    description: str
+
+
+@dataclass
+class TaskListContent:
+    algorithm_name: str
+    algorithm_desc: str
+    sort_heuristic: str
+    tasks: list[TaskEntry]
+    total_tasks: int
+    current_page: int
+    total_pages: int
+    active_filters: list[ActiveFilterEntry]
+    interactive: bool
 
 
 def stripDoc(docstring: str) -> str:

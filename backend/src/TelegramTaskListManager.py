@@ -1,6 +1,6 @@
 from typing import List, Tuple
 
-from .Utils import FilterListDict, FilterEntry
+from .Utils import ActiveFilterEntry, FilterListDict, FilterEntry, TaskEntry, TaskListContent
 
 from .wrappers.TimeManagement import TimeAmount, TimePoint
 
@@ -276,7 +276,7 @@ class TelegramTaskListManager(ITaskListManager):
             "work_done_days": workDoneDays
         }
         
-    def get_task_list_content(self) -> dict:
+    def get_task_list_content(self) -> TaskListContent:
         """
         Returns a dictionary with the content needed to render a task list.
         This includes algorithm information, heuristic information, tasks, pagination details, etc.
@@ -289,61 +289,63 @@ class TelegramTaskListManager(ITaskListManager):
         page_tasks = task_list[start_index:end_index]
         
         # Format tasks with complete information
-        tasks = []
+        tasks: list[TaskEntry] = []
         for i, task in enumerate(page_tasks):
             # Get heuristic value for the task
-            heuristic_value = None
-            if len(self.__heuristicList) > 0:
+            heuristic_value: float = 0.0
+            if len(self.__heuristicList) > 0 and isinstance(self.__selectedHeuristic, Tuple):
                 heuristic_value = self.__selectedHeuristic[1].evaluate(task)
             
             # Use hash of description as ID if getId is not available
             task_id = getattr(task, "getId", lambda: str(i + 1))()
             
-            tasks.append({
-                "id": task_id,
-                "description": task.getDescription(),
-                "context": task.getContext(),
-                "start": str(task.getStart()),
-                "due": str(task.getDue()),
-                "severity": task.getSeverity(),
-                "status": task.getStatus(),
-                "total_cost": task.getTotalCost().as_pomodoros(),
-                "effort_invested": task.getInvestedEffort().as_pomodoros(),
-                "heuristic_value": heuristic_value
-            })
+            tasks.append(TaskEntry(
+                id=task_id,
+                description=task.getDescription(),
+                context=task.getContext(),
+                start=str(task.getStart()),
+                due=str(task.getDue()),
+                severity=task.getSeverity(),
+                status=task.getStatus(),
+                total_cost=task.getTotalCost().as_pomodoros(),
+                effort_invested=task.getInvestedEffort().as_pomodoros(),
+                heuristic_value=heuristic_value
+            ))
         
         # Get pagination information
         total_pages = (len(task_list) + self.__tasksPerPage - 1) // self.__tasksPerPage if self.__tasksPerPage > 0 else 1
         current_page = self.__taskListPage + 1
         
         # Get algorithm information
-        algorithm_name = self.__selectedAlgorithm[0] if len(self.__algorithmList) > 0 else "None"
-        algorithm_desc = self.__selectedAlgorithm[1].getDescription() if len(self.__algorithmList) > 0 else "No algorithm selected"
+        algorithm_name = self.__selectedAlgorithm[0] if len(self.__algorithmList) > 0 and isinstance(self.__selectedAlgorithm, Tuple) else "None"
+        algorithm_desc = self.__selectedAlgorithm[1].getDescription() if len(self.__algorithmList) > 0 and isinstance(self.__selectedAlgorithm, Tuple) else "No algorithm selected"
         
         # Get heuristic information
-        sort_heuristic = self.__selectedHeuristic[0] if len(self.__heuristicList) > 0 else "None"
+        sort_heuristic = self.__selectedHeuristic[0] if len(self.__heuristicList) > 0 and isinstance(self.__selectedHeuristic, Tuple) else "None"
         
         # Get active filters
-        active_filters = []
+        active_filters: list[ActiveFilterEntry] = []
         for i, filter_tuple in enumerate(self.__filterList):
             if filter_tuple[2]:  # If filter is enabled
-                active_filters.append({
-                    "name": filter_tuple[0],
-                    "index": i + 1,
-                    "description": getattr(filter_tuple[1], "getDescription", lambda: str(filter_tuple[1]))()
-                })
+                active_filters.append(
+                    ActiveFilterEntry(
+                        name=filter_tuple[0],
+                        index=i + 1,
+                        description=getattr(filter_tuple[1], "getDescription", lambda: str(filter_tuple[1]))()
+                    )
+                )
         
-        return {
-            "algorithm_name": algorithm_name,
-            "algorithm_desc": algorithm_desc,
-            "sort_heuristic": sort_heuristic,
-            "tasks": tasks,
-            "total_tasks": len(task_list),
-            "current_page": current_page,
-            "total_pages": total_pages,
-            "active_filters": active_filters,
-            "interactive": True  # Default to interactive mode
-        }
+        return TaskListContent(
+            algorithm_name=algorithm_name,
+            algorithm_desc=algorithm_desc,
+            sort_heuristic=sort_heuristic,
+            tasks=tasks,
+            total_tasks=len(task_list),
+            current_page=current_page,
+            total_pages=total_pages,
+            active_filters=active_filters,
+            interactive=True  # Default to interactive mode
+        )
 
     def render_task_information(self, task: ITaskModel, taskProvider: ITaskProvider, extended: bool) -> str:
         taskDescription = task.getDescription()

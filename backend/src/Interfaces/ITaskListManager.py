@@ -1,8 +1,9 @@
 from abc import ABC, abstractmethod
 from typing import List
 
-from ..wrappers.TimeManagement import TimePoint
-from ..Utils import FilterListDict
+from backend.src.TelegramTaskListManager import IAlgorithm
+from src.wrappers.TimeManagement import TimePoint
+from src.Utils import FilterListDict, TaskListContent
 
 from .ITaskProvider import ITaskProvider
 from .ITaskModel import ITaskModel
@@ -114,7 +115,7 @@ class ITaskListManager(ABC):
         pass
 
     @abstractmethod
-    def get_task_list_content(self) -> dict:
+    def get_task_list_content(self) -> TaskListContent:
         """
         Returns a dictionary with the content needed to render a task list.
         This includes algorithm information, heuristic information, tasks, pagination details, etc.
@@ -152,4 +153,9 @@ class ITaskListManager(ABC):
         Returns:
             A dictionary containing the task information data
         """
+        pass
+
+    @property
+    @abstractmethod
+    def selected_algorithm(self) -> IAlgorithm:
         pass

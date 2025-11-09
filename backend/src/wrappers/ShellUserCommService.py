@@ -1,4 +1,5 @@
-from src.Utils import FilterEntry
+from backend.src.HeuristicScheduling import ITaskModel
+from src.Utils import FilterEntry, TaskListContent
 from src.wrappers.Messaging import IAgent, IMessage, RenderMode, UserAgent, InboundMessage
 from src.wrappers.interfaces.IUserCommService import IUserCommService
 
@@ -86,24 +87,28 @@ class ShellUserCommService(IUserCommService):
 
     def __renderTaskList(self, message: IMessage) -> None:
         self.__botPrint("(Info) Task List Render Mode")
-        # TODO: Implement actual task list rendering logic
-        algorithm_name = message.content.get('algorithm_name', 'Unknown Algorithm')
-        algorithm_desc = message.content.get('algorithm_desc', 'No description provided')
-        sort_heuristic = message.content.get('sort_heuristic', 'No heuristic provided')
-        tasks = message.content.get('tasks', [])  # id, description, context
+        
+        content = message.content.get("taskListContent", None)
+        if not isinstance(content, TaskListContent):
+            raise Exception("Invalid output message")
+        
+        algorithm_name = content.algorithm_name
+        algorithm_desc = content.algorithm_desc
+        sort_heuristic = content.sort_heuristic
+        tasks = content.tasks
 
         # Print the algorithm details as a header
         print(f"Algorithm: {algorithm_name}\nDescription: {algorithm_desc}\nSort Heuristic: {sort_heuristic}\n")
         print("Tasks:")
         for task in tasks:
-            task_id = task.get('id', 'Unknown ID')
-            task_desc = task.get('description', 'No description')
-            task_context = task.get('context', 'No context')
+            task_id = task.id
+            task_desc = task.description
+            task_context = task.context
             print(f"  - Task ID: {task_id}, Description: {task_desc}, Context: {task_context}")
 
     def __renderRawText(self, message: IMessage) -> None:
         self.__botPrint("(Info) Raw Text Render Mode")
-        self.__botPrint(message.content.get('text', 'No message'))
+        self.__botPrint(str(message.content.get('text', 'No message')))
 
     def __notifyListUpdated(self, message: IMessage) -> None:
         self.__botPrint("(Info) List Updated Render Mode")
@@ -112,11 +117,11 @@ class ShellUserCommService(IUserCommService):
         most_priority_task = message.content.get('task', None)  # id, description, context
 
         self.__botPrint(f"List updated with algorithm: {algorithm_desc}")
-        if most_priority_task is None:
+        if not isinstance(most_priority_task, ITaskModel):
             self.__botPrint("No tasks available")
             return
 
-        self.__botPrint(f"Most priority task: {most_priority_task['description']} (ID: {most_priority_task['id']}, Context: {most_priority_task['context']})")
+        self.__botPrint(f"Most priority task: {most_priority_task.getDescription()} (ID: /task_1, Context: {most_priority_task.getContext()})")
 
     def __renderHeuristicList(self, message: IMessage) -> None:
         self.__botPrint("(Info) Heuristic List Render Mode")

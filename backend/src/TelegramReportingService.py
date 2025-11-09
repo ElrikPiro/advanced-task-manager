@@ -131,16 +131,17 @@ class TelegramReportingService(IReportingService):
         if self.chatId != 0 and self.hasFilteredListChanged():
             # Send the updated list
             filteredList = self._taskListManager.filtered_task_list
-            task = None
-            if len(filteredList) != 0:
-                task = {"id": filteredList[0].getProject(), "description": filteredList[0].getDescription(), "context": filteredList[0].getContext()}
+            task: ITaskModel
+            if len(filteredList) == 0:
+                return
 
+            task = filteredList[0]
             self._taskListManager.reset_pagination()
             message = self.__messageBuilder.createOutboundMessage(
                 source=self.bot.getBotAgent(),
                 destination=self.user,
                 content={
-                    "algorithm_desc": self._taskListManager.selected_algorithm.description,
+                    "algorithm_desc": self._taskListManager.selected_algorithm.getDescription(),
                     "task": task,
                 },
                 render_mode=RenderMode.LIST_UPDATED
@@ -847,13 +848,13 @@ class TelegramReportingService(IReportingService):
 
         # Get structured task list content
         task_list_content = self._taskListManager.get_task_list_content()
-        task_list_content["interactive"] = interactive
+        task_list_content.interactive = interactive
 
         # Create a structured message
         message = self.__messageBuilder.createOutboundMessage(
             source=self.bot.getBotAgent(),
             destination=self.user,
-            content=task_list_content,
+            content={"taskListContent": task_list_content},
             render_mode=RenderMode.TASK_LIST
         )
 
