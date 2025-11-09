@@ -1,7 +1,7 @@
 from abc import ABC, abstractmethod
 from typing import List
 
-from backend.src.TelegramTaskListManager import IAlgorithm
+from src.algorithms.Interfaces.IAlgorithm import IAlgorithm
 from src.wrappers.TimeManagement import TimePoint
 from src.Utils import FilterListDict, TaskListContent
 

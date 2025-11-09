@@ -1,4 +1,4 @@
-from backend.src.HeuristicScheduling import ITaskModel
+from src.HeuristicScheduling import ITaskModel
 from src.Utils import FilterEntry, TaskListContent
 from src.wrappers.Messaging import IAgent, IMessage, RenderMode, UserAgent, InboundMessage
 from src.wrappers.interfaces.IUserCommService import IUserCommService

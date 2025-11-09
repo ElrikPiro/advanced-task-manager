@@ -640,7 +640,8 @@ class TelegramReportingService(IReportingService):
             await self.sendTaskInformation(searchResults[0])
         elif len(searchResults) > 0:
             taskListContent = searchResultsManager.get_task_list_content()
-            taskListContent["interactive"] = False
+            # TaskListContent is a dataclass - modify the interactive field directly
+            taskListContent.interactive = False
             message = self.__messageBuilder.createOutboundMessage(
                 source=self.bot.getBotAgent(),
                 destination=self.user,

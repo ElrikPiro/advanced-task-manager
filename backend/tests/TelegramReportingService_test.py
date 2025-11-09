@@ -695,10 +695,22 @@ class TestTelegramReportingService(unittest.TestCase):
 
     def test_searchCommand_multiple_results(self) -> None:
         # Arrange
+        from src.Utils import TaskListContent
         mock_tasks = [MagicMock(), MagicMock()]
         mock_manager = MagicMock()
         mock_manager.filtered_task_list = mock_tasks
-        mock_manager.get_task_list_content.return_value = {"tasks": mock_tasks}
+        mock_content = TaskListContent(
+            algorithm_name="test_algorithm",
+            algorithm_desc="test description",
+            sort_heuristic="test_heuristic",
+            tasks=[],
+            total_tasks=2,
+            current_page=1,
+            total_pages=1,
+            active_filters=[],
+            interactive=True
+        )
+        mock_manager.get_task_list_content.return_value = mock_content
         self.task_list_manager.search_tasks.return_value = mock_manager
         self.messageBuilder.createOutboundMessage.return_value = MagicMock()
 
@@ -787,7 +799,18 @@ class TestTelegramReportingService(unittest.TestCase):
 
     def test_sendTaskList(self) -> None:
         # Arrange
-        mock_content = {"tasks": []}
+        from src.Utils import TaskListContent
+        mock_content = TaskListContent(
+            algorithm_name="test_algorithm",
+            algorithm_desc="test description",
+            sort_heuristic="test_heuristic",
+            tasks=[],
+            total_tasks=0,
+            current_page=1,
+            total_pages=1,
+            active_filters=[],
+            interactive=True
+        )
         self.task_list_manager.get_task_list_content.return_value = mock_content
         self.messageBuilder.createOutboundMessage.return_value = MagicMock()
 
@@ -1180,7 +1203,18 @@ class TestTelegramReportingService(unittest.TestCase):
 
     def test_sendTaskList_not_interactive(self) -> None:
         # Arrange
-        mock_content = {"tasks": []}
+        from src.Utils import TaskListContent
+        mock_content = TaskListContent(
+            algorithm_name="test_algorithm",
+            algorithm_desc="test description",
+            sort_heuristic="test_heuristic",
+            tasks=[],
+            total_tasks=0,
+            current_page=1,
+            total_pages=1,
+            active_filters=[],
+            interactive=True
+        )
         self.task_list_manager.get_task_list_content.return_value = mock_content
         self.messageBuilder.createOutboundMessage.return_value = MagicMock()
 
@@ -1206,9 +1240,10 @@ class TestTelegramReportingService(unittest.TestCase):
 
         # Assert
         self.telegramReportingService.hasFilteredListChanged.assert_called_once()
-        self.task_list_manager.reset_pagination.assert_called_once()
-        self.messageBuilder.createOutboundMessage.assert_called_once()
-        self.bot.sendMessage.assert_awaited_once()
+        # When filtered list is empty, the method returns early, so these should NOT be called
+        self.task_list_manager.reset_pagination.assert_not_called()
+        self.messageBuilder.createOutboundMessage.assert_not_called()
+        self.bot.sendMessage.assert_not_awaited()
 
     def test_projectCommand_valid_command(self) -> None:
         # Arrange
