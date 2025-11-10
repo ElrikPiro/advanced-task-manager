@@ -51,7 +51,7 @@ class TaskModel(ITaskModel):
     def getCalm(self) -> bool:
         return self._calm
 
-    def getProject(self):
+    def getProject(self) -> str:
         """
         Gets the project where the task is stored.
 
@@ -60,35 +60,35 @@ class TaskModel(ITaskModel):
         """
         return self._project
 
-    def setDescription(self, description: str):
+    def setDescription(self, description: str) -> None:
         self._description = description
 
-    def setContext(self, context: str):
+    def setContext(self, context: str) -> None:
         self._context = context
 
-    def setStart(self, start: TimePoint):
+    def setStart(self, start: TimePoint) -> None:
         self._start = start.as_int()
         if self._due < start.strip_time().as_int():
             self._due = start.strip_time().as_int()
 
-    def setDue(self, due: TimePoint):
+    def setDue(self, due: TimePoint) -> None:
         self._due = due.as_int()
         if self._start > due.as_int():
             self._start = due.as_int()
 
-    def setSeverity(self, severity: float):
+    def setSeverity(self, severity: float) -> None:
         self._severity = severity
 
-    def setTotalCost(self, totalCost: TimeAmount):
+    def setTotalCost(self, totalCost: TimeAmount) -> None:
         self._totalCost = totalCost.as_pomodoros()
 
-    def setInvestedEffort(self, investedEffort: TimeAmount):
+    def setInvestedEffort(self, investedEffort: TimeAmount) -> None:
         self._investedEffort = investedEffort.as_pomodoros()
 
-    def setStatus(self, status: str):
+    def setStatus(self, status: str) -> None:
         self._status = status
 
-    def setCalm(self, calm: bool):
+    def setCalm(self, calm: bool) -> None:
         self._calm = calm
 
     def calculateRemainingTime(self) -> TimeAmount:
@@ -100,5 +100,5 @@ class TaskModel(ITaskModel):
         d = ceil(d)
         return TimeAmount(f"{d}d")
 
-    def __eq__(self, other: ITaskModel):
-        return self._index == other._index
+    def __eq__(self, other: ITaskModel):  # type: ignore
+        return self._index == other._index  # type: ignore
