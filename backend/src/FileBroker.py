@@ -1,7 +1,7 @@
 import json
 import os
 import typing
-from .Utils import FileContent, FileContentJson
+from .Utils import FileContent, FileContentJson, StatisticsFileContentJson
 from .Interfaces.IFileBroker import IFileBroker, FileRegistry, VaultRegistry
 
 
@@ -60,6 +60,16 @@ class FileBroker(IFileBroker):
             self.__createFile(fileRegistry)
             retval: FileContentJson = json.loads(str(self.filePaths[fileRegistry]["default"]))
             return retval
+        
+    def readStatisticsFileContentJson(self) -> StatisticsFileContentJson:
+        try:
+            with open(str(self.filePaths[FileRegistry.STATISTICS_JSON]["path"]), "r", errors="ignore") as file:
+                return dict(json.load(file))
+        except FileNotFoundError:
+            print(f"File not found: {self.filePaths[FileRegistry.STATISTICS_JSON]['path']}")
+            self.__createFile(FileRegistry.STATISTICS_JSON)
+            retval: StatisticsFileContentJson = json.loads(str(self.filePaths[FileRegistry.STATISTICS_JSON]["default"]))
+            return retval
 
     def __createFile(self, fileRegistry: FileRegistry) -> None:
         with open(str(self.filePaths[fileRegistry]["path"]), 'w+') as file:
@@ -68,7 +78,7 @@ class FileBroker(IFileBroker):
     @typing.no_type_check
     def writeFileContentJson(self,
                              fileRegistry: FileRegistry,
-                             content: FileContent) -> None:
+                             content: FileContent | StatisticsFileContentJson) -> None:
         with open(str(self.filePaths[fileRegistry]["path"]), 'w+') as file:
             json.dump(dict(content), file, indent=4)
 

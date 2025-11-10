@@ -1,7 +1,7 @@
 from typing import TypeAlias
 from dataclasses import dataclass
 
-from src.HeuristicScheduling import TimeAmount
+from src.wrappers.TimeManagement import TimeAmount
 
 TaskJsonElementType = dict[str, str]
 TaskJsonListType = list[TaskJsonElementType]
@@ -83,6 +83,9 @@ class WorkLogEntry:
     timestamp: int
     work_units: float
     task: str
+
+
+StatisticsFileContentJson: TypeAlias = dict[str, float | list[WorkLogEntry]]
 
 
 def stripDoc(docstring: str) -> str:
