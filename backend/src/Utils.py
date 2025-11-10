@@ -88,7 +88,7 @@ class WorkLogEntry:
 StatisticsFileContentJson: TypeAlias = dict[str, float | list[WorkLogEntry]]
 
 
-def stripDoc(docstring: str) -> str:
+def stripDoc(docstring: str | None) -> str:
     """
     Strip the leading whitespace from the docstring.
 
@@ -97,6 +97,9 @@ def stripDoc(docstring: str) -> str:
     Returns:
         str: The docstring without leading whitespace
     """
+    if not isinstance(docstring, str):
+        return ""
+    
     sanitizedDocstring = docstring.strip()
     if not sanitizedDocstring:
         return sanitizedDocstring

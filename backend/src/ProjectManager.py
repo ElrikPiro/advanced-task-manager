@@ -1,4 +1,4 @@
-from typing import List
+from typing import Callable, List
 
 from .Utils import stripDoc
 from .Interfaces.IProjectManager import IProjectManager, ProjectCommands
@@ -13,13 +13,13 @@ class ObsidianProjectManager(IProjectManager):
     Handles project management operations and processes commands.
     """
 
-    def __init__(self, taskListProvider: ITaskProvider, fileBroker: IFileBroker):
+    def __init__(self, taskListProvider: ITaskProvider, fileBroker: IFileBroker) -> None:
         """
         Initialize the ProjectManager with an empty projects dictionary.
         """
         self.__taskListProvider = taskListProvider
         self.__fileBroker = fileBroker
-        self.commands: dict[str, callable] = {
+        self.commands: dict[str, Callable[[list[str]], str]] = {
             ProjectCommands.LIST.value: self._list_projects,
             ProjectCommands.CAT.value: self._cat_project,
             ProjectCommands.EDIT.value: self._edit_project_line,

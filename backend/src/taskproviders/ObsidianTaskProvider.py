@@ -57,7 +57,7 @@ class ObsidianTaskProvider(ITaskProvider):
     def getTaskList(self) -> List[ITaskModel]:
         return self.lastTaskList
 
-    def getTaskListAttribute(self, string: str) -> str:
+    def getTaskListAttribute(self, string: str) -> list[dict[str, str]]:
         try:
             return self.lastJson[string]
         except Exception:

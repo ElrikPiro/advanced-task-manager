@@ -75,11 +75,11 @@ class TaskProvider(ITaskProvider):
         """
         return TaskModel(index=index, description=dict_task["description"], context=dict_task["context"], start=dict_task["start"], due=dict_task["due"], severity=dict_task["severity"], totalCost=dict_task["totalCost"], investedEffort=dict_task["investedEffort"], status=dict_task["status"], calm=dict_task["calm"], project=dict_task.get("project", ""))
 
-    def getTaskListAttribute(self, string: str) -> str:
+    def getTaskListAttribute(self, string: str) -> list[dict[str, str]]:
         try:
             return self.dict_task_list[string]
         except Exception:
-            return ""
+            return []
 
     def saveTask(self, task: ITaskModel):
         """

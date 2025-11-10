@@ -11,7 +11,7 @@ class ITaskProvider(ABC):
         pass
 
     @abstractmethod
-    def getTaskListAttribute(self, string: str) -> str:
+    def getTaskListAttribute(self, string: str) -> list[dict[str, str]]:
         pass
 
     @abstractmethod
