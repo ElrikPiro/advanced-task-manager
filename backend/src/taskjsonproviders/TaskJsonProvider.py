@@ -2,6 +2,8 @@
 
 from typing import List
 
+from src.Utils import TaskJsonType
+
 from ..wrappers.TimeManagement import TimePoint
 from ..Interfaces.ITaskJsonProvider import ITaskJsonProvider
 from ..Interfaces.IFileBroker import IFileBroker, FileRegistry
@@ -12,21 +14,21 @@ class TaskJsonProvider(ITaskJsonProvider):
     def __init__(self, fileBroker: IFileBroker):
         self.fileBroker = fileBroker
 
-    def getJson(self) -> dict:
+    def getJson(self) -> TaskJsonType:
         """
         Reads the tasks json file and injects tasks for projects without any task assigned.
 
         Returns:
             dict: The tasks json.
         """
-        taskJson = self.fileBroker.readFileContentJson(FileRegistry.STANDALONE_TASKS_JSON)
+        taskJson: TaskJsonType = self.fileBroker.readFileContentJson(FileRegistry.STANDALONE_TASKS_JSON)
         taskJson = self.__injectOpenProjectTasks(taskJson)
         return taskJson
 
-    def saveJson(self, json: dict):
+    def saveJson(self, json: TaskJsonType) -> None:
         self.fileBroker.writeFileContentJson(FileRegistry.STANDALONE_TASKS_JSON, json)
 
-    def __injectOpenProjectTasks(self, taskJson: dict) -> dict:
+    def __injectOpenProjectTasks(self, taskJson: TaskJsonType) -> TaskJsonType:
         """
         Queries the json to find projects without any task assigned and adds a task to the task list with that project assigned.
 
@@ -43,7 +45,7 @@ class TaskJsonProvider(ITaskJsonProvider):
         for task in tasks:
             taskProject = task.get("project", None)
 
-            if task.get("project", None) is None or taskProject in projectsFound or task.get("status", "x") != " ":
+            if not isinstance(taskProject, str) or taskProject in projectsFound or task.get("status", "x") != " ":
                 continue
 
             projectsFound.append(taskProject)
