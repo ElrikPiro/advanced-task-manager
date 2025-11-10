@@ -189,7 +189,7 @@ class ObsidianVaultTaskJsonProvider(ITaskJsonProvider):
                     break
             return isPrefix
 
-        if is_prefix_of(track):
+        if not is_prefix_of(track):
             if self.__policies.context_missing_policy == "1":
                 return self.__policies.default_context
             raise ValueError("Track tag is missing and no default value is set.")

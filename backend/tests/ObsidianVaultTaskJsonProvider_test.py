@@ -3,18 +3,19 @@ from unittest.mock import MagicMock
 from src.taskjsonproviders.ObsidianVaultTaskJsonProvider import ObsidianVaultTaskJsonProvider
 from src.Interfaces.IFileBroker import IFileBroker, VaultRegistry
 from src.wrappers.TimeManagement import TimePoint
+from src.Utils import TaskDiscoveryPolicies
 
 
 class TestObsidianVaultTaskJsonProvider(unittest.TestCase):
 
     def setUp(self):
         self.mock_file_broker = MagicMock(spec=IFileBroker)
-        self.policies = {
-            "context_missing_policy": "0",
-            "date_missing_policy": "0",
-            "default_context": "inbox",
-            "categories_prefixes": ["work"],
-        }
+        self.policies = TaskDiscoveryPolicies(
+            context_missing_policy="0",
+            date_missing_policy="0",
+            default_context="inbox",
+            categories_prefixes=["work"]
+        )
         self.provider = ObsidianVaultTaskJsonProvider(self.mock_file_broker, self.policies)
 
     def test_empty_vault_returns_empty_dict(self):
