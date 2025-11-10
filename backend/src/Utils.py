@@ -57,6 +57,14 @@ class TaskListContent:
     interactive: bool
 
 
+@dataclass
+class TaskDiscoveryPolicies:
+    context_missing_policy: str
+    date_missing_policy: str
+    default_context: str
+    categories_prefixes: list[str]
+
+
 def stripDoc(docstring: str) -> str:
     """
     Strip the leading whitespace from the docstring.
