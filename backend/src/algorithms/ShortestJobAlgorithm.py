@@ -15,7 +15,7 @@ class ShortestJobAlgorithm(IAlgorithm):
     1. Sort tasks in ascending order of their execution times.
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         pass
 
     def apply(self, taskList: List[ITaskModel]) -> List[ITaskModel]:

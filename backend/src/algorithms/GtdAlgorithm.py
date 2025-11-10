@@ -25,7 +25,7 @@ class GtdAlgorithm(IAlgorithm):
     6. Return the filtered list of tasks.
     """
 
-    def __init__(self, orderedCategories: list[IFilter], orderedHeuristics: list[(IHeuristic, float)], defaultHeuristic: Tuple[IHeuristic, float]):
+    def __init__(self, orderedCategories: list[tuple[str, IFilter, bool]], orderedHeuristics: list[tuple[IHeuristic, float]], defaultHeuristic: Tuple[IHeuristic, float]) -> None:
         self.orderedCategories = orderedCategories
         self.orderedHeuristics = orderedHeuristics
         self.defaultHeuristic = defaultHeuristic
@@ -74,16 +74,16 @@ class GtdAlgorithm(IAlgorithm):
     def getDescription(self) -> str:
         return self.description
 
-    def _filterUrgents(self, tasks: List[ITaskModel]) -> list:
-        retval = []
+    def _filterUrgents(self, tasks: List[ITaskModel]) -> list[ITaskModel]:
+        retval: list[ITaskModel] = []
         for task in tasks:
             if task.getDue().as_int() < TimePoint.now().as_int():
                 retval.append(task)
         return retval
 
-    def _filterOrderedCategories(self, tasks: list[ITaskModel]) -> list:
+    def _filterOrderedCategories(self, tasks: list[ITaskModel]) -> list[ITaskModel]:
         filteredTasks = []
-        for description, category, active in self.orderedCategories:
+        for description, category, _ in self.orderedCategories:
             filteredTasks = category.filter(tasks)
             if len(filteredTasks) == 0:
                 continue
@@ -92,15 +92,15 @@ class GtdAlgorithm(IAlgorithm):
                 break
         return filteredTasks
 
-    def _filterByHeuristic(self, heuristic: IHeuristic, threshold: float, tasks: list[ITaskModel]) -> list:
-        retval = []
+    def _filterByHeuristic(self, heuristic: IHeuristic, threshold: float, tasks: list[ITaskModel]) -> list[ITaskModel]:
+        retval: list[ITaskModel] = []
         for task in tasks:
             if heuristic.evaluate(task) >= threshold:
                 retval.append(task)
         return retval
 
-    def _filterCalmTasks(self, tasks: list[ITaskModel], notCalm: bool = True) -> list:
-        retval = []
+    def _filterCalmTasks(self, tasks: list[ITaskModel], notCalm: bool = True) -> list[ITaskModel]:
+        retval: list[ITaskModel] = []
         for task in tasks:
             if task.getCalm() ^ notCalm:
                 retval.append(task)

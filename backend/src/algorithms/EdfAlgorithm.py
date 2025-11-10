@@ -16,7 +16,7 @@ class EdfAlgorithm(IAlgorithm):
     3. Return the sorted list of tasks.
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         pass
 
     def apply(self, taskList: List[ITaskModel]) -> List[ITaskModel]:
