@@ -1,6 +1,6 @@
 from typing import List, Tuple
 
-from .Utils import ActiveFilterEntry, FilterListDict, FilterEntry, TaskEntry, TaskListContent
+from .Utils import ActiveFilterEntry, AgendaContent, ExtendedTaskInformation, FilterListDict, FilterEntry, TaskEntry, TaskHeuristicsInfo, TaskInformation, TaskListContent, WorkloadStats
 
 from .wrappers.TimeManagement import TimeAmount, TimePoint
 
@@ -44,50 +44,50 @@ class TelegramTaskListManager(ITaskListManager):
                     newTaskList.append(task)
                     break
 
-        if len(self.__heuristicList) > 0:
+        if isinstance(self.__selectedHeuristic, tuple):
             heuristic: IHeuristic = self.__selectedHeuristic[1]
             sortedTaskList: List[Tuple[ITaskModel, float]] = heuristic.sort(newTaskList)
             newTaskList = [task for task, _ in sortedTaskList]
 
-        if len(self.__algorithmList) > 0:
+        if isinstance(self.__selectedAlgorithm, tuple):
             algorithm: IAlgorithm = self.__selectedAlgorithm[1]
             newTaskList = algorithm.apply(newTaskList)
 
         return newTaskList
 
     @property
-    def selected_task(self) -> ITaskModel:
+    def selected_task(self) -> ITaskModel | None:
         return self.__selectedTask
 
     @selected_task.setter
-    def selected_task(self, task: ITaskModel):
-        self.__selectedTask = task
+    def selected_task(self, task: ITaskModel | None) -> None:
+        self.__selectedTask = task  # type: ignore
 
-    def reset_pagination(self, tasksPerPage: int = 5):
+    def reset_pagination(self, tasksPerPage: int = 5) -> None:
         self.__taskListPage = 0
         self.__tasksPerPage = tasksPerPage
 
-    def next_page(self):
+    def next_page(self) -> None:
         self.__taskListPage += 1
 
-    def prior_page(self):
+    def prior_page(self) -> None:
         if self.__taskListPage > 0:
             self.__taskListPage -= 1
 
-    def select_task(self, message: str):
+    def select_task(self, message: str) -> None:
         task_list = self.filtered_task_list
         taskId = int(message.split("_")[1]) - 1
         offset = self.__taskListPage * self.__tasksPerPage
         if 0 <= taskId < len(task_list):
-            self.__selectedTask = task_list[taskId + offset]
+            self.__selectedTask = task_list[taskId + offset]  # type: ignore
         else:
             self.__selectedTask = None
 
-    def clear_selected_task(self):
+    def clear_selected_task(self) -> None:
         self.__selectedTask = None
 
-    def search_tasks(self, searchTerms: List[str]):
-        taskListSearched = []
+    def search_tasks(self, searchTerms: List[str]) -> "ITaskListManager":
+        taskListSearched: list[ITaskModel] = []
         for task in self.__taskModelList:
             for term in searchTerms:
                 if term.lower() in task.getDescription().lower() and task.getStatus() != "x":
@@ -95,33 +95,6 @@ class TelegramTaskListManager(ITaskListManager):
                     break
 
         return TelegramTaskListManager(taskListSearched, [], [], self.__filterList, self.__statistics_service, self.__tasksPerPage)
-
-    def render_task_list_str_legacy(self, interactive: bool = True) -> str:
-        task_list = self.filtered_task_list
-        interactiveId = "/task_" if interactive else ""
-
-        subTaskList = task_list[self.__taskListPage * self.__tasksPerPage: (self.__taskListPage + 1) * self.__tasksPerPage]
-        subTaskListDescriptions = [(f"{interactiveId}{i+1}: {task.getDescription()}") for i, task in enumerate(subTaskList)]
-
-        taskListString = "\n".join(subTaskListDescriptions)
-        if interactive:
-            totalPages = (len(task_list) + self.__tasksPerPage - 1) // self.__tasksPerPage
-            taskListString += "\n\nPage " + str(self.__taskListPage + 1) + " of " + str(totalPages) + "\n"
-            taskListString += "/next - Next page\n/previous - Previous page"
-            taskListString += "\n\n/search [search terms] - Search for tasks"
-            taskListString += "\n/agenda - Show today's agenda"
-            taskListString += "\n/filter - configure filters"
-
-        if len(self.__heuristicList) > 0:
-            taskListString += "\n\nselected /heuristic: " + self.__selectedHeuristic[0]
-
-        if len(self.__algorithmList) > 0:
-            taskListString += "\n\nselected /algorithm: " + self.__selectedAlgorithm[0] + " ("
-            taskListString += self.__selectedAlgorithm[1].getDescription() + ")"
-
-        taskListString = self.render_filter_summary(taskListString)
-
-        return taskListString
 
     def render_filter_summary(self, taskListString: str) -> str:
         isOnlyFirstFilterActive = len([f for f in self.__filterList if f[2]]) == 1 and self.__filterList[0][2]
@@ -132,15 +105,15 @@ class TelegramTaskListManager(ITaskListManager):
                     taskListString += f"\n/filter_{i+1}: {filter[0]}"
         return taskListString
 
-    def update_taskList(self, taskModelList: List[ITaskModel]):
-        self.__taskModelList: List[ITaskModel] = taskModelList
+    def update_taskList(self, taskModelList: List[ITaskModel]) -> None:
+        self.__taskModelList = taskModelList
         self.__correctSelectedTask()
 
-    def add_task(self, task: ITaskModel):
+    def add_task(self, task: ITaskModel) -> None:
         self.__taskModelList.append(task)
         self.__correctSelectedTask()
 
-    def __correctSelectedTask(self):
+    def __correctSelectedTask(self) -> None:
         if self.__selectedTask is not None:
             lastSelectedTask = self.__selectedTask
             for task in self.__taskModelList:
@@ -149,21 +122,18 @@ class TelegramTaskListManager(ITaskListManager):
                     break
 
     @property
-    def selected_algorithm(self):
+    def selected_algorithm(self) -> None | IAlgorithm:
         """Returns the currently selected algorithm."""
         if not self.__selectedAlgorithm:
             return None
         
-        # Create a wrapper object with a description property
-        algorithm = self.__selectedAlgorithm[1]
-        algorithm.description = algorithm.getDescription()
-        return algorithm
+        return self.__selectedAlgorithm[1]
 
-    def select_heuristic(self, messageText: str):
+    def select_heuristic(self, messageText: str) -> None:
         heuristicIndex = int(messageText.split("_")[1]) - 1
         self.__selectedHeuristic = self.__heuristicList[heuristicIndex]
 
-    def select_filter(self, messageText: str):
+    def select_filter(self, messageText: str) -> None:
         filterIndex = int(messageText.split("_")[1]) - 1
         self.__filterList[filterIndex] = (
             self.__filterList[filterIndex][0],
@@ -171,7 +141,7 @@ class TelegramTaskListManager(ITaskListManager):
             not self.__filterList[filterIndex][2]
         )
 
-    def select_algorithm(self, messageText: str):
+    def select_algorithm(self, messageText: str) -> None:
         algorithmIndex = int(messageText.split("_")[1]) - 1
         self.__selectedAlgorithm = self.__algorithmList[algorithmIndex]
 
@@ -188,15 +158,9 @@ class TelegramTaskListManager(ITaskListManager):
             )
         return {"filterList": filterList}
 
-    def get_heuristic_list_legacy(self) -> str:
-        heuristicList = "\n".join([f"/heuristic_{i+1}: {heuristic[0]}" for i, heuristic in enumerate(self.__heuristicList)])
-        heuristicList += "\n\n/filter - List filter options"
-        heuristicList += "\n/algorithm - List algorithm options"
-        return heuristicList
-
-    def get_heuristic_list(self) -> dict:  # Dict must contain heuristic id, name and description
-        heuristicList = []
-        for i, heuristic in enumerate(self.__heuristicList):
+    def get_heuristic_list(self) -> dict[str, list[dict[str, str]]]:  # Dict must contain heuristic id, name and description
+        heuristicList: list[dict[str, str]] = []
+        for _, heuristic in enumerate(self.__heuristicList):
             heuristicName, heuristicInstance = heuristic
             heuristicList.append({
                 "name": heuristicName,
@@ -204,15 +168,9 @@ class TelegramTaskListManager(ITaskListManager):
             })
         return {"heuristicList": heuristicList}
 
-    def get_algorithm_list_legacy(self) -> str:
-        algorithmList = "\n".join([f"/algorithm_{i+1}: {algorithm[0]}" for i, algorithm in enumerate(self.__algorithmList)])
-        algorithmList += "\n\n/heuristic - List heuristic options"
-        algorithmList += "\n/filter - List filter options"
-        return algorithmList
-    
-    def get_algorithm_list(self) -> dict:  # Dict must contain algorithm id, name and description
-        algorithmList = []
-        for i, algorithm in enumerate(self.__algorithmList):
+    def get_algorithm_list(self) -> dict[str, list[dict[str, str]]]:  # Dict must contain algorithm id, name and description
+        algorithmList: list[dict[str, str]] = []
+        for _, algorithm in enumerate(self.__algorithmList):
             algorithmName, algorithmInstance = algorithm
             algorithmList.append({
                 "name": algorithmName,
@@ -220,61 +178,8 @@ class TelegramTaskListManager(ITaskListManager):
             })
         return {"algorithmList": algorithmList}
 
-    def get_list_stats_legacy(self) -> str:
-        statsMessage = "Work done in the last 7 days:\n"
-        statsMessage += "`|    Date    | Work  Done |`\n"
-        statsMessage += "`|------------|------------|`\n"
-        totalWork: TimeAmount = TimeAmount("0p")
-        for i in range(7):
-            date: TimePoint = TimePoint.today() + TimeAmount(f"-{i}d")
-            workDone: TimeAmount = self.__statistics_service.getWorkDone(date)
-            totalWork += workDone
-            statsMessage += f"`| {date} |    {round(workDone.as_pomodoros(), 2)}    |`\n"
-        # add average work done per day
-        statsMessage += "`|------------|------------|`\n"
-        statsMessage += f"`|   Average  |    {round(totalWork.as_pomodoros()/7, 2)}    |`\n"
-        statsMessage += "`|------------|------------|`\n\n"
-
-        statsMessage += "Workload statistics:\n"
-        workloadStats = self.__statistics_service.getWorkloadStats(self.__taskModelList)
-        workload = workloadStats[0]
-        remEffort = workloadStats[1]
-        heuristicValue = workloadStats[2]
-        heuristicName = workloadStats[3]
-        offender = workloadStats[4]
-        offenderMax = workloadStats[5]
-
-        statsMessage += f"`current workload: {workload} per day`\n"
-        statsMessage += f"    `max Offender: '{offender}' with {offenderMax} per day`\n"
-        statsMessage += f"`total remaining effort: {remEffort}`\n"
-        statsMessage += f"`max {heuristicName}: {heuristicValue}`\n\n"
-
-        log = self.__statistics_service.getWorkDoneLog()
-        statsMessage += "Work done log:\n"
-        for entry in log:
-            task = entry["task"]
-            work_units = entry["work_units"]
-            timestamp = TimePoint.from_int(entry["timestamp"])
-            timeAmount = TimeAmount(f"{work_units}p")
-            statsMessage += f"`{timestamp}: {timeAmount} on {task}`\n"
-
-        statsMessage += "/list - return back to the task list"
-        return statsMessage
-
-    def get_list_stats(self) -> dict:
-        stats = self.__statistics_service.getWorkloadStats(self.__taskModelList)
-        workload, remEffort, heuristicValue, heuristicName, offender, offenderMax, workDoneDays = stats
-
-        return {
-            "workload": workload,
-            "remaining_effort": remEffort,
-            "heuristic_value": heuristicValue,
-            "heuristic_name": heuristicName,
-            "offender": offender,
-            "offender_max": offenderMax,
-            "work_done_log": self.__statistics_service.getWorkDoneLog(),
-            "work_done_days": workDoneDays
-        }
+    def get_list_stats(self) -> WorkloadStats:
+        return self.__statistics_service.getWorkloadStats(self.__taskModelList)
         
     def get_task_list_content(self) -> TaskListContent:
         """
@@ -293,7 +198,7 @@ class TelegramTaskListManager(ITaskListManager):
         for i, task in enumerate(page_tasks):
             # Get heuristic value for the task
             heuristic_value: float = 0.0
-            if len(self.__heuristicList) > 0 and isinstance(self.__selectedHeuristic, Tuple):
+            if len(self.__heuristicList) > 0 and isinstance(self.__selectedHeuristic, tuple):
                 heuristic_value = self.__selectedHeuristic[1].evaluate(task)
             
             # Use hash of description as ID if getId is not available
@@ -317,11 +222,11 @@ class TelegramTaskListManager(ITaskListManager):
         current_page = self.__taskListPage + 1
         
         # Get algorithm information
-        algorithm_name = self.__selectedAlgorithm[0] if len(self.__algorithmList) > 0 and isinstance(self.__selectedAlgorithm, Tuple) else "None"
-        algorithm_desc = self.__selectedAlgorithm[1].getDescription() if len(self.__algorithmList) > 0 and isinstance(self.__selectedAlgorithm, Tuple) else "No algorithm selected"
+        algorithm_name = self.__selectedAlgorithm[0] if len(self.__algorithmList) > 0 and isinstance(self.__selectedAlgorithm, tuple) else "None"
+        algorithm_desc = self.__selectedAlgorithm[1].getDescription() if len(self.__algorithmList) > 0 and isinstance(self.__selectedAlgorithm, tuple) else "No algorithm selected"
         
         # Get heuristic information
-        sort_heuristic = self.__selectedHeuristic[0] if len(self.__heuristicList) > 0 and isinstance(self.__selectedHeuristic, Tuple) else "None"
+        sort_heuristic = self.__selectedHeuristic[0] if len(self.__heuristicList) > 0 and isinstance(self.__selectedHeuristic, tuple) else "None"
         
         # Get active filters
         active_filters: list[ActiveFilterEntry] = []
@@ -347,88 +252,23 @@ class TelegramTaskListManager(ITaskListManager):
             interactive=True  # Default to interactive mode
         )
 
-    def render_task_information(self, task: ITaskModel, taskProvider: ITaskProvider, extended: bool) -> str:
-        taskDescription = task.getDescription()
-        taskContext = task.getContext()
-        taskSeverity = task.getSeverity()
-        taskStartDate: TimePoint = task.getStart()
-        taskDueDate: TimePoint = task.getDue()
-        taskRemainingCost: TimeAmount = TimeAmount(f"{max(task.getTotalCost().as_pomodoros(), 0.0)}p")
-        taskEffortInvested: float = max(task.getInvestedEffort().as_pomodoros(), 0)
-        taskTotalCost = TimeAmount(f"{max(task.getTotalCost().as_pomodoros(), 0.0)+taskEffortInvested}p")
-
-        taskInformation = f"Task: {taskDescription}\nContext: {taskContext}\nStart Date: {taskStartDate}\nDue Date: {taskDueDate}\nTotal Cost: {taskTotalCost}\nRemaining: {taskRemainingCost}\nSeverity: {taskSeverity}"
-
-        if extended:
-            for i, heuristic in enumerate(self.__heuristicList):
-                heuristicName, heuristicInstance = heuristic
-                taskInformation += f"\n{heuristicName}: " + heuristicInstance.getComment(task)
-
-            taskInformation += f"\n\n<b>Metadata:</b><code>{taskProvider.getTaskMetadata(task)}</code>"
-
-        taskInformation += "\n\n/list - Return to list"
-        taskInformation += "\n/done - Mark task as done"
-        taskInformation += "\n/set [param] [value] - Set task parameter"
-        taskInformation += "\n\tparameters: description, context, start, due, severity, total\\_cost, effort\\_invested, calm"
-        taskInformation += "\n/work [work_units] - invest work units in the task"
-        taskInformation += "\n/snooze - snooze the task for 5 minutes"
-        taskInformation += "\n/info - Show extended information"
-        return taskInformation
-
-    def render_day_agenda(self, date: TimePoint, categories: list[dict]) -> str:
-        agenda_str = f"Agenda for {date}:\n\n"
-        urgent_tasks = self.__filter_urgent_tasks(date)
-        currentUrgentTasks = self.__filter_current_tasks(urgent_tasks)
-
-        current_urgents_by_categories = self.__sort_by_categories(currentUrgentTasks, categories)
-        agenda_str = self.__render_active_urgent_tasks(agenda_str, current_urgents_by_categories)
-
-        urgent_tasks_by_start = self.__filter_and_sort_future_tasks(urgent_tasks, date)
-        agenda_str = self.__render_planned_urgent_tasks(agenda_str, urgent_tasks_by_start)
-
-        tasks_with_high_heuristic = self.__filter_high_heuristic_tasks(urgent_tasks)
-        agenda_str = self.__render_other_tasks(agenda_str, tasks_with_high_heuristic)
-
-        return agenda_str
-
-    def __render_planned_urgent_tasks(self, agenda_str, urgent_tasks_by_start: List[ITaskModel]):
-        if len(urgent_tasks_by_start) > 0:
-            agenda_str += "# Planned Urgent tasks:"
-            last_date: str = None
-            for task in urgent_tasks_by_start:
-                current_date = str(task.getStart())
-                if last_date is None or current_date != last_date:
-                    last_date = current_date
-                    agenda_str += f"\n\n## {last_date}"
-                agenda_str += f"\n\t- {task.getDescription()}"
-            agenda_str += "\n\n"
-        return agenda_str
-
-    def __render_active_urgent_tasks(self, agenda_str, current_urgents_by_categories):
-        if len(current_urgents_by_categories) > 0:
-            agenda_str += "# Active Urgent tasks:\n"
-            for task in current_urgents_by_categories:
-                agenda_str += f"\n{task.getDescription()}"
-            agenda_str += "\n\n"
-        return agenda_str
-
     def __filter_current_tasks(self, tasks: List[ITaskModel]) -> List[ITaskModel]:
-        current_tasks = []
+        current_tasks: List[ITaskModel] = []
         for task in tasks:
             if task.getStatus() != "x" and task.getStart().as_int() < TimePoint.now().as_int():
                 current_tasks.append(task)
         return current_tasks
 
-    def __sort_by_categories(self, tasks: List[ITaskModel], categories: list[dict]) -> List[ITaskModel]:
-        sorted_tasks = []
+    def __sort_by_categories(self, tasks: List[ITaskModel], categories: list[dict[str, str]]) -> List[ITaskModel]:
+        sorted_tasks: List[ITaskModel] = []
         for category in categories:
             for task in tasks:
                 if task.getContext().startswith(category["prefix"]):
                     sorted_tasks.append(task)
         return sorted_tasks
 
-    def __filter_urgent_tasks(self, date):
-        urgent_tasks = []
+    def __filter_urgent_tasks(self, date: TimePoint) -> list[ITaskModel]:
+        urgent_tasks: list[ITaskModel] = []
         deadline: TimePoint = ((date + TimeAmount("1d")) + TimeAmount("-1s"))
         for task in self.__taskModelList:
             if task.getDue().as_int() < deadline.as_int() and task.getStatus() != "x":
@@ -437,16 +277,16 @@ class TelegramTaskListManager(ITaskListManager):
 
     def __filter_and_sort_future_tasks(self, tasks: List[ITaskModel], date: TimePoint) -> List[ITaskModel]:
         sorted_tasks = sorted(tasks, key=lambda x: x.getStart().as_int())
-        planned_tasks = []
+        planned_tasks: List[ITaskModel] = []
         deadline: TimePoint = ((date + TimeAmount("1d")) + TimeAmount("-1s"))
         for task in sorted_tasks:
             if task.getStart().as_int() > TimePoint.now().as_int() and task.getStart().as_int() < deadline.as_int():
                 planned_tasks.append(task)
         return planned_tasks
 
-    def __filter_high_heuristic_tasks(self, urgent_tasks) -> List[ITaskModel]:
-        high_heuristic_tasks = []
-        taskModelListTupled: List[Tuple[ITaskModel, float]] = self.__selectedHeuristic[1].sort(self.__taskModelList)
+    def __filter_high_heuristic_tasks(self, urgent_tasks: List[ITaskModel]) -> List[ITaskModel]:
+        high_heuristic_tasks: List[ITaskModel] = []
+        taskModelListTupled: List[Tuple[ITaskModel, float]] = self.__selectedHeuristic[1].sort(self.__taskModelList) if isinstance(self.__selectedHeuristic, tuple) else []
         taskModelList: List[ITaskModel] = [task for task, _ in taskModelListTupled]
 
         for task in taskModelList:
@@ -455,14 +295,7 @@ class TelegramTaskListManager(ITaskListManager):
 
         return high_heuristic_tasks
 
-    def __render_other_tasks(self, agenda_str, other_tasks):
-        if len(other_tasks) > 0:
-            agenda_str += "# Other tasks:\n"
-            agenda_str += TelegramTaskListManager(other_tasks, self.__algorithmList, self.__heuristicList, self.__filterList, self.__statistics_service).render_task_list_str_legacy(False)
-            agenda_str += "\n\n"
-        return agenda_str
-        
-    def get_day_agenda_content(self, date: TimePoint, categories: list[dict]) -> dict:
+    def get_day_agenda_content(self, date: TimePoint, categories: list[dict[str, str]]) -> AgendaContent:
         """
         Returns a dictionary with the content needed to render a day agenda.
         This includes active urgent tasks, planned urgent tasks, and other tasks.
@@ -482,34 +315,46 @@ class TelegramTaskListManager(ITaskListManager):
         other_tasks = self.__filter_high_heuristic_tasks(urgent_tasks)
         
         # Format the active urgent tasks
-        active_urgent_tasks = []
+        active_urgent_tasks: list[TaskEntry] = []
         for i, task in enumerate(current_urgents_by_categories):
             # Use task description hash as ID if getId is not available
             task_id = getattr(task, "getId", lambda: f"active_{i}")()
             
-            active_urgent_tasks.append({
-                "id": task_id,
-                "description": task.getDescription(),
-                "context": task.getContext(),
-                "due": str(task.getDue()),
-                "start": str(task.getStart())
-            })
-            
+            active_urgent_tasks.append(
+                TaskEntry(
+                    id=task_id,
+                    description=task.getDescription(),
+                    context=task.getContext(),
+                    start=str(task.getStart()),
+                    due=str(task.getDue()),
+                    severity=task.getSeverity(),
+                    status=task.getStatus(),
+                    total_cost=task.getTotalCost().as_pomodoros(),
+                    effort_invested=task.getInvestedEffort().as_pomodoros(),
+                    heuristic_value=0.0
+                )
+            )
+
         # Format the planned urgent tasks
-        planned_urgent_tasks = []
-        planned_tasks_by_date = {}
+        planned_urgent_tasks: list[TaskEntry] = []
+        planned_tasks_by_date: dict[str, list[TaskEntry]] = {}
         
         for i, task in enumerate(urgent_tasks_by_start):
             # Use task description hash as ID if getId is not available
             task_id = getattr(task, "getId", lambda: f"planned_{i}")()
             
-            task_data = {
-                "id": task_id,
-                "description": task.getDescription(),
-                "context": task.getContext(),
-                "due": str(task.getDue()),
-                "start": str(task.getStart())
-            }
+            task_data = TaskEntry(
+                id=task_id,
+                description=task.getDescription(),
+                context=task.getContext(),
+                start=str(task.getStart()),
+                due=str(task.getDue()),
+                severity=task.getSeverity(),
+                status=task.getStatus(),
+                total_cost=task.getTotalCost().as_pomodoros(),
+                effort_invested=task.getInvestedEffort().as_pomodoros(),
+                heuristic_value=0.0
+            )
             
             start_date = str(task.getStart())
             if start_date not in planned_tasks_by_date:
@@ -519,21 +364,28 @@ class TelegramTaskListManager(ITaskListManager):
             planned_urgent_tasks.append(task_data)
             
         # Format the other tasks
-        other_tasks_formatted = []
+        other_tasks_formatted: list[TaskEntry] = []
         for i, task in enumerate(other_tasks):
             # Use task description hash as ID if getId is not available
             task_id = getattr(task, "getId", lambda: f"other_{i}")()
             
-            other_tasks_formatted.append({
-                "id": task_id,
-                "description": task.getDescription(),
-                "context": task.getContext(),
-                "due": str(task.getDue()),
-                "start": str(task.getStart())
-            })
+            other_tasks_formatted.append(
+                TaskEntry(
+                    id=task_id,
+                    description=task.getDescription(),
+                    context=task.getContext(),
+                    start=str(task.getStart()),
+                    due=str(task.getDue()),
+                    severity=task.getSeverity(),
+                    status=task.getStatus(),
+                    total_cost=task.getTotalCost().as_pomodoros(),
+                    effort_invested=task.getInvestedEffort().as_pomodoros(),
+                    heuristic_value=0.0
+                )
+            )
             
         # If needed, get task list information for other tasks
-        other_task_list_info = None
+        other_task_list_info: TaskListContent | None = None
         if other_tasks:
             other_task_manager = TelegramTaskListManager(
                 other_tasks,
@@ -543,19 +395,19 @@ class TelegramTaskListManager(ITaskListManager):
                 self.__statistics_service
             )
             other_task_list_info = other_task_manager.get_task_list_content()
-            other_task_list_info["interactive"] = False
-        
+            other_task_list_info.interactive = False
+
         # Return the complete agenda data structure
-        return {
-            "date": str(date),
-            "active_urgent_tasks": active_urgent_tasks,
-            "planned_urgent_tasks": planned_urgent_tasks,
-            "planned_tasks_by_date": planned_tasks_by_date,
-            "other_tasks": other_tasks_formatted,
-            "other_task_list_info": other_task_list_info
-        }
+        return AgendaContent(
+            date,
+            active_urgent_tasks,
+            planned_urgent_tasks,
+            planned_tasks_by_date,
+            other_tasks_formatted,
+            other_task_list_info
+        )
         
-    def get_task_information(self, task: ITaskModel, taskProvider: ITaskProvider, extended: bool) -> dict:
+    def get_task_information(self, task: ITaskModel, taskProvider: ITaskProvider, extended: bool) -> TaskInformation:
         """
         Returns a dictionary with the content needed to render task information.
         This includes task details like description, context, start date, due date,
@@ -579,31 +431,36 @@ class TelegramTaskListManager(ITaskListManager):
         total_cost = remaining_cost + effort_invested
         
         # Basic task information
-        task_info = {
-            "id": task_id,
-            "description": task.getDescription(),
-            "context": task.getContext(),
-            "start_date": str(task.getStart()),
-            "due_date": str(task.getDue()),
-            "severity": task.getSeverity(),
-            "total_cost": total_cost,
-            "remaining_cost": remaining_cost,
-            "effort_invested": effort_invested,
-            "status": task.getStatus(),
-            "calm": task.getCalm()
-        }
+        task_info = TaskEntry(
+            id=task_id,
+            description=task.getDescription(),
+            context=task.getContext(),
+            start=str(task.getStart()),
+            due=str(task.getDue()),
+            severity=task.getSeverity(),
+            status=task.getStatus(),
+            total_cost=total_cost,
+            effort_invested=task.getInvestedEffort().as_pomodoros(),
+            heuristic_value=0.0
+        )
         
         # Extended information (heuristics and metadata)
+        extendedTaskInfo = None
+
         if extended:
-            heuristics = []
+            heuristics: list[TaskHeuristicsInfo] = []
             for heuristic_name, heuristic_instance in self.__heuristicList:
-                heuristics.append({
-                    "name": heuristic_name,
-                    "value": heuristic_instance.evaluate(task),
-                    "comment": heuristic_instance.getComment(task)
-                })
+                heuristics.append(
+                    TaskHeuristicsInfo(
+                        heuristic_name,
+                        heuristic_instance.evaluate(task),
+                        heuristic_instance.getComment(task)
+                    )
+                )
             
-            task_info["heuristics"] = heuristics
-            task_info["metadata"] = taskProvider.getTaskMetadata(task)
+            extendedTaskInfo = ExtendedTaskInformation(
+                heuristics=heuristics,
+                metadata=taskProvider.getTaskMetadata(task)
+            )
         
-        return task_info
+        return TaskInformation(task_info, extendedTaskInfo)

@@ -85,6 +85,9 @@ class StatisticsService(IStatisticsService):
             if isinstance(value, float)
         }
 
+        log_list = self.workDone.get("log", [])
+        assert isinstance(log_list, list)
+
         return WorkloadStats(
             workload=workload,
             remainingEffort=remainingEffort,
@@ -92,7 +95,8 @@ class StatisticsService(IStatisticsService):
             HeuristicName=HeuristicName,
             offender=offender if isinstance(offender, str) else "None",
             offenderMax=offenderMax,
-            workDone=filtered_work_done
+            workDone=filtered_work_done,
+            workDoneLog=log_list
         )
 
     def getWorkDoneLog(self) -> list[WorkLogEntry]:

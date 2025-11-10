@@ -31,7 +31,7 @@ class ITaskProvider(ABC):
         pass
 
     @abstractmethod
-    def compare(self, listA: list[ITaskModel], listB: list[ITaskModel]) -> bool:
+    def compare(self, list_a: list[ITaskModel], list_b: list[ITaskModel]) -> bool:
         pass
 
     @abstractmethod

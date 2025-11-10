@@ -1,7 +1,7 @@
 from typing import TypeAlias
 from dataclasses import dataclass
 
-from src.wrappers.TimeManagement import TimeAmount
+from src.wrappers.TimeManagement import TimeAmount, TimePoint
 
 TaskJsonElementType = dict[str, str]
 TaskJsonListType = list[TaskJsonElementType]
@@ -68,6 +68,13 @@ class TaskDiscoveryPolicies:
 
 
 @dataclass
+class WorkLogEntry:
+    timestamp: int
+    work_units: float
+    task: str
+
+
+@dataclass
 class WorkloadStats:
     workload: TimeAmount
     remainingEffort: TimeAmount
@@ -76,16 +83,39 @@ class WorkloadStats:
     offender: str
     offenderMax: TimeAmount
     workDone: dict[str, float]
-
-
-@dataclass
-class WorkLogEntry:
-    timestamp: int
-    work_units: float
-    task: str
+    workDoneLog: list[WorkLogEntry]
 
 
 StatisticsFileContentJson: TypeAlias = dict[str, float | list[WorkLogEntry]]
+
+
+@dataclass
+class AgendaContent:
+    date: TimePoint
+    active_urgent_tasks: list[TaskEntry]
+    planned_urgent_tasks: list[TaskEntry]
+    planned_tasks_by_date: dict[str, list[TaskEntry]]
+    other_tasks: list[TaskEntry]
+    other_task_list_info: TaskListContent | None
+
+
+@dataclass
+class TaskHeuristicsInfo:
+    name: str
+    value: float
+    comment: str
+
+
+@dataclass
+class ExtendedTaskInformation:
+    heuristics: list[TaskHeuristicsInfo]
+    metadata: str
+
+
+@dataclass
+class TaskInformation:
+    task: TaskEntry
+    extended: ExtendedTaskInformation | None
 
 
 def stripDoc(docstring: str | None) -> str:
