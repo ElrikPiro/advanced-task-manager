@@ -1,6 +1,8 @@
 from typing import TypeAlias
 from dataclasses import dataclass
 
+from src.HeuristicScheduling import TimeAmount
+
 TaskJsonElementType = dict[str, str]
 TaskJsonListType = list[TaskJsonElementType]
 ProjectJsonElementType = dict[str, str]
@@ -63,6 +65,24 @@ class TaskDiscoveryPolicies:
     date_missing_policy: str
     default_context: str
     categories_prefixes: list[str]
+
+
+@dataclass
+class WorkloadStats:
+    workload: TimeAmount
+    remainingEffort: TimeAmount
+    maxHeuristic: float
+    HeuristicName: str
+    offender: str
+    offenderMax: TimeAmount
+    workDone: dict[str, float]
+
+
+@dataclass
+class WorkLogEntry:
+    timestamp: int
+    work_units: float
+    task: str
 
 
 def stripDoc(docstring: str) -> str:
