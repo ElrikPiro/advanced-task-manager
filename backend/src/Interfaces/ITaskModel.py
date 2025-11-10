@@ -55,39 +55,39 @@ class ITaskModel(ABC):
         pass
 
     @abstractmethod
-    def setDescription(self, description: str):
+    def setDescription(self, description: str) -> None:
         pass
 
     @abstractmethod
-    def setContext(self, context: str):
+    def setContext(self, context: str) -> None:
         pass
 
     @abstractmethod
-    def setStart(self, start: TimePoint):
+    def setStart(self, start: TimePoint) -> None:
         pass
 
     @abstractmethod
-    def setDue(self, due: TimePoint):
+    def setDue(self, due: TimePoint) -> None:
         pass
 
     @abstractmethod
-    def setSeverity(self, severity: float):
+    def setSeverity(self, severity: float) -> None:
         pass
 
     @abstractmethod
-    def setTotalCost(self, totalCost: TimeAmount):
+    def setTotalCost(self, totalCost: TimeAmount) -> None:
         pass
 
     @abstractmethod
-    def setInvestedEffort(self, investedEffort: TimeAmount):
+    def setInvestedEffort(self, investedEffort: TimeAmount) -> None:
         pass
 
     @abstractmethod
-    def setStatus(self, status: str):
+    def setStatus(self, status: str) -> None:
         pass
 
     @abstractmethod
-    def setCalm(self, calm: bool):
+    def setCalm(self, calm: bool) -> None:
         pass
 
     @abstractmethod
@@ -95,5 +95,5 @@ class ITaskModel(ABC):
         pass
 
     @abstractmethod
-    def __eq__(self, other):
+    def __eq__(self, other):  # type: ignore
         pass
