@@ -131,3 +131,7 @@ class ITaskListManager(ABC):
     @abstractmethod
     def selected_algorithm(self) -> IAlgorithm | None:
         pass
+
+    @abstractmethod
+    def select_algorithm(self, messageText: str) -> None:
+        pass

@@ -3,6 +3,8 @@ import unittest
 import asyncio
 from unittest.mock import MagicMock, AsyncMock
 from src.TelegramReportingService import TelegramReportingService
+from src.algorithms.Interfaces.IAlgorithm import IAlgorithm
+from src.Interfaces.ITaskModel import ITaskModel
 
 
 class TestTelegramReportingService(unittest.TestCase):
@@ -198,7 +200,8 @@ class TestTelegramReportingService(unittest.TestCase):
     def test_selectTaskCommand(self) -> None:
         # Arrange
         self.telegramReportingService.sendTaskInformation = AsyncMock()
-        mock_task = MagicMock()
+        # Create a mock that will pass the isinstance check for ITaskModel
+        mock_task = MagicMock(spec=ITaskModel)
         self.task_list_manager.selected_task = mock_task
 
         # Act
@@ -227,6 +230,11 @@ class TestTelegramReportingService(unittest.TestCase):
         mock_task.getProject.return_value = "test_project"
         mock_task.getDescription.return_value = "test_description"
         mock_task.getContext.return_value = "test_context"
+        
+        # Create a proper mock that will pass isinstance check for IAlgorithm
+        mock_algorithm = MagicMock(spec=IAlgorithm)
+        mock_algorithm.getDescription.return_value = "test_algorithm_description"
+        self.task_list_manager.selected_algorithm = mock_algorithm
         
         filtered_list = [mock_task]
         self.task_list_manager.filtered_task_list = filtered_list

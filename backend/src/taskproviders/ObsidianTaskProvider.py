@@ -78,7 +78,7 @@ class ObsidianTaskProvider(ITaskProvider):
 
         return f"- [{status}] {description} [track:: {context}], [starts:: {start}], [due:: {due}], [severity:: {severity}], [remaining_cost:: {totalCost+investedEffort}], [invested:: {investedEffort}], [calm:: {calm}]\n"
 
-    def saveTask(self, task: ITaskModel):
+    def saveTask(self, task: ITaskModel) -> None:
         taskLine = self._getTaskLine(task)
 
         file = ""
@@ -113,7 +113,7 @@ class ObsidianTaskProvider(ITaskProvider):
                 fileLines[lineNumber] = lineOfInterest.split("- [")[0] + taskLine
             self.fileBroker.writeVaultFileLines(VaultRegistry.OBSIDIAN, file, fileLines)
 
-    def createDefaultTask(self, description: str):
+    def createDefaultTask(self, description: str) -> ObsidianTaskModel:
         starts = int(datetime.datetime.now().timestamp() * 1e3)
         due = int(datetime.datetime.today().timestamp() * 1e3)
         starts = starts - starts % 60000
