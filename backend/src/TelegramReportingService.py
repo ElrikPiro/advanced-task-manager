@@ -380,7 +380,7 @@ class TelegramReportingService(IReportingService):
         message = self.__messageBuilder.createOutboundMessage(
             source=self.bot.getBotAgent(),
             destination=self.user,
-            content={"filterList": filterListContent}, 
+            content={"filterList": filterListContent},
             render_mode=RenderMode.FILTER_LIST
         )
         await self.bot.sendMessage(message=message)
