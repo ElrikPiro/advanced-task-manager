@@ -1,7 +1,7 @@
 from abc import ABC, abstractmethod
 
 from src.Interfaces.ITaskModel import ITaskModel
-from ..Utils import FilterList, TaskListContent
+from ..Utils import AgendaContent, FilterList, TaskInformation, TaskListContent, WorkloadStats
 
 
 class RenderMode:
@@ -16,7 +16,7 @@ class RenderMode:
     TASK_INFORMATION = 8
 
 
-MessageContent = dict[str, str | list[str] | RenderMode | FilterList | TaskListContent | ITaskModel]
+MessageContent = dict[str, str | list[str] | RenderMode | FilterList | TaskListContent | ITaskModel | list[dict[str, str]] | WorkloadStats | AgendaContent | TaskInformation]
 
 
 class IAgent(ABC):

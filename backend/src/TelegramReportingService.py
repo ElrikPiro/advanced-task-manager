@@ -537,7 +537,7 @@ class TelegramReportingService(IReportingService):
         message = self.__messageBuilder.createOutboundMessage(
             source=self.bot.getBotAgent(),
             destination=self.user,
-            content=self._taskListManager.get_list_stats(),
+            content={"workloadStats": self._taskListManager.get_list_stats()},
             render_mode=RenderMode.TASK_STATS
         )
 
@@ -664,7 +664,7 @@ class TelegramReportingService(IReportingService):
         message = self.__messageBuilder.createOutboundMessage(
             source=self.bot.getBotAgent(),
             destination=self.user,
-            content=agenda_content,
+            content={"agendaContent": agenda_content},
             render_mode=RenderMode.TASK_AGENDA
         )
         await self.bot.sendMessage(message=message)
@@ -870,7 +870,7 @@ class TelegramReportingService(IReportingService):
         message = self.__messageBuilder.createOutboundMessage(
             source=self.bot.getBotAgent(),
             destination=self.user,
-            content=task_info,
+            content={"taskInfo": task_info},
             render_mode=RenderMode.TASK_INFORMATION
         )
 
