@@ -1,7 +1,7 @@
 import json
 import os
 import typing
-from .Utils import FileContent, FileContentJson, StatisticsFileContentJson
+from .Utils import FileContent, FileContentJson, StatisticsFileContentJson, WorkLogEntry
 from .Interfaces.IFileBroker import IFileBroker, FileRegistry, VaultRegistry
 
 
@@ -64,7 +64,13 @@ class FileBroker(IFileBroker):
     def readStatisticsFileContentJson(self) -> StatisticsFileContentJson:
         try:
             with open(str(self.filePaths[FileRegistry.STATISTICS_JSON]["path"]), "r", errors="ignore") as file:
-                return dict(json.load(file))
+                value = dict(json.load(file))
+                log: list[dict[str, str]] = value["log"]
+                proper_log: list[WorkLogEntry] = []
+                for _, entry in enumerate(log):
+                    proper_log.append(WorkLogEntry(timestamp=int(entry["timestamp"]), work_units=float(entry["work_units"]), task=entry["task"]))
+                value["log"] = proper_log
+                return value
         except FileNotFoundError:
             print(f"File not found: {self.filePaths[FileRegistry.STATISTICS_JSON]['path']}")
             self.__createFile(FileRegistry.STATISTICS_JSON)
@@ -80,7 +86,17 @@ class FileBroker(IFileBroker):
                              fileRegistry: FileRegistry,
                              content: FileContent | StatisticsFileContentJson) -> None:
         with open(str(self.filePaths[fileRegistry]["path"]), 'w+') as file:
-            json.dump(dict(content), file, indent=4)
+            # Convert WorkLogEntry objects to dictionaries for JSON serialization
+            serializable_content = dict(content)
+            if "log" in serializable_content and isinstance(serializable_content["log"], list):
+                serializable_content["log"] = [
+                    entry.__dict__() if hasattr(entry, '__dict__') and callable(getattr(entry, '__dict__'))
+                    else entry if isinstance(entry, dict)
+                    else entry.__dict__ if hasattr(entry, '__dict__')
+                    else str(entry)
+                    for entry in serializable_content["log"]
+                ]
+            json.dump(serializable_content, file, indent=4)
 
     def getVaultFileLines(self,
                           vaultRegistry: VaultRegistry,

@@ -1,7 +1,9 @@
 from typing import TypeAlias
 from dataclasses import dataclass
+import typing
 
 from src.wrappers.TimeManagement import TimeAmount, TimePoint
+from dataclasses import asdict
 
 TaskJsonElementType = dict[str, str]
 TaskJsonListType = list[TaskJsonElementType]
@@ -72,6 +74,10 @@ class WorkLogEntry:
     timestamp: int
     work_units: float
     task: str
+    
+    @typing.no_type_check
+    def __dict__(self) -> dict:
+        return asdict(self)
 
 
 @dataclass
@@ -86,7 +92,7 @@ class WorkloadStats:
     workDoneLog: list[WorkLogEntry]
 
 
-StatisticsFileContentJson: TypeAlias = dict[str, float | list[WorkLogEntry]]
+StatisticsFileContentJson = dict[str, float | list[WorkLogEntry]]
 
 
 @dataclass

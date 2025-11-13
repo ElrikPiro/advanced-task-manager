@@ -79,11 +79,11 @@ class ITaskListManager(ABC):
         pass
 
     @abstractmethod
-    def get_heuristic_list(self) -> dict[str, list[dict[str, str]]]:
+    def get_heuristic_list(self) -> list[dict[str, str]]:
         pass
 
     @abstractmethod
-    def get_algorithm_list(self) -> dict[str, list[dict[str, str]]]:
+    def get_algorithm_list(self) -> list[dict[str, str]]:
         pass
 
     @abstractmethod

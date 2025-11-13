@@ -7,15 +7,15 @@ from ..Utils import AgendaContent, FilterEntry, TaskInformation, TaskListContent
 
 
 class RenderMode:
-    TASK_LIST = 0
-    RAW_TEXT = 1
-    LIST_UPDATED = 2
-    HEURISTIC_LIST = 3
-    ALGORITHM_LIST = 4
-    FILTER_LIST = 5
-    TASK_STATS = 6
-    TASK_AGENDA = 7
-    TASK_INFORMATION = 8
+    TASK_LIST = 1
+    RAW_TEXT = 2
+    LIST_UPDATED = 3
+    HEURISTIC_LIST = 4
+    ALGORITHM_LIST = 5
+    FILTER_LIST = 6
+    TASK_STATS = 7
+    TASK_AGENDA = 8
+    TASK_INFORMATION = 9
 
 
 @dataclass
@@ -138,7 +138,7 @@ class OutboundMessage(IMessage):
         self._source = source
         self._destination = destination
         self._content = content
-        self._content = MessageContent(renderMode=render_mode)
+        content.renderMode = render_mode
 
     @property
     def source(self) -> IAgent:

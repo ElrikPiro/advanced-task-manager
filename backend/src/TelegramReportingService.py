@@ -342,7 +342,7 @@ class TelegramReportingService(IReportingService):
         message: IMessage = self.__messageBuilder.createOutboundMessage(
             source=self.bot.getBotAgent(),
             destination=self.user,
-            content=heuristic_list_content,  # type: ignore
+            content=MessageContent(anonObjectList=heuristic_list_content),
             render_mode=RenderMode.HEURISTIC_LIST
         )
 
@@ -360,7 +360,7 @@ class TelegramReportingService(IReportingService):
         message: IMessage = self.__messageBuilder.createOutboundMessage(
             source=self.bot.getBotAgent(),
             destination=self.user,
-            content=algorithm_list,  # type: ignore
+            content=MessageContent(anonObjectList=algorithm_list),
             render_mode=RenderMode.ALGORITHM_LIST
         )
 

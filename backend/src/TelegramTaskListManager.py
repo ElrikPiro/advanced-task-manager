@@ -158,7 +158,7 @@ class TelegramTaskListManager(ITaskListManager):
             )
         return {"filterList": filterList}
 
-    def get_heuristic_list(self) -> dict[str, list[dict[str, str]]]:  # Dict must contain heuristic id, name and description
+    def get_heuristic_list(self) -> list[dict[str, str]]:  # Dict must contain heuristic id, name and description
         heuristicList: list[dict[str, str]] = []
         for _, heuristic in enumerate(self.__heuristicList):
             heuristicName, heuristicInstance = heuristic
@@ -166,9 +166,9 @@ class TelegramTaskListManager(ITaskListManager):
                 "name": heuristicName,
                 "description": heuristicInstance.getDescription()
             })
-        return {"heuristicList": heuristicList}
+        return heuristicList
 
-    def get_algorithm_list(self) -> dict[str, list[dict[str, str]]]:  # Dict must contain algorithm id, name and description
+    def get_algorithm_list(self) -> list[dict[str, str]]:  # Dict must contain algorithm id, name and description
         algorithmList: list[dict[str, str]] = []
         for _, algorithm in enumerate(self.__algorithmList):
             algorithmName, algorithmInstance = algorithm
@@ -176,7 +176,7 @@ class TelegramTaskListManager(ITaskListManager):
                 "name": algorithmName,
                 "description": algorithmInstance.getDescription()
             })
-        return {"algorithmList": algorithmList}
+        return algorithmList
 
     def get_list_stats(self) -> WorkloadStats:
         return self.__statistics_service.getWorkloadStats(self.__taskModelList)

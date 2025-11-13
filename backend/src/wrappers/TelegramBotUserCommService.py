@@ -393,7 +393,7 @@ class TelegramBotUserCommService(IUserCommService):
         if extended is not None:
             task_info += "\n*Heuristic Values:*\n"
             for heuristic in extended.heuristics:
-                heuristic_name = self.__escapeMarkdown(heuristic.comment)
+                heuristic_name = self.__escapeMarkdown(heuristic.name)
                 heuristic_comment = self.__escapeMarkdown(heuristic.comment)
                 task_info += f"- *{heuristic_name}:* {heuristic_comment}\n"
         
