@@ -405,7 +405,7 @@ class TestTelegramReportingService(unittest.TestCase):
 
     def test_filterListCommand(self) -> None:
         # Arrange
-        mock_filter_list = {"test": "filter"}
+        mock_filter_list = {"filterList": {"test": "filter"}}
         self.task_list_manager.get_filter_list.return_value = mock_filter_list
         self.messageBuilder.createOutboundMessage.return_value = MagicMock()
 
@@ -780,8 +780,9 @@ class TestTelegramReportingService(unittest.TestCase):
 
     def test_processMessage_calls_handler(self) -> None:
         # Arrange - Test that processMessage method exists and can be called
+        from src.wrappers.Messaging import MessageContent
         mock_message = MagicMock()
-        mock_message.content = {"command": "test", "args": []}
+        mock_message.content = MessageContent(text="test", textList=[])
 
         # Act - Just verify the method runs without errors
         try:
@@ -795,8 +796,9 @@ class TestTelegramReportingService(unittest.TestCase):
 
     def test_processMessage_unknown_command(self) -> None:
         # Arrange
+        from src.wrappers.Messaging import MessageContent
         mock_message = MagicMock()
-        mock_message.content = {"command": "unknown", "args": []}
+        mock_message.content = MessageContent(text="unknown", textList=[])
         self.telegramReportingService.helpCommand = AsyncMock()
 
         # Act

@@ -11,7 +11,7 @@ from typing import Callable, List, Coroutine, Any, Tuple
 
 from src.algorithms.Interfaces.IAlgorithm import IAlgorithm
 
-from .wrappers.Messaging import IAgent, IMessage, IMessageBuilder, RenderMode
+from .wrappers.Messaging import IAgent, IMessage, IMessageBuilder, MessageContent, RenderMode
 
 from .Interfaces.IProjectManager import IProjectManager, ProjectCommands
 from .Interfaces.ITaskListManager import ITaskListManager
@@ -144,10 +144,7 @@ class TelegramReportingService(IReportingService):
             message = self.__messageBuilder.createOutboundMessage(
                 source=self.bot.getBotAgent(),
                 destination=self.user,
-                content={
-                    "algorithm_desc": algorithm.getDescription(),
-                    "task": task,
-                },
+                content=MessageContent(text=algorithm.getDescription(), task=task),
                 render_mode=RenderMode.LIST_UPDATED
             )
             await self.bot.sendMessage(message)
@@ -376,11 +373,11 @@ class TelegramReportingService(IReportingService):
         Filters are used to show only the tasks that match the criteria.
         The selected filter will be used to show the tasks.
         """
-        filterListContent = self._taskListManager.get_filter_list()  # Should be a dict
+        filterListContent = self._taskListManager.get_filter_list()["filterList"]  # Should be a dict
         message = self.__messageBuilder.createOutboundMessage(
             source=self.bot.getBotAgent(),
             destination=self.user,
-            content={"filterList": filterListContent},
+            content=MessageContent(filterListDict=filterListContent),
             render_mode=RenderMode.FILTER_LIST
         )
         await self.bot.sendMessage(message=message)
@@ -544,7 +541,7 @@ class TelegramReportingService(IReportingService):
         message = self.__messageBuilder.createOutboundMessage(
             source=self.bot.getBotAgent(),
             destination=self.user,
-            content={"workloadStats": self._taskListManager.get_list_stats()},
+            content=MessageContent(workloadStats=self._taskListManager.get_list_stats()),
             render_mode=RenderMode.TASK_STATS
         )
 
@@ -652,7 +649,7 @@ class TelegramReportingService(IReportingService):
             message = self.__messageBuilder.createOutboundMessage(
                 source=self.bot.getBotAgent(),
                 destination=self.user,
-                content={"taskListContent": taskListContent},
+                content=MessageContent(taskListContent=taskListContent),
                 render_mode=RenderMode.TASK_LIST
             )
             await self.bot.sendMessage(message=message)
@@ -671,7 +668,7 @@ class TelegramReportingService(IReportingService):
         message = self.__messageBuilder.createOutboundMessage(
             source=self.bot.getBotAgent(),
             destination=self.user,
-            content={"agendaContent": agenda_content},
+            content=MessageContent(agendaContent=agenda_content),
             render_mode=RenderMode.TASK_AGENDA
         )
         await self.bot.sendMessage(message=message)
@@ -708,8 +705,8 @@ class TelegramReportingService(IReportingService):
         commands = self.commands
 
         # Extract the command and arguments from the IMessage
-        command_name = f"/{message.content.get('command', 'help')}"
-        args = message.content.get('args', [])
+        command_name = f"/{message.content.text}"
+        args = message.content.textList
 
         # Rebuild the message text in the format expected by the command handlers
         message_text = command_name
@@ -864,7 +861,7 @@ class TelegramReportingService(IReportingService):
         message = self.__messageBuilder.createOutboundMessage(
             source=self.bot.getBotAgent(),
             destination=self.user,
-            content={"taskListContent": task_list_content},
+            content=MessageContent(taskListContent=task_list_content),
             render_mode=RenderMode.TASK_LIST
         )
 
@@ -879,7 +876,7 @@ class TelegramReportingService(IReportingService):
         message = self.__messageBuilder.createOutboundMessage(
             source=self.bot.getBotAgent(),
             destination=self.user,
-            content={"taskInfo": task_info},
+            content=MessageContent(taskInformation=task_info),
             render_mode=RenderMode.TASK_INFORMATION
         )
 
@@ -897,7 +894,7 @@ class TelegramReportingService(IReportingService):
         message: IMessage = self.__messageBuilder.createOutboundMessage(
             source=self.bot.getBotAgent(),
             destination=self.user,
-            content={"text": text},
+            content=MessageContent(text=text),
             render_mode=RenderMode.RAW_TEXT
         )
         await self.bot.sendMessage(message=message)

@@ -1,7 +1,9 @@
 from abc import ABC, abstractmethod
+from dataclasses import dataclass
+from typing import Dict, List
 
 from src.Interfaces.ITaskModel import ITaskModel
-from ..Utils import AgendaContent, FilterListDict, TaskInformation, TaskListContent, WorkloadStats
+from ..Utils import AgendaContent, FilterEntry, TaskInformation, TaskListContent, WorkloadStats
 
 
 class RenderMode:
@@ -16,7 +18,18 @@ class RenderMode:
     TASK_INFORMATION = 8
 
 
-MessageContent = dict[str, str | list[str] | RenderMode | FilterListDict | TaskListContent | ITaskModel | list[dict[str, str]] | WorkloadStats | AgendaContent | TaskInformation]
+@dataclass
+class MessageContent:
+    renderMode: int | None = None
+    text: str | None = None
+    textList: list[str] | None = None
+    filterListDict: List[FilterEntry] | None = None
+    taskListContent: TaskListContent | None = None
+    task: ITaskModel | None = None
+    anonObjectList: List[Dict[str, str]] | None = None
+    workloadStats: WorkloadStats | None = None
+    agendaContent: AgendaContent | None = None
+    taskInformation: TaskInformation | None = None
 
 
 class IAgent(ABC):
@@ -101,10 +114,7 @@ class InboundMessage(IMessage):
     def __init__(self, source: IAgent, destination: IAgent, command: str, args: list[str]):
         self._source = source
         self._destination = destination
-        self._content: MessageContent = {
-            "command": command,
-            "args": args
-        }
+        self._content = MessageContent(text=command, textList=args)
 
     @property
     def source(self) -> IAgent:
@@ -128,7 +138,7 @@ class OutboundMessage(IMessage):
         self._source = source
         self._destination = destination
         self._content = content
-        self._content['render_mode'] = str(render_mode)
+        self._content = MessageContent(renderMode=render_mode)
 
     @property
     def source(self) -> IAgent:

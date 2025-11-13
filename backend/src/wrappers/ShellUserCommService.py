@@ -1,5 +1,5 @@
 from src.Interfaces.ITaskModel import ITaskModel
-from src.Utils import AgendaContent, ExtendedTaskInformation, FilterEntry, TaskInformation, TaskListContent, WorkloadStats
+from src.Utils import AgendaContent, ExtendedTaskInformation, TaskInformation, TaskListContent, WorkloadStats
 from src.wrappers.Messaging import IAgent, IMessage, RenderMode, UserAgent, InboundMessage
 from src.wrappers.interfaces.IUserCommService import IUserCommService
 
@@ -24,14 +24,12 @@ class ShellUserCommService(IUserCommService):
 
     def __renderFilterList(self, message: IMessage) -> None:
         self.__botPrint("(Info) Filter List Render Mode")
-        filter_list = message.content.get('filterList', [])
+        filter_list = message.content.filterListDict
         if not isinstance(filter_list, list) or not filter_list:
             self.__botPrint("No filters available")
             return
         self.__botPrint("Available Filters:")
         for i, filter_info in enumerate(filter_list):
-            if not isinstance(filter_info, FilterEntry):
-                continue
             name = filter_info.name
             description = filter_info.description
             enabled = filter_info.enabled
@@ -88,7 +86,7 @@ class ShellUserCommService(IUserCommService):
     def __renderTaskList(self, message: IMessage) -> None:
         self.__botPrint("(Info) Task List Render Mode")
         
-        content = message.content.get("taskListContent", None)
+        content = message.content.taskListContent
         if not isinstance(content, TaskListContent):
             raise Exception("Invalid output message")
         
@@ -108,13 +106,13 @@ class ShellUserCommService(IUserCommService):
 
     def __renderRawText(self, message: IMessage) -> None:
         self.__botPrint("(Info) Raw Text Render Mode")
-        self.__botPrint(str(message.content.get('text', 'No message')))
+        self.__botPrint(str(message.content.text))
 
     def __notifyListUpdated(self, message: IMessage) -> None:
         self.__botPrint("(Info) List Updated Render Mode")
 
-        algorithm_desc = message.content.get('algorithm_desc', 'No description provided')
-        most_priority_task = message.content.get('task', None)  # id, description, context
+        algorithm_desc = message.content.text
+        most_priority_task = message.content.task
 
         self.__botPrint(f"List updated with algorithm: {algorithm_desc}")
         if not isinstance(most_priority_task, ITaskModel):
@@ -125,7 +123,7 @@ class ShellUserCommService(IUserCommService):
 
     def __renderHeuristicList(self, message: IMessage) -> None:
         self.__botPrint("(Info) Heuristic List Render Mode")
-        heuristic_list = message.content.get('heuristicList', [])
+        heuristic_list = message.content.anonObjectList
 
         if not isinstance(heuristic_list, list) or not heuristic_list:
             self.__botPrint("No heuristics available")
@@ -138,7 +136,7 @@ class ShellUserCommService(IUserCommService):
 
     def __renderAlgorithmList(self, message: IMessage) -> None:
         self.__botPrint("(Info) Algorithm List Render Mode")
-        algorithm_list = message.content.get('algorithmList', [])
+        algorithm_list = message.content.anonObjectList
 
         if not isinstance(algorithm_list, list) or not algorithm_list:
             self.__botPrint("No algorithms available")
@@ -159,7 +157,7 @@ class ShellUserCommService(IUserCommService):
         from src.wrappers.TimeManagement import TimePoint, TimeAmount
         
         # Extract data from the message
-        stats = message.content.get("workloadStats")
+        stats = message.content.workloadStats
         if not isinstance(stats, WorkloadStats):
             return
         
@@ -217,7 +215,7 @@ class ShellUserCommService(IUserCommService):
         self.__botPrint("(Info) Task Agenda Render Mode")
         
         # Get content from message
-        agenda = message.content.get("agendaContent")
+        agenda = message.content.agendaContent
         if not isinstance(agenda, AgendaContent):
             return
 
@@ -259,7 +257,7 @@ class ShellUserCommService(IUserCommService):
         self.__botPrint("(Info) Task Information Render Mode")
         
         # Extract task information from the message
-        taskinfo = message.content.get("taskInfo")
+        taskinfo = message.content.taskInformation
         if not isinstance(taskinfo, TaskInformation):
             return
 
@@ -306,6 +304,6 @@ class ShellUserCommService(IUserCommService):
         if message.type != "OutboundMessage":
             raise ValueError("Only OutboundMessage is supported in ShellUserCommService")
 
-        render_mode = message.content.get('render_mode', int(RenderMode.RAW_TEXT))
+        render_mode = message.content.renderMode
         if isinstance(render_mode, int):
             self.__renders[render_mode](message)
