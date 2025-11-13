@@ -2,6 +2,7 @@ import json
 import os
 from dependency_injector import containers, providers
 import telegram
+import typing
 
 from src.Utils import TaskDiscoveryPolicies
 from src.wrappers.Messaging import BotAgent, IAgent, MessageBuilder, UserAgent
@@ -36,7 +37,8 @@ class TelegramReportingServiceContainer():
 
     # tries to get a configuration value from the environment, if not present
     # then it will try to get it from the json configuration file
-    def tryGetConfig(self, key: str, required: bool = False, default: str = None) -> str:
+    @typing.no_type_check
+    def tryGetConfig(self, key: str, required: bool = False, default: str | None = None) -> str | None:
         self.config.query.from_env(key, as_=str, required=False, default=None)
         value = None if self.config.query() == "None" else self.config.query()
         if value is None:
@@ -47,7 +49,8 @@ class TelegramReportingServiceContainer():
             return default
         return value
 
-    def createDefaultConfig(self):
+    @typing.no_type_check
+    def createDefaultConfig(self) -> None:
         # create a dict with the default config for categories
         defaultConfig = {
             "categories": [
@@ -83,7 +86,7 @@ class TelegramReportingServiceContainer():
                     "prefix": "inbox",
                     "description": "Inbox tasks"
                 }
-            ],
+            ]
         }
 
         # ask the user for an app mode
@@ -171,7 +174,8 @@ class TelegramReportingServiceContainer():
         # write the default config to the config.json file in disk
         json.dump(defaultConfig, open("config.json", "w"), indent=4)
 
-    def __init__(self):
+    @typing.no_type_check
+    def __init__(self) -> None:
         self.container = containers.DynamicContainer()
         self.config = providers.Configuration()
 
@@ -185,7 +189,7 @@ class TelegramReportingServiceContainer():
             self.config.jsonConfig.from_json("config.json", required=True)
 
         # Configuration values
-        configMode: int = int(self.tryGetConfig("APP_MODE", required=True))
+        configMode: int = int(self.tryGetConfig("APP_MODE", required=True) or "")
         telegramMode = configMode in [3, 4]
         obsidianMode = configMode in [1, 4]
 
