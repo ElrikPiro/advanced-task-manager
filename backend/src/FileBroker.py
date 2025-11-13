@@ -1,13 +1,15 @@
 import json
 import os
+import typing
+from .Utils import FileContent, FileContentJson, StatisticsFileContentJson, WorkLogEntry
 from .Interfaces.IFileBroker import IFileBroker, FileRegistry, VaultRegistry
 
 
 class FileBroker(IFileBroker):
     def __init__(self, jsonPath: str, appdata: str, vaultPath: str):
-        defaultTaskJson = '{"tasks": []}'
+        defaultTaskJson: FileContent = '{"tasks": []}'
 
-        self.filePaths: dict[FileRegistry, dict] = {
+        self.filePaths: dict[FileRegistry, dict[str, FileContent]] = {
             FileRegistry.STANDALONE_TASKS_JSON: {
                 "path": os.path.join(jsonPath, "tasks.json"),
                 "default": defaultTaskJson
@@ -37,36 +39,64 @@ class FileBroker(IFileBroker):
 
     def readFileContent(self, fileRegistry: FileRegistry) -> str:
         try:
-            with open(self.filePaths[fileRegistry]["path"], "r", errors="ignore") as file:
+            with open(str(self.filePaths[fileRegistry]["path"]), "r", errors="ignore") as file:
                 return file.read()
         except FileNotFoundError:
             print(f"File not found: {self.filePaths[fileRegistry]['path']}")
             self.__createFile(fileRegistry)
-            return self.filePaths[fileRegistry]["default"]
+            return str(self.filePaths[fileRegistry]["default"])
 
     def writeFileContent(self,
                          fileRegistry: FileRegistry, content: str) -> None:
-        with open(self.filePaths[fileRegistry]["path"], 'w+') as file:
+        with open(str(self.filePaths[fileRegistry]["path"]), 'w+') as file:
             file.write(content)
 
-    def readFileContentJson(self, fileRegistry: FileRegistry) -> dict:
+    def readFileContentJson(self, fileRegistry: FileRegistry) -> FileContentJson:
         try:
-            with open(self.filePaths[fileRegistry]["path"], "r", errors="ignore") as file:
-                return json.load(file)
+            with open(str(self.filePaths[fileRegistry]["path"]), "r", errors="ignore") as file:
+                return dict(json.load(file))
         except FileNotFoundError:
             print(f"File not found: {self.filePaths[fileRegistry]['path']}")
             self.__createFile(fileRegistry)
-            return json.loads(self.filePaths[fileRegistry]["default"])
+            retval: FileContentJson = json.loads(str(self.filePaths[fileRegistry]["default"]))
+            return retval
+        
+    def readStatisticsFileContentJson(self) -> StatisticsFileContentJson:
+        try:
+            with open(str(self.filePaths[FileRegistry.STATISTICS_JSON]["path"]), "r", errors="ignore") as file:
+                value = dict(json.load(file))
+                log: list[dict[str, str]] = value["log"]
+                proper_log: list[WorkLogEntry] = []
+                for _, entry in enumerate(log):
+                    proper_log.append(WorkLogEntry(timestamp=int(entry["timestamp"]), work_units=float(entry["work_units"]), task=entry["task"]))
+                value["log"] = proper_log
+                return value
+        except FileNotFoundError:
+            print(f"File not found: {self.filePaths[FileRegistry.STATISTICS_JSON]['path']}")
+            self.__createFile(FileRegistry.STATISTICS_JSON)
+            retval: StatisticsFileContentJson = json.loads(str(self.filePaths[FileRegistry.STATISTICS_JSON]["default"]))
+            return retval
 
     def __createFile(self, fileRegistry: FileRegistry) -> None:
-        with open(self.filePaths[fileRegistry]["path"], 'w+') as file:
-            file.write(self.filePaths[fileRegistry]["default"])
+        with open(str(self.filePaths[fileRegistry]["path"]), 'w+') as file:
+            file.write(str(self.filePaths[fileRegistry]["default"]))
 
+    @typing.no_type_check
     def writeFileContentJson(self,
                              fileRegistry: FileRegistry,
-                             content: dict) -> None:
-        with open(self.filePaths[fileRegistry]["path"], 'w+') as file:
-            json.dump(content, file, indent=4)
+                             content: FileContent | StatisticsFileContentJson) -> None:
+        with open(str(self.filePaths[fileRegistry]["path"]), 'w+') as file:
+            # Convert WorkLogEntry objects to dictionaries for JSON serialization
+            serializable_content = dict(content)
+            if "log" in serializable_content and isinstance(serializable_content["log"], list):
+                serializable_content["log"] = [
+                    entry.__dict__() if hasattr(entry, '__dict__') and callable(getattr(entry, '__dict__'))
+                    else entry if isinstance(entry, dict)
+                    else entry.__dict__ if hasattr(entry, '__dict__')
+                    else str(entry)
+                    for entry in serializable_content["log"]
+                ]
+            json.dump(serializable_content, file, indent=4)
 
     def getVaultFileLines(self,
                           vaultRegistry: VaultRegistry,

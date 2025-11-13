@@ -1,6 +1,8 @@
 from abc import ABC, abstractmethod
 import datetime
 
+from src.Utils import WorkLogEntry, WorkloadStats
+
 from .ITaskModel import ITaskModel
 from ..wrappers.TimeManagement import TimePoint, TimeAmount
 
@@ -8,7 +10,7 @@ from ..wrappers.TimeManagement import TimePoint, TimeAmount
 class IStatisticsService(ABC):
 
     @abstractmethod
-    def doWork(self, date: datetime.date, work_units: TimeAmount, task: ITaskModel):
+    def doWork(self, date: datetime.date, work_units: TimeAmount, task: ITaskModel) -> None:
         """
         Records work done on a task on a given date.
 
@@ -24,15 +26,15 @@ class IStatisticsService(ABC):
         pass
 
     @abstractmethod
-    def getWorkloadStats(self, taskList: list[ITaskModel]) -> list:
+    def getWorkloadStats(self, taskList: list[ITaskModel]) -> WorkloadStats:
         pass
 
     @abstractmethod
-    def initialize(self):
+    def initialize(self) -> None:
         pass
 
     @abstractmethod
-    def getWorkDoneLog(self) -> list:
+    def getWorkDoneLog(self) -> list[WorkLogEntry]:
         """
         Returns a list of dictionaries representing the work done log.
 

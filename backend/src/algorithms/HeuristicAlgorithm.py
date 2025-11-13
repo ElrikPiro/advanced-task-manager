@@ -1,6 +1,6 @@
 from typing import List
 
-from src.Interfaces import IHeuristic
+from src.Interfaces.IHeuristic import IHeuristic
 from src.Interfaces.ITaskModel import ITaskModel
 from src.algorithms.Interfaces.IAlgorithm import IAlgorithm
 
@@ -10,7 +10,7 @@ class HeuristicAlgorithm(IAlgorithm):
     Algorithm that uses a heuristic to sort tasks.
     """
 
-    def __init__(self, heuristic: IHeuristic, description: str):
+    def __init__(self, heuristic: IHeuristic, description: str) -> None:
         self.heuristic = heuristic
         self.description = description
 

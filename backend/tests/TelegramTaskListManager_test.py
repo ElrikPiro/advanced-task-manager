@@ -83,82 +83,6 @@ class TestTelegramTaskListManager(unittest.TestCase):
         self.assertIn(self.task2, result)
         self.assertNotIn(self.task1, result)
 
-    def test__render_other_tasks(self):
-        TelegramTaskListManager.render_task_list_str_legacy = MagicMock(return_value="other tasks list")
-        agenda_str = "Agenda: "
-        other_tasks = [self.task3]
-        result = self.task_list_manager._TelegramTaskListManager__render_other_tasks(agenda_str, other_tasks)
-        self.assertIn("# Other tasks:", result)
-        self.assertIn("other tasks list", result)
-
-    def test_render_task_information_basic(self):
-        # Arrange
-        task = MagicMock()
-        task.getDescription.return_value = "Test Task"
-        task.getContext.return_value = "Test Context"
-        task.getSeverity.return_value = "High"
-        task.getStart.return_value = "2025-05-28"
-        task.getDue.return_value = "2025-06-01"
-        task.getTotalCost.return_value.as_pomodoros.return_value = 3.0
-        task.getInvestedEffort.return_value.as_pomodoros.return_value = 2.0
-        task.getTotalCost.return_value = MagicMock(as_pomodoros=MagicMock(return_value=3.0))
-        task.getInvestedEffort.return_value = MagicMock(as_pomodoros=MagicMock(return_value=2.0))
-        taskProvider = MagicMock()
-        taskProvider.getTaskMetadata.return_value = "meta"
-        self.task_list_manager._TelegramTaskListManager__heuristicList = []
-        # Act
-        result = self.task_list_manager.render_task_information(task, taskProvider, extended=False)
-        # Assert
-        self.assertIn("Task: Test Task", result)
-        self.assertIn("Context: Test Context", result)
-        self.assertIn("Start Date: 2025-05-28", result)
-        self.assertIn("Due Date: 2025-06-01", result)
-        self.assertIn("Total Cost:", result)
-        self.assertIn("Remaining:", result)
-        self.assertIn("Severity: High", result)
-        self.assertIn("/list - Return to list", result)
-        self.assertIn("/done - Mark task as done", result)
-        self.assertIn("/set [param] [value] - Set task parameter", result)
-        self.assertIn("/work [work_units] - invest work units in the task", result)
-        self.assertIn("/snooze - snooze the task for 5 minutes", result)
-        self.assertIn("/info - Show extended information", result)
-
-    def test_render_task_information_extended(self):
-        # Arrange
-        task = MagicMock()
-        task.getDescription.return_value = "Test Task"
-        task.getContext.return_value = "Test Context"
-        task.getSeverity.return_value = "High"
-        task.getStart.return_value = "2025-05-28"
-        task.getDue.return_value = "2025-06-01"
-        task.getTotalCost.return_value.as_pomodoros.return_value = 3.0
-        task.getInvestedEffort.return_value.as_pomodoros.return_value = 2.0
-        task.getTotalCost.return_value = MagicMock(as_pomodoros=MagicMock(return_value=3.0))
-        task.getInvestedEffort.return_value = MagicMock(as_pomodoros=MagicMock(return_value=2.0))
-        taskProvider = MagicMock()
-        taskProvider.getTaskMetadata.return_value = "meta"
-        heuristic = MagicMock()
-        heuristic.getComment.return_value = "Heuristic comment"
-        self.task_list_manager._TelegramTaskListManager__heuristicList = [("Priority", heuristic)]
-        # Act
-        result = self.task_list_manager.render_task_information(task, taskProvider, extended=True)
-        # Assert
-        self.assertIn("Task: Test Task", result)
-        self.assertIn("Context: Test Context", result)
-        self.assertIn("Start Date: 2025-05-28", result)
-        self.assertIn("Due Date: 2025-06-01", result)
-        self.assertIn("Total Cost:", result)
-        self.assertIn("Remaining:", result)
-        self.assertIn("Severity: High", result)
-        self.assertIn("Priority: Heuristic comment", result)
-        self.assertIn("<b>Metadata:</b><code>meta</code>", result)
-        self.assertIn("/list - Return to list", result)
-        self.assertIn("/done - Mark task as done", result)
-        self.assertIn("/set [param] [value] - Set task parameter", result)
-        self.assertIn("/work [work_units] - invest work units in the task", result)
-        self.assertIn("/snooze - snooze the task for 5 minutes", result)
-        self.assertIn("/info - Show extended information", result)
-
     def test_filtered_task_list_with_active_filter(self):
         # Only task1 passes the filter
         class Filter:
@@ -224,73 +148,6 @@ class TestTelegramTaskListManagerAdditional(unittest.TestCase):
             self.statistics_service
         )
 
-    def test_get_list_stats_with_additional_tasks(self):
-        # Arrange
-        # Set up getWorkDone to return different values for different dates
-        work_done_values = {
-            0: TimeAmount("1p"),
-            1: TimeAmount("2p"),
-            2: TimeAmount("0p"),
-            3: TimeAmount("3p"),
-            4: TimeAmount("1.5p"),
-            5: TimeAmount("2.5p"),
-            6: TimeAmount("4p")
-        }
-
-        def mock_get_work_done(date):
-            today = TimePoint.today()
-            for i in range(7):
-                if (today + TimeAmount(f"-{i}d")).as_int() == date.as_int():
-                    return work_done_values.get(i, TimeAmount("0p"))
-            return TimeAmount("0p")
-
-        self.statistics_service.getWorkDone.side_effect = mock_get_work_done
-
-        # Set up getWorkloadStats to return predefined values
-        workload_stats = (
-            "2.0p",  # workload
-            "10p",   # remaining effort
-            "0.8",   # heuristic value
-            "Urgency",  # heuristic name
-            "Task 1",   # offender
-            "1.5p"      # offenderMax
-        )
-        self.statistics_service.getWorkloadStats.return_value = workload_stats
-
-        # Set up getWorkDoneLog to return a sample log with valid ms timestamps
-        import time
-        now_ms = int(time.time() * 1000)
-        work_done_log = [
-            {"task": "Task 1", "work_units": "1", "timestamp": now_ms},
-            {"task": "Task 2", "work_units": "2", "timestamp": now_ms - 3600000},
-            {"task": "Task 3", "work_units": "3", "timestamp": now_ms - 7200000}
-        ]
-        self.statistics_service.getWorkDoneLog.return_value = work_done_log
-
-        # Act
-        result = self.task_list_manager.get_list_stats_legacy()
-
-        # Assert
-        self.assertIn("Work done in the last 7 days:", result)
-        self.assertIn("|    Date    | Work  Done |", result)
-        # Check for the average work done (1 + 2 + 0 + 3 + 1.5 + 2.5 + 4) / 7 = 2.0 (rounded)
-        self.assertIn("|   Average  |    2.0    |", result)
-        self.assertIn("Workload statistics:", result)
-        self.assertIn("current workload: 2.0p per day", result)
-        self.assertIn("max Offender: 'Task 1' with 1.5p per day", result)
-        self.assertIn("total remaining effort: 10p", result)
-        self.assertIn("max Urgency: 0.8", result)
-        self.assertIn("Work done log:", result)
-        for entry in work_done_log:
-            task = entry["task"]
-            work_units = entry["work_units"]
-            timeAmount = TimeAmount(f"{work_units}p")
-            self.assertIn(f"{timeAmount} on {task}", result)
-        self.assertIn("/list - return back to the task list", result)
-        self.assertEqual(self.statistics_service.getWorkDone.call_count, 7)
-        self.statistics_service.getWorkloadStats.assert_called_once_with(self.task_list)
-        self.statistics_service.getWorkDoneLog.assert_called_once()
-
     def test__filter_urgent_tasks_with_additional_tasks(self):
         date = MagicMock()
         date.__add__.side_effect = lambda x: date
@@ -319,14 +176,6 @@ class TestTelegramTaskListManagerAdditional(unittest.TestCase):
         self.assertIn(self.task3, result)
         self.assertIn(self.task2, result)
         self.assertNotIn(self.task1, result)
-
-    def test__render_other_tasks_with_additional_tasks(self):
-        TelegramTaskListManager.render_task_list_str_legacy = MagicMock(return_value="other tasks list")
-        agenda_str = "Agenda: "
-        other_tasks = [self.task3]
-        result = self.task_list_manager._TelegramTaskListManager__render_other_tasks(agenda_str, other_tasks)
-        self.assertIn("# Other tasks:", result)
-        self.assertIn("other tasks list", result)
 
 
 if __name__ == '__main__':

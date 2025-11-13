@@ -112,7 +112,7 @@ class TestTaskProvider(unittest.TestCase):
         self.assertEqual(result, self.sample_tasks["tasks"])
         # Test non-existing attribute
         result = self.task_provider.getTaskListAttribute("nonexistent")
-        self.assertEqual(result, "")
+        self.assertEqual(result, [])
 
     def test_save_task(self):
         # Get a task to modify and save

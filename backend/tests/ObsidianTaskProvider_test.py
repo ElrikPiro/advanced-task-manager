@@ -154,13 +154,13 @@ class TestObsidianTaskProvider(unittest.TestCase):
             retval["tasks"].append({
                 "description": f"({task['track']}) {text} @ '{_file.split(slash).pop().split(dot)[0]}:{_line}'",
                 "context": task["track"],
-                "start": int(task["starts"]),
-                "due": int(task["due"]),
-                "severity": float(task["severity"]),
-                "totalCost": float(task["total_cost"]),
-                "investedEffort": float(task["effort_invested"]),
+                "start": str(int(task["starts"])),
+                "due": str(int(task["due"])),
+                "severity": str(float(task["severity"])),
+                "totalCost": str(float(task["total_cost"])),
+                "investedEffort": str(float(task["effort_invested"])),
                 "status": task["status"],
-                "calm": bool(task["calm"])
+                "calm": str(bool(task["calm"]))
             })
 
         return bytearray(json.dumps(retval, indent=4), "utf-8").decode("utf-8")

@@ -26,7 +26,7 @@ class ObsidianTaskModel(TaskModel):
         """
         return f"({self._context}) {self._description} @ '{self.getProject()}'"
 
-    def getProject(self):
+    def getProject(self) -> str:
         """
         Gets the file name with the line number where the task is stored.
         """
@@ -34,8 +34,8 @@ class ObsidianTaskModel(TaskModel):
         dot = "."
         return f"{self._file.split(slash).pop().split(dot)[0]}:{self._line}"
 
-    def __eq__(self, other: ITaskModel):
-        return self.getDescription() == other.getDescription() and self.getContext() == other.getContext() and self.getStart() == other.getStart() and self.getDue() == other.getDue() and self.getSeverity() == other.getSeverity() and self.getTotalCost().as_pomodoros() == other.getTotalCost().as_pomodoros() and self.getInvestedEffort().as_pomodoros() == other.getInvestedEffort().as_pomodoros() and self.getStatus() == other.getStatus() and self.getFile() == other.getFile() and self.getLine() == other.getLine() and self.getCalm() == other.getCalm()
+    def __eq__(self, other: ITaskModel):  # type: ignore
+        return self.getDescription() == other.getDescription() and self.getContext() == other.getContext() and self.getStart() == other.getStart() and self.getDue() == other.getDue() and self.getSeverity() == other.getSeverity() and self.getTotalCost().as_pomodoros() == other.getTotalCost().as_pomodoros() and self.getInvestedEffort().as_pomodoros() == other.getInvestedEffort().as_pomodoros() and self.getStatus() == other.getStatus() and self.getFile() == other.getFile() and self.getLine() == other.getLine() and self.getCalm() == other.getCalm()  # type: ignore
 
     # Class methods
     def getFile(self) -> str:
@@ -44,8 +44,8 @@ class ObsidianTaskModel(TaskModel):
     def getLine(self) -> int:
         return self._line
 
-    def setFile(self, file: str):
+    def setFile(self, file: str) -> None:
         self._file = "/".join(file.split("\\"))
 
-    def setLine(self, line: int):
+    def setLine(self, line: int) -> None:
         self._line = line

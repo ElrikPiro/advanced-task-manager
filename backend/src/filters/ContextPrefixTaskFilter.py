@@ -1,17 +1,18 @@
+from typing import List
 from ..Interfaces.IFilter import IFilter
 from ..Interfaces.ITaskModel import ITaskModel
 
 
 class ContextPrefixTaskFilter(IFilter):
 
-    def __init__(self, prefilter: IFilter, prefix: str):
+    def __init__(self, prefilter: IFilter | None, prefix: str) -> None:
         self.prefix = prefix
         self.prefilter = prefilter
         pass
 
-    def filter(self, tasks: list[ITaskModel]) -> list:
-        preTasks = self.prefilter.filter(tasks) if self.prefilter is not None else tasks
-        retval = []
+    def filter(self, tasks: list[ITaskModel]) -> List[ITaskModel]:
+        preTasks = self.prefilter.filter(tasks) if isinstance(self.prefilter, IFilter) else tasks
+        retval: List[ITaskModel] = []
 
         for task in preTasks:
             if task.getContext().startswith(self.prefix):

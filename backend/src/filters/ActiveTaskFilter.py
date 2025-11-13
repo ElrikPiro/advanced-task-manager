@@ -1,11 +1,13 @@
+from typing import List
+
 from ..wrappers.TimeManagement import TimePoint
 
 from ..Interfaces.IFilter import IFilter
 from ..Interfaces.ITaskModel import ITaskModel
 
 
-def filter(tasks: list[ITaskModel], invert: bool) -> list:
-    retval = []
+def filter(tasks: list[ITaskModel], invert: bool) -> List[ITaskModel]:
+    retval: List[ITaskModel] = []
 
     for task in tasks:
         startTime = task.getStart().datetime_representation
@@ -25,7 +27,7 @@ def filter(tasks: list[ITaskModel], invert: bool) -> list:
 
 class ActiveTaskFilter(IFilter):
 
-    def filter(self, tasks: list[ITaskModel]) -> list:
+    def filter(self, tasks: list[ITaskModel]) -> List[ITaskModel]:
         return filter(tasks, False)
 
     def getDescription(self) -> str:
@@ -34,7 +36,7 @@ class ActiveTaskFilter(IFilter):
 
 class InactiveTaskFilter(IFilter):
 
-    def filter(self, tasks: list[ITaskModel]) -> list:
+    def filter(self, tasks: list[ITaskModel]) -> List[ITaskModel]:
         return filter(tasks, True)
 
     def getDescription(self) -> str:

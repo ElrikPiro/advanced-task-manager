@@ -2,12 +2,14 @@ import datetime
 import json
 import threading
 
+from src.Utils import TaskJsonType
+
 from ..Interfaces.IFileBroker import IFileBroker, FileRegistry, VaultRegistry
 from ..Interfaces.ITaskProvider import ITaskProvider
 from ..Interfaces.ITaskModel import ITaskModel
 from ..Interfaces.ITaskJsonProvider import ITaskJsonProvider
 from ..taskmodels.ObsidianTaskModel import ObsidianTaskModel
-from typing import List
+from typing import Callable, List
 
 
 class ObsidianTaskProvider(ITaskProvider):
@@ -15,20 +17,20 @@ class ObsidianTaskProvider(ITaskProvider):
         self.TaskJsonProvider = taskJsonProvider
         self.fileBroker = fileBroker
         self.serviceRunning = True
-        self.lastJson: dict = {}
+        self.lastJson: TaskJsonType = {}
         self.lastTaskList: List[ITaskModel] = []
-        self.onTaskListUpdatedCallbacks: list[callable] = []
+        self.onTaskListUpdatedCallbacks: list[Callable[[], None]] = []
         self.__disableThreading = disableThreading
         if not self.__disableThreading:
             self.service = threading.Thread(target=self.__serviceThread)
             self.service.start()
 
-    def dispose(self):
+    def dispose(self) -> None:
         if not self.__disableThreading:
             self.serviceRunning = False
             self.service.join()
 
-    def __serviceThread(self):
+    def __serviceThread(self) -> None:
         while self.serviceRunning:
             newTaskList = self.__getTaskList()
             if not self.compare(self.lastTaskList, newTaskList):
@@ -38,16 +40,16 @@ class ObsidianTaskProvider(ITaskProvider):
             threading.Event().wait(10)
 
     def __getTaskList(self) -> List[ITaskModel]:
-        obsidianJson: dict = self.TaskJsonProvider.getJson()
+        obsidianJson = self.TaskJsonProvider.getJson()
         if obsidianJson == self.lastJson:
             return self.lastTaskList
         else:
             self.lastJson = obsidianJson
-        taskListJson: dict = obsidianJson["tasks"]
+        taskListJson = obsidianJson["tasks"]
         taskList: List[ITaskModel] = []
         for task in taskListJson:
             try:
-                obsidianTask = ObsidianTaskModel(task["taskText"], task["track"], task["starts"], task["due"], task["severity"], task["total_cost"], task["effort_invested"], task["status"], task["file"], task["line"], task["calm"])
+                obsidianTask = ObsidianTaskModel(task["taskText"], task["track"], int(task["starts"]), int(task["due"]), float(task["severity"]), float(task["total_cost"]), float(task["effort_invested"]), task["status"], task["file"], int(task["line"]), task["calm"])
                 taskList.append(obsidianTask)
             except Exception as e:
                 print(f"Error while reading task: {e}")
@@ -57,7 +59,7 @@ class ObsidianTaskProvider(ITaskProvider):
     def getTaskList(self) -> List[ITaskModel]:
         return self.lastTaskList
 
-    def getTaskListAttribute(self, string: str) -> str:
+    def getTaskListAttribute(self, string: str) -> list[dict[str, str]]:
         try:
             return self.lastJson[string]
         except Exception:
@@ -76,14 +78,14 @@ class ObsidianTaskProvider(ITaskProvider):
 
         return f"- [{status}] {description} [track:: {context}], [starts:: {start}], [due:: {due}], [severity:: {severity}], [remaining_cost:: {totalCost+investedEffort}], [invested:: {investedEffort}], [calm:: {calm}]\n"
 
-    def saveTask(self, task: ITaskModel):
+    def saveTask(self, task: ITaskModel) -> None:
         taskLine = self._getTaskLine(task)
 
         file = ""
         lineNumber = -1
         if not isinstance(task, ObsidianTaskModel) or task.getFile() == "" or task.getLine() == -1:
             lines = self.fileBroker.readFileContent(FileRegistry.OBSIDIAN_TASKS_MD).split("\n")
-            newLines = []
+            newLines: list[str] = []
 
             numLines = 1
             for line in lines:
@@ -111,7 +113,7 @@ class ObsidianTaskProvider(ITaskProvider):
                 fileLines[lineNumber] = lineOfInterest.split("- [")[0] + taskLine
             self.fileBroker.writeVaultFileLines(VaultRegistry.OBSIDIAN, file, fileLines)
 
-    def createDefaultTask(self, description: str):
+    def createDefaultTask(self, description: str) -> ObsidianTaskModel:
         starts = int(datetime.datetime.now().timestamp() * 1e3)
         due = int(datetime.datetime.today().timestamp() * 1e3)
         starts = starts - starts % 60000
@@ -126,24 +128,27 @@ class ObsidianTaskProvider(ITaskProvider):
         return task
 
     def getTaskMetadata(self, task: ITaskModel) -> str:
+        if not isinstance(task, ObsidianTaskModel):
+            return ""
+        
         file = task.getFile()
         line = task.getLine()
         fileLines = fileLines = self.fileBroker.getVaultFileLines(VaultRegistry.OBSIDIAN, file)
 
-        metadata = []
+        metadata: list[str] = []
         for i in range(max(line, 0), min(line + 5, len(fileLines))):
             metadata.append(fileLines[i])
 
         return "".join(metadata)
 
-    def registerTaskListUpdatedCallback(self, callback):
+    def registerTaskListUpdatedCallback(self, callback: Callable[[], None]) -> None:
         self.onTaskListUpdatedCallbacks.append(callback)
 
-    def compare(self, list1, list2):
-        if len(list1) != len(list2):
+    def compare(self, list_a: list[ITaskModel], list_b: list[ITaskModel]) -> bool:
+        if len(list_a) != len(list_b):
             return False
-        for i in range(len(list1)):
-            if list1[i] != list2[i]:
+        for i in range(len(list_a)):
+            if list_a[i] != list_b[i]:
                 return False
         return True
 
@@ -153,28 +158,28 @@ class ObsidianTaskProvider(ITaskProvider):
         return bytearray(jsonStr, "utf-8")
 
     def exportTasks(self, selectedFormat: str) -> bytearray:
-        supportedFormats: dict = {
+        supportedFormats: dict[str, Callable[[], bytearray]] = {
             "json": self._exportJson,
         }
 
         return supportedFormats[selectedFormat]()
 
-    def importTasks(self, selectedFormat: str):
+    def importTasks(self, selectedFormat: str) -> None:
         raise NotImplementedError("Importing tasks is not supported for ObsidianTaskProvider")
 
     def __generateExportJson(self, taskList: List[ITaskModel]) -> str:
-        tasks = []
+        tasks: list[dict[str, str]] = []
         for task in taskList:
             taskDict = {
                 "description": task.getDescription(),
                 "context": task.getContext(),
-                "start": task.getStart().as_int(),
-                "due": task.getDue().as_int(),
-                "severity": task.getSeverity(),
-                "totalCost": task.getTotalCost().as_pomodoros(),
-                "investedEffort": task.getInvestedEffort().as_pomodoros(),
-                "status": task.getStatus(),
-                "calm": task.getCalm()
+                "start": str(task.getStart().as_int()),
+                "due": str(task.getDue().as_int()),
+                "severity": str(task.getSeverity()),
+                "totalCost": str(task.getTotalCost().as_pomodoros()),
+                "investedEffort": str(task.getInvestedEffort().as_pomodoros()),
+                "status": str(task.getStatus()),
+                "calm": str(task.getCalm())
             }
             tasks.append(taskDict)
         return json.dumps({

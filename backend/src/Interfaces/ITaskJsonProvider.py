@@ -1,6 +1,7 @@
 # class interface
 
 from abc import ABC, abstractmethod
+from ..Utils import TaskJsonType
 
 VALID_PROJECT_STATUS = [
     "open",
@@ -12,7 +13,7 @@ VALID_PROJECT_STATUS = [
 class ITaskJsonProvider(ABC):
 
     @abstractmethod
-    def getJson(self) -> dict:
+    def getJson(self) -> TaskJsonType:
         """
         Gets the tasks json.
 
@@ -22,5 +23,5 @@ class ITaskJsonProvider(ABC):
         pass
 
     @abstractmethod
-    def saveJson(self, json: dict):
+    def saveJson(self, json: TaskJsonType) -> None:
         pass

@@ -5,7 +5,7 @@ from ..Interfaces.ITaskModel import ITaskModel
 from ..Interfaces.ITaskJsonProvider import ITaskJsonProvider
 from ..Interfaces.IFileBroker import IFileBroker, FileRegistry
 from ..taskmodels.TaskModel import TaskModel
-from typing import List
+from typing import Callable, List
 import json
 
 
@@ -15,14 +15,14 @@ class TaskProvider(ITaskProvider):
         self.taskJsonProvider = task_json_provider
         self.fileBroker = fileBroker
         self.dict_task_list = self.taskJsonProvider.getJson()
-        self.onTaskListUpdatedCallbacks: list[callable] = []
+        self.onTaskListUpdatedCallbacks: list[Callable[[], None]] = []
         self.__disableThreading = disableThreading
         if not self.__disableThreading:
             self.serviceRunning = True
             self.service = threading.Thread(target=self.__serviceThread)
             self.service.start()
 
-    def dispose(self):
+    def dispose(self) -> None:
         """
         Disposes the task provider.
 
@@ -33,7 +33,7 @@ class TaskProvider(ITaskProvider):
             self.serviceRunning = False
             self.service.join()
 
-    def __serviceThread(self):
+    def __serviceThread(self) -> None:
         """
         The service thread that will notify the registered callbacks every 10 seconds.
         """
@@ -53,7 +53,7 @@ class TaskProvider(ITaskProvider):
         newTaskJson = self.taskJsonProvider.getJson()
         self.dict_task_list = dict(newTaskJson)
         self.dict_task_list["tasks"] = []
-        task_list = []
+        task_list: List[ITaskModel] = []
         index = 0
         for task in newTaskJson["tasks"]:
             if task["status"] == "x":
@@ -63,7 +63,7 @@ class TaskProvider(ITaskProvider):
             index += 1
         return task_list
 
-    def createTaskFromDict(self, dict_task: dict, index: int) -> ITaskModel:
+    def createTaskFromDict(self, dict_task: dict[str, str], index: int) -> ITaskModel:
         """
         Creates a task model from a dictionary.
 
@@ -73,15 +73,27 @@ class TaskProvider(ITaskProvider):
             dict_task: The dictionary containing the task data.
             index: The index of the task in the task list.
         """
-        return TaskModel(index=index, description=dict_task["description"], context=dict_task["context"], start=dict_task["start"], due=dict_task["due"], severity=dict_task["severity"], totalCost=dict_task["totalCost"], investedEffort=dict_task["investedEffort"], status=dict_task["status"], calm=dict_task["calm"], project=dict_task.get("project", ""))
+        return TaskModel(
+            index=index,
+            description=dict_task["description"],
+            context=dict_task["context"],
+            start=int(dict_task["start"]),
+            due=int(dict_task["due"]),
+            severity=float(dict_task["severity"]),
+            totalCost=float(dict_task["totalCost"]),
+            investedEffort=float(dict_task["investedEffort"]),
+            status=dict_task["status"],
+            calm=dict_task["calm"],
+            project=dict_task.get("project", "")
+        )
 
-    def getTaskListAttribute(self, string: str) -> str:
+    def getTaskListAttribute(self, string: str) -> list[dict[str, str]]:
         try:
             return self.dict_task_list[string]
         except Exception:
-            return ""
+            return []
 
-    def saveTask(self, task: ITaskModel):
+    def saveTask(self, task: ITaskModel) -> None:
         """
         Saves a task.
 
@@ -93,14 +105,14 @@ class TaskProvider(ITaskProvider):
         task_list = self.getTaskList()
         for index in range(len(task_list)):
             if task_list[index] == task:
-                self.dict_task_list["tasks"][index] = dict(
+                self.dict_task_list["tasks"][index] = dict[str, str](
                     description=task.getDescription().split(" @ ")[0].strip(),
                     context=task.getContext(),
-                    start=task.getStart().as_int(),
-                    due=task.getDue().as_int(),
-                    severity=task.getSeverity(),
-                    totalCost=task.getTotalCost().as_pomodoros(),
-                    investedEffort=task.getInvestedEffort().as_pomodoros(),
+                    start=str(task.getStart().as_int()),
+                    due=str(task.getDue().as_int()),
+                    severity=str(task.getSeverity()),
+                    totalCost=str(task.getTotalCost().as_pomodoros()),
+                    investedEffort=str(task.getInvestedEffort().as_pomodoros()),
                     status=task.getStatus(),
                     calm="True" if task.getCalm() else "False",
                     project=task.getProject()
@@ -128,14 +140,14 @@ class TaskProvider(ITaskProvider):
         status = " "
         calm = "False"
 
-        default_task = dict(
+        default_task = dict[str, str](
             description=description,
             context="inbox",
-            start=starts,
-            due=due,
-            severity=severity,
-            totalCost=1.0,
-            investedEffort=invested,
+            start=str(starts),
+            due=str(due),
+            severity=str(severity),
+            totalCost=str(1.0),
+            investedEffort=str(invested),
             status=status,
             calm=calm,
             project=""
@@ -167,7 +179,7 @@ class TaskProvider(ITaskProvider):
             calm="True" if task.getCalm() else "False"
         ).__str__()
 
-    def registerTaskListUpdatedCallback(self, callback):
+    def registerTaskListUpdatedCallback(self, callback: Callable[[], None]) -> None:
         self.onTaskListUpdatedCallbacks.append(callback)
         pass
 
@@ -185,18 +197,18 @@ class TaskProvider(ITaskProvider):
         return bytearray(jsonStr, "utf-8")
 
     def exportTasks(self, selectedFormat: str) -> bytearray:
-        supportedFormats: dict = {
+        supportedFormats: dict[str, Callable[[], bytearray]] = {
             "json": self._exportJson,
         }
 
         return supportedFormats[selectedFormat]()
 
-    def _importJson(self):
+    def _importJson(self) -> None:
         self.dict_task_list = self.fileBroker.readFileContentJson(FileRegistry.LAST_RECEIVED_FILE)
         self.taskJsonProvider.saveJson(self.dict_task_list)
 
-    def importTasks(self, selectedFormat: str):
-        supportedFormats: dict = {
+    def importTasks(self, selectedFormat: str) -> None:
+        supportedFormats: dict[str, Callable[[], None]] = {
             "json": self._importJson,
         }
 

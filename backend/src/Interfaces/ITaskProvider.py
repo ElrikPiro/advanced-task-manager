@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from typing import List
+from typing import Callable, List
 
 from .ITaskModel import ITaskModel
 
@@ -11,11 +11,11 @@ class ITaskProvider(ABC):
         pass
 
     @abstractmethod
-    def getTaskListAttribute(self, string: str) -> str:
+    def getTaskListAttribute(self, string: str) -> list[dict[str, str]]:
         pass
 
     @abstractmethod
-    def saveTask(self, task: ITaskModel):
+    def saveTask(self, task: ITaskModel) -> None:
         pass
 
     @abstractmethod
@@ -27,11 +27,11 @@ class ITaskProvider(ABC):
         pass
 
     @abstractmethod
-    def registerTaskListUpdatedCallback(self, callback):
+    def registerTaskListUpdatedCallback(self, callback: Callable[[], None]) -> None:
         pass
 
     @abstractmethod
-    def compare(self, listA: list[ITaskModel], listB: list[ITaskModel]) -> bool:
+    def compare(self, list_a: list[ITaskModel], list_b: list[ITaskModel]) -> bool:
         pass
 
     @abstractmethod
@@ -39,9 +39,9 @@ class ITaskProvider(ABC):
         pass
 
     @abstractmethod
-    def importTasks(self, selectedFormat: str):
+    def importTasks(self, selectedFormat: str) -> None:
         pass
 
     @abstractmethod
-    def dispose(self):
+    def dispose(self) -> None:
         pass

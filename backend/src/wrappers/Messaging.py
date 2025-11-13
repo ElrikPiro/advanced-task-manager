@@ -1,4 +1,35 @@
 from abc import ABC, abstractmethod
+from dataclasses import dataclass
+from typing import Dict, List
+
+from src.Interfaces.ITaskModel import ITaskModel
+from ..Utils import AgendaContent, FilterEntry, TaskInformation, TaskListContent, WorkloadStats
+
+
+class RenderMode:
+    TASK_LIST = 1
+    RAW_TEXT = 2
+    LIST_UPDATED = 3
+    HEURISTIC_LIST = 4
+    ALGORITHM_LIST = 5
+    FILTER_LIST = 6
+    TASK_STATS = 7
+    TASK_AGENDA = 8
+    TASK_INFORMATION = 9
+
+
+@dataclass
+class MessageContent:
+    renderMode: int | None = None
+    text: str | None = None
+    textList: list[str] | None = None
+    filterListDict: List[FilterEntry] | None = None
+    taskListContent: TaskListContent | None = None
+    task: ITaskModel | None = None
+    anonObjectList: List[Dict[str, str]] | None = None
+    workloadStats: WorkloadStats | None = None
+    agendaContent: AgendaContent | None = None
+    taskInformation: TaskInformation | None = None
 
 
 class IAgent(ABC):
@@ -70,7 +101,7 @@ class IMessage(ABC):
 
     @property
     @abstractmethod
-    def content(self) -> dict:
+    def content(self) -> MessageContent:
         pass
 
     @property
@@ -83,10 +114,7 @@ class InboundMessage(IMessage):
     def __init__(self, source: IAgent, destination: IAgent, command: str, args: list[str]):
         self._source = source
         self._destination = destination
-        self._content = {
-            "command": command,
-            "args": args
-        }
+        self._content = MessageContent(text=command, textList=args)
 
     @property
     def source(self) -> IAgent:
@@ -97,9 +125,7 @@ class InboundMessage(IMessage):
         return self._destination
 
     @property
-    def content(self) -> dict:
-        if self._content is None:
-            raise ValueError("Content must contain 'command' and 'args'")
+    def content(self) -> MessageContent:
         return self._content
 
     @property
@@ -107,25 +133,12 @@ class InboundMessage(IMessage):
         return "InboundMessage"
 
 
-# enum for message render modes
-class RenderMode:
-    TASK_LIST = 0
-    RAW_TEXT = 1
-    LIST_UPDATED = 2
-    HEURISTIC_LIST = 3
-    ALGORITHM_LIST = 4
-    FILTER_LIST = 5
-    TASK_STATS = 6
-    TASK_AGENDA = 7
-    TASK_INFORMATION = 8
-
-
 class OutboundMessage(IMessage):
-    def __init__(self, source: IAgent, destination: IAgent, content: dict, render_mode: RenderMode):
+    def __init__(self, source: IAgent, destination: IAgent, content: MessageContent, render_mode: int):
         self._source = source
         self._destination = destination
         self._content = content
-        self._content['render_mode'] = render_mode
+        content.renderMode = render_mode
 
     @property
     def source(self) -> IAgent:
@@ -136,7 +149,7 @@ class OutboundMessage(IMessage):
         return self._destination
 
     @property
-    def content(self) -> dict:
+    def content(self) -> MessageContent:
         return self._content
 
     @property
@@ -145,7 +158,7 @@ class OutboundMessage(IMessage):
 
 
 class InternalMessage(IMessage):
-    def __init__(self, source: IAgent, destination: IAgent, content: dict):
+    def __init__(self, source: IAgent, destination: IAgent, content: MessageContent) -> None:
         self._source = source
         self._destination = destination
         self._content = content
@@ -159,7 +172,7 @@ class InternalMessage(IMessage):
         return self._destination
 
     @property
-    def content(self) -> dict:
+    def content(self) -> MessageContent:
         return self._content
 
     @property
@@ -173,11 +186,11 @@ class IMessageBuilder(ABC):
         pass
 
     @abstractmethod
-    def createOutboundMessage(self, source: IAgent, destination: IAgent, content: dict, render_mode: RenderMode) -> OutboundMessage:
+    def createOutboundMessage(self, source: IAgent, destination: IAgent, content: MessageContent, render_mode: int) -> OutboundMessage:
         pass
 
     @abstractmethod
-    def createInternalMessage(self, source: IAgent, destination: IAgent, content: dict) -> InternalMessage:
+    def createInternalMessage(self, source: IAgent, destination: IAgent, content: MessageContent) -> InternalMessage:
         pass
 
 
@@ -185,10 +198,10 @@ class MessageBuilder(IMessageBuilder):
     def createInboundMessage(self, source: IAgent, destination: IAgent, command: str, args: list[str]) -> InboundMessage:
         return InboundMessage(source, destination, command, args)
 
-    def createOutboundMessage(self, source: IAgent, destination: IAgent, content: dict, render_mode: RenderMode) -> OutboundMessage:
+    def createOutboundMessage(self, source: IAgent, destination: IAgent, content: MessageContent, render_mode: int) -> OutboundMessage:
         return OutboundMessage(source, destination, content, render_mode)
 
-    def createInternalMessage(self, source: IAgent, destination: IAgent, content: dict) -> InternalMessage:
+    def createInternalMessage(self, source: IAgent, destination: IAgent, content: MessageContent) -> InternalMessage:
         return InternalMessage(source, destination, content)
 
 

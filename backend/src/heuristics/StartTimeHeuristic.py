@@ -11,7 +11,7 @@ class StartTimeHeuristic(IHeuristic):
     It's intended used is to create FIFO queues based on the start time of tasks.
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         pass
 
     def sort(self, tasks: List[ITaskModel]) -> List[Tuple[ITaskModel, float]]:

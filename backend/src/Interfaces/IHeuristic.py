@@ -28,3 +28,7 @@ class IHeuristic(ABC):
         This is used for displaying the heuristic value in the UI.
         """
         pass
+
+    @abstractmethod
+    def getDescription(self) -> str:
+        pass

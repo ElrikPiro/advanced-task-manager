@@ -1,3 +1,4 @@
+from src.Utils import ProjectJsonListType, TaskDiscoveryPolicies, TaskJsonListType, TaskJsonType
 from ..wrappers.TimeManagement import TimePoint
 from ..Interfaces.ITaskJsonProvider import ITaskJsonProvider, VALID_PROJECT_STATUS
 from ..Interfaces.IFileBroker import IFileBroker, VaultRegistry
@@ -5,15 +6,15 @@ from ..Interfaces.IFileBroker import IFileBroker, VaultRegistry
 
 class ObsidianVaultTaskJsonProvider(ITaskJsonProvider):
 
-    def __init__(self, fileBroker: IFileBroker, policies: dict):
+    def __init__(self, fileBroker: IFileBroker, policies: TaskDiscoveryPolicies):
         self.__fileBroker = fileBroker
-        self._lastJson = {"tasks": []}
-        self._lastJsonList: list = []
-        self.__lastProjectList: list = []
+        self._lastJson: TaskJsonType = {"tasks": []}
+        self._lastJsonList: TaskJsonListType = []
+        self.__lastProjectList: ProjectJsonListType = []
         self._lastMtime = 0.0
         self.__policies = policies
 
-    def getJson(self) -> dict:
+    def getJson(self) -> TaskJsonType:
         vaultFiles = self.__fileBroker.getVaultFiles(VaultRegistry.OBSIDIAN)
         if len(vaultFiles) == 0:
             return {}
@@ -40,7 +41,7 @@ class ObsidianVaultTaskJsonProvider(ITaskJsonProvider):
         self._lastJson["projects"] = self.__lastProjectList
         return self._lastJson
 
-    def __process_task_file(self, file: tuple[str, float]):
+    def __process_task_file(self, file: tuple[str, float]) -> None:
         fileContent = self.__fileBroker.getVaultFileLines(VaultRegistry.OBSIDIAN, file[0])
         fileHeader = self.__getFileHeader(fileContent)
         taskLines = self.__getFileTaskLines(fileContent, fileHeader)
@@ -58,7 +59,7 @@ class ObsidianVaultTaskJsonProvider(ITaskJsonProvider):
             if len(taskLines) == 0 and status == "open":
                 taskDict = self.__getTaskDictFromLine(
                     f"- [ ] Define next action [track::{self.__getFallbackPolicy()}]",
-                    file[0], str(len(fileContent)),
+                    file[0], len(fileContent),
                     fileHeader
                 )
                 self.__update_or_append_task(taskDict)
@@ -69,7 +70,7 @@ class ObsidianVaultTaskJsonProvider(ITaskJsonProvider):
                 continue
             self.__update_or_append_task(taskDict)
 
-    def __update_or_append_task(self, taskDict):
+    def __update_or_append_task(self, taskDict: dict[str, str]) -> None:
         found = False
         for i in range(len(self._lastJsonList)):
             if self._lastJsonList[i]["file"] == taskDict["file"] and self._lastJsonList[i]["line"] == taskDict["line"]:
@@ -79,12 +80,12 @@ class ObsidianVaultTaskJsonProvider(ITaskJsonProvider):
         if not found:
             self._lastJsonList.append(taskDict)
 
-    def saveJson(self, json: dict):
+    def saveJson(self, json: TaskJsonType) -> None:
         # do nothing
         pass
 
-    def __getFileHeader(self, file: list[str]) -> dict:
-        header = {}
+    def __getFileHeader(self, file: list[str]) -> dict[str, str]:
+        header: dict[str, str] = {}
         inHeader = False
         for line in file:
             if line.split('\n')[0].strip() == "---":
@@ -101,14 +102,14 @@ class ObsidianVaultTaskJsonProvider(ITaskJsonProvider):
                 header[key] = value
         return header
 
-    def __getFileTaskLines(self, file: list[str], fileHeader: dict) -> list[(int, str)]:
-        taskLines = []
+    def __getFileTaskLines(self, file: list[str], fileHeader: dict[str, str]) -> list[tuple[int, str]]:
+        taskLines: list[tuple[int, str]] = []
         for i in range(len(file)):
             if file[i].strip().startswith("- [ ]"):
                 taskLines.append((i, file[i]))
         return taskLines
 
-    def __getDefaultTaskDict(self) -> dict:
+    def __getDefaultTaskDict(self) -> dict[str, str]:
         return {
             "taskText": "",
             "starts": str(TimePoint.today()),
@@ -123,7 +124,7 @@ class ObsidianVaultTaskJsonProvider(ITaskJsonProvider):
         }
         # track is ommited so that the task is invalid by default
 
-    def __getTaskDictFromLine(self, line: str, file: str, lineNum: int, fileHeader: dict) -> dict:
+    def __getTaskDictFromLine(self, line: str, file: str, lineNum: int, fileHeader: dict[str, str]) -> dict[str, str]:
         taskDict = self.__getDefaultTaskDict()
         taskDict["file"] = file
         taskDict["line"] = str(lineNum)
@@ -175,27 +176,29 @@ class ObsidianVaultTaskJsonProvider(ITaskJsonProvider):
         try:
             return str(TimePoint.from_string(date).as_int())
         except ValueError:
-            if self.__policies["date_missing_policy"] == "1":
+            if self.__policies.date_missing_policy == "1":
                 return str(TimePoint.today().as_int())
             raise ValueError(f"Invalid date format: {date}. Expected format is YYYY-MM-DD or YYYY-MM-DDTHH:MM")
 
-    def __apply_track_policy(self, track: str) -> str:
-        def is_prefix_of(prefix):
+    def __apply_track_policy(self, track: str | None) -> str:
+        def is_prefix_of(prefix: str | None) -> bool:
             isPrefix = False
-            for context in self.__policies["categories_prefixes"]:
-                if track.startswith(context):
+            for context in self.__policies.categories_prefixes:
+                if isinstance(prefix, str) and prefix.startswith(context):
                     isPrefix = True
                     break
             return isPrefix
 
-        if track is None or not is_prefix_of(track):
-            if self.__policies["context_missing_policy"] == "1":
-                return self.__policies["default_context"]
+        if not is_prefix_of(track):
+            if self.__policies.context_missing_policy == "1":
+                return self.__policies.default_context
             raise ValueError("Track tag is missing and no default value is set.")
+
+        assert isinstance(track, str)
 
         return track
 
-    def __getFallbackPolicy(self) -> str:
-        if self.__policies["default_context"] in self.__policies["categories_prefixes"]:
-            return self.__policies["default_context"]
-        return self.__policies["categories_prefixes"][0] if self.__policies["categories_prefixes"] else None
+    def __getFallbackPolicy(self) -> str | None:
+        if self.__policies.default_context in self.__policies.categories_prefixes:
+            return self.__policies.default_context
+        return self.__policies.categories_prefixes[0] if self.__policies.categories_prefixes else None

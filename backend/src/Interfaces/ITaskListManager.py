@@ -1,7 +1,9 @@
 from abc import ABC, abstractmethod
 from typing import List
 
-from ..wrappers.TimeManagement import TimePoint
+from src.algorithms.Interfaces.IAlgorithm import IAlgorithm
+from src.wrappers.TimeManagement import TimePoint
+from src.Utils import FilterListDict, TaskListContent, WorkloadStats, AgendaContent, TaskInformation
 
 from .ITaskProvider import ITaskProvider
 from .ITaskModel import ITaskModel
@@ -16,76 +18,60 @@ class ITaskListManager(ABC):
 
     @property
     @abstractmethod
-    def selected_task(self) -> ITaskModel:
+    def selected_task(self) -> ITaskModel | None:
         pass
 
     @selected_task.setter
     @abstractmethod
-    def selected_task(self, task: ITaskModel):
+    def selected_task(self, task: ITaskModel | None) -> None:
         pass
 
     @abstractmethod
-    def reset_pagination(self, tasksPerPage: int = 5):
+    def reset_pagination(self, tasksPerPage: int = 5) -> None:
         pass
 
     @abstractmethod
-    def next_page(self):
+    def next_page(self) -> None:
         pass
 
     @abstractmethod
-    def prior_page(self):
+    def prior_page(self) -> None:
         pass
 
     @abstractmethod
-    def select_task(self, message: str):
+    def select_task(self, message: str) -> None:
         pass
 
     @abstractmethod
-    def clear_selected_task(self):
+    def clear_selected_task(self) -> None:
         pass
 
     @abstractmethod
-    def search_tasks(self, searchTerms: List[str]):
+    def search_tasks(self, searchTerms: List[str]) -> "ITaskListManager":
         pass
 
     @abstractmethod
-    def render_task_list_str_legacy(self, interactive: bool = True) -> str:
+    def update_taskList(self, taskModelList: List[ITaskModel]) -> None:
         pass
 
     @abstractmethod
-    def update_taskList(self, taskModelList: List[ITaskModel]):
+    def add_task(self, task: ITaskModel) -> None:
         pass
 
     @abstractmethod
-    def add_task(self, task: ITaskModel):
+    def select_heuristic(self, messageText: str) -> None:
         pass
 
     @abstractmethod
-    def select_heuristic(self, messageText: str):
+    def select_filter(self, messageText: str) -> None:
         pass
 
     @abstractmethod
-    def select_filter(self, messageText: str):
+    def get_filter_list(self) -> FilterListDict:
         pass
 
     @abstractmethod
-    def get_filter_list(self) -> dict:
-        pass
-
-    @abstractmethod
-    def get_heuristic_list_legacy(self) -> str:
-        pass
-
-    @abstractmethod
-    def get_list_stats_legacy(self) -> str:
-        """
-        Returns a string with the statistics of the task list.
-        This includes workload, remaining effort, heuristic value, and offender task.
-        """
-        pass
-
-    @abstractmethod
-    def get_list_stats(self) -> dict:
+    def get_list_stats(self) -> WorkloadStats:
         """
         Returns a dictionary with the statistics of the task list.
         This includes workload, remaining effort, heuristic value, and offender task.
@@ -93,27 +79,15 @@ class ITaskListManager(ABC):
         pass
 
     @abstractmethod
-    def render_task_information(self, task: ITaskModel, taskProvider: ITaskProvider, extended: bool) -> str:
+    def get_heuristic_list(self) -> list[dict[str, str]]:
         pass
 
     @abstractmethod
-    def render_day_agenda(self, date: TimePoint, categories: list[dict]) -> str:
+    def get_algorithm_list(self) -> list[dict[str, str]]:
         pass
 
     @abstractmethod
-    def get_heuristic_list(self) -> dict:
-        pass
-
-    @abstractmethod
-    def get_algorithm_list_legacy(self) -> str:
-        pass
-
-    @abstractmethod
-    def get_algorithm_list(self) -> dict:
-        pass
-
-    @abstractmethod
-    def get_task_list_content(self) -> dict:
+    def get_task_list_content(self) -> TaskListContent:
         """
         Returns a dictionary with the content needed to render a task list.
         This includes algorithm information, heuristic information, tasks, pagination details, etc.
@@ -121,7 +95,7 @@ class ITaskListManager(ABC):
         pass
         
     @abstractmethod
-    def get_day_agenda_content(self, date: TimePoint, categories: list[dict]) -> dict:
+    def get_day_agenda_content(self, date: TimePoint, categories: list[dict[str, str]]) -> AgendaContent:
         """
         Returns a dictionary with the content needed to render a day agenda.
         This includes active urgent tasks, planned urgent tasks, and other tasks.
@@ -136,7 +110,7 @@ class ITaskListManager(ABC):
         pass
         
     @abstractmethod
-    def get_task_information(self, task: ITaskModel, taskProvider: ITaskProvider, extended: bool) -> dict:
+    def get_task_information(self, task: ITaskModel, taskProvider: ITaskProvider, extended: bool) -> TaskInformation:
         """
         Returns a dictionary with the content needed to render task information.
         This includes task details like description, context, start date, due date,
@@ -151,4 +125,13 @@ class ITaskListManager(ABC):
         Returns:
             A dictionary containing the task information data
         """
+        pass
+
+    @property
+    @abstractmethod
+    def selected_algorithm(self) -> IAlgorithm | None:
+        pass
+
+    @abstractmethod
+    def select_algorithm(self, messageText: str) -> None:
         pass
