@@ -14,29 +14,22 @@ param(
 # Set error action preference
 $ErrorActionPreference = "Stop"
 
-# Colors for output
-$Red = "`e[31m"
-$Green = "`e[32m"
-$Yellow = "`e[33m"
-$Blue = "`e[34m"
-$Reset = "`e[0m"
-
-# Function to write colored output
+# Function to write output
 function Write-ColorOutput {
     param(
         [string]$Message,
-        [string]$Color = $Reset
+        [string]$Color = ""
     )
-    Write-Host "${Color}${Message}${Reset}"
+    Write-Host $Message
 }
 
 # Function to write section headers
 function Write-Section {
     param([string]$Title)
     Write-Host ""
-    Write-ColorOutput "=" * 60 -Color $Blue
-    Write-ColorOutput "  $Title" -Color $Blue
-    Write-ColorOutput "=" * 60 -Color $Blue
+    Write-Host ("=" * 60)
+    Write-Host "  $Title"
+    Write-Host ("=" * 60)
 }
 
 # Function to check if a command exists
@@ -55,20 +48,20 @@ function Invoke-QualityCheck {
         [string]$CheckName
     )
     
-    Write-ColorOutput "Running: $Command $Arguments" -Color $Yellow
+    Write-Host "Running: $Command $Arguments"
     
     try {
         $process = Start-Process -FilePath $Command -ArgumentList $Arguments -WorkingDirectory $WorkingDirectory -Wait -PassThru -NoNewWindow
         
         if ($process.ExitCode -eq 0) {
-            Write-ColorOutput "[PASS] $CheckName - PASSED" -Color $Green
+            Write-Host "[PASS] $CheckName - PASSED"
             return $true
         } else {
-            Write-ColorOutput "[FAIL] $CheckName - FAILED (Exit code: $($process.ExitCode))" -Color $Red
+            Write-Host "[FAIL] $CheckName - FAILED (Exit code: $($process.ExitCode))"
             return $false
         }
     } catch {
-        Write-ColorOutput "[ERROR] $CheckName - ERROR - $($_.Exception.Message)" -Color $Red
+        Write-Host "[ERROR] $CheckName - ERROR - $($_.Exception.Message)"
         return $false
     }
 }

@@ -71,12 +71,12 @@ powershell -ExecutionPolicy Bypass -File .\tools\powershell\local-quality-checks
 
 ## Output
 
-The script provides colored output with clear status indicators:
+The script provides clean output with clear status indicators:
 
-- `[PASS]` - Check passed successfully (green)
-- `[FAIL]` - Check failed (red)
-- `[ERROR]` - Check encountered an error (red)
-- `[SKIP]` - Check was skipped (yellow)
+- `[PASS]` - Check passed successfully
+- `[FAIL]` - Check failed
+- `[ERROR]` - Check encountered an error
+- `[SKIP]` - Check was skipped
 
 ## Exit Codes
 
@@ -116,12 +116,7 @@ The script expects to be run from the project root and will automatically:
    Solution: The script automatically installs dependencies, but ensure you're in the correct directory
    ```
 
-4. **Color Output Issues**
-   ```
-   Solution: Use a modern terminal that supports ANSI escape codes (Windows Terminal, PowerShell 7.x)
-   ```
-
-5. **Tests Show 0 Results**
+4. **Tests Show 0 Results**
    ```
    Solution: The script uses the exact same command as CI/CD. If you see 0 tests, ensure you're running from the project root directory.
    ```
