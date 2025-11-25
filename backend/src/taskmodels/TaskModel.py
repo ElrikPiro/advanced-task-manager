@@ -5,7 +5,7 @@ from ..Interfaces.ITaskModel import ITaskModel
 
 
 class TaskModel(ITaskModel):
-    def __init__(self, description: str, context: str, start: int, due: int, severity: float, totalCost: float, investedEffort: float, status: str, calm: str, project: str, index: int):
+    def __init__(self, description: str, context: str, start: int, due: int, severity: float, totalCost: float, investedEffort: float, status: str, calm: str, project: str, index: int, raised: str | None, waited: str | None):
         self._description: str = description
         self._context: str = context
         self._start: int = int(start)
@@ -17,6 +17,20 @@ class TaskModel(ITaskModel):
         self._calm: bool = True if calm.upper().startswith("TRUE") else False
         self._project: str = project
         self._index: int = index
+        self._raised = raised
+        self._waited = waited
+
+    def getEventRaised(self) -> str | None:
+        return self._raised
+
+    def setEventRaised(self, event: str | None) -> None:
+        self._raised = event
+
+    def getEventWaited(self) -> str | None:
+        return self._waited
+
+    def setEventWaited(self, event: str | None) -> None:
+        self._waited = event
 
     def getDescription(self) -> str:
         """

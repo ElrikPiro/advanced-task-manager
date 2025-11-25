@@ -3,7 +3,7 @@ from .TaskModel import TaskModel
 
 
 class ObsidianTaskModel(TaskModel):
-    def __init__(self, description: str, context: str, start: int, due: int, severity: float, totalCost: float, investedEffort: float, status: str, file: str, line: int, calm: str):
+    def __init__(self, description: str, context: str, start: int, due: int, severity: float, totalCost: float, investedEffort: float, status: str, file: str, line: int, calm: str, raised: str | None, waited: str | None):
         self._description: str = description
         self._context: str = context
         self._start: int = int(start)
@@ -15,6 +15,8 @@ class ObsidianTaskModel(TaskModel):
         self._file: str = "/".join(file.split("\\"))
         self._line: int = int(line)
         self._calm: bool = True if calm.upper().startswith("TRUE") else False
+        self._raised = raised
+        self._waited = waited
 
     # Overrided
     def getDescription(self) -> str:
