@@ -27,6 +27,10 @@ class ITaskListManager(ABC):
         pass
 
     @abstractmethod
+    def raiseEvent(self, event: str) -> list[ITaskModel]:
+        pass
+
+    @abstractmethod
     def reset_pagination(self, tasksPerPage: int = 5) -> None:
         pass
 

@@ -423,6 +423,13 @@ class TelegramReportingService(IReportingService):
         if selected_task is not None:
             task = selected_task
             task.setStatus("x")
+            
+            event = task.getEventRaised()
+            if isinstance(event, str):
+                batch = self._taskListManager.raiseEvent(event)
+                for t in batch:
+                    self.taskProvider.saveTask(t)
+            
             self.taskProvider.saveTask(task)
             if expectAnswer:
                 await self.sendTaskList()
