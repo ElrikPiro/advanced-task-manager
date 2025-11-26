@@ -3,7 +3,7 @@ from dataclasses import dataclass
 from typing import Dict, List
 
 from src.Interfaces.ITaskModel import ITaskModel
-from ..Utils import AgendaContent, FilterEntry, TaskInformation, TaskListContent, WorkloadStats
+from ..Utils import AgendaContent, EventsContent, FilterEntry, TaskInformation, TaskListContent, WorkloadStats
 
 
 class RenderMode:
@@ -16,6 +16,7 @@ class RenderMode:
     TASK_STATS = 7
     TASK_AGENDA = 8
     TASK_INFORMATION = 9
+    EVENTS = 10
 
 
 @dataclass
@@ -30,6 +31,7 @@ class MessageContent:
     workloadStats: WorkloadStats | None = None
     agendaContent: AgendaContent | None = None
     taskInformation: TaskInformation | None = None
+    eventsContent: EventsContent | None = None
 
 
 class IAgent(ABC):

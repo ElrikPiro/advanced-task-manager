@@ -3,7 +3,7 @@ from typing import List
 
 from src.algorithms.Interfaces.IAlgorithm import IAlgorithm
 from src.wrappers.TimeManagement import TimePoint
-from src.Utils import FilterListDict, TaskListContent, WorkloadStats, AgendaContent, TaskInformation
+from src.Utils import EventsContent, FilterListDict, TaskListContent, WorkloadStats, AgendaContent, TaskInformation
 
 from .ITaskProvider import ITaskProvider
 from .ITaskModel import ITaskModel
@@ -134,4 +134,8 @@ class ITaskListManager(ABC):
 
     @abstractmethod
     def select_algorithm(self, messageText: str) -> None:
+        pass
+
+    @abstractmethod
+    def getEventStatistics(self) -> EventsContent:
         pass

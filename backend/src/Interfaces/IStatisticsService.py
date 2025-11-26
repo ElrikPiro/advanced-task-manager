@@ -1,7 +1,7 @@
 from abc import ABC, abstractmethod
 import datetime
 
-from src.Utils import WorkLogEntry, WorkloadStats
+from src.Utils import EventsContent, WorkLogEntry, WorkloadStats
 
 from .ITaskModel import ITaskModel
 from ..wrappers.TimeManagement import TimePoint, TimeAmount
@@ -44,5 +44,18 @@ class IStatisticsService(ABC):
                 - timestamp: The timestamp of the work done.
                 - work_units: The amount of work done.
                 - task: The task on which the work was done.
+        """
+        pass
+
+    @abstractmethod
+    def getEventStatistics(self, taskList: list[ITaskModel]) -> EventsContent:
+        """
+        Analyze event statistics from all tasks to identify raised/waited events and orphans.
+        
+        Args:
+            taskList: List of tasks to analyze for event statistics
+            
+        Returns:
+            EventsContent: Structured data containing event statistics
         """
         pass

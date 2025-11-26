@@ -1,5 +1,5 @@
 from src.Interfaces.ITaskModel import ITaskModel
-from src.Utils import AgendaContent, ExtendedTaskInformation, TaskInformation, TaskListContent, WorkloadStats
+from src.Utils import AgendaContent, EventsContent, ExtendedTaskInformation, TaskInformation, TaskListContent, WorkloadStats
 from src.wrappers.Messaging import IAgent, IMessage, RenderMode, UserAgent, InboundMessage
 from src.wrappers.interfaces.IUserCommService import IUserCommService
 
@@ -19,7 +19,8 @@ class ShellUserCommService(IUserCommService):
             RenderMode.FILTER_LIST: self.__renderFilterList,
             RenderMode.TASK_STATS: self.__renderTaskStats,
             RenderMode.TASK_AGENDA: self.__renderTaskAgenda,
-            RenderMode.TASK_INFORMATION: self.__renderTaskInformation
+            RenderMode.TASK_INFORMATION: self.__renderTaskInformation,
+            RenderMode.EVENTS: self.__renderEvents
         }
 
     def __renderFilterList(self, message: IMessage) -> None:
@@ -299,6 +300,52 @@ class ShellUserCommService(IUserCommService):
         self.__botPrint("/work [work_units] - Invest work units in the task")
         self.__botPrint("/snooze - Snooze the task for 5 minutes")
         self.__botPrint("/info - Show extended information")
+
+    def __renderEvents(self, message: IMessage) -> None:
+        self.__botPrint("(Info) Events Render Mode")
+        
+        # Extract events content from the message
+        events = message.content.eventsContent
+        if not isinstance(events, EventsContent):
+            self.__botPrint("No events data available")
+            return
+
+        total_events = events.total_events
+        total_raising_tasks = events.total_raising_tasks
+        total_waiting_tasks = events.total_waiting_tasks
+        orphaned_events_count = events.orphaned_events_count
+        event_statistics = events.event_statistics
+
+        # Display overall statistics
+        self.__botPrint("Event Statistics Summary:")
+        self.__botPrint(f"Total Events: {total_events}")
+        self.__botPrint(f"Tasks Raising Events: {total_raising_tasks}")
+        self.__botPrint(f"Tasks Waiting for Events: {total_waiting_tasks}")
+        self.__botPrint(f"Orphaned Events: {orphaned_events_count}")
+        self.__botPrint("")
+
+        # Display individual event statistics
+        if event_statistics:
+            self.__botPrint("Individual Event Statistics:")
+            self.__botPrint("| Event Name | Raising | Waiting | Status |")
+            self.__botPrint("|------------|---------|---------|--------|")
+            
+            for event_stat in event_statistics:
+                event_name = event_stat.event_name
+                tasks_raising = event_stat.tasks_raising
+                tasks_waiting = event_stat.tasks_waiting
+                status = "ORPHANED" if event_stat.is_orphaned else "OK"
+                if event_stat.is_orphaned:
+                    if event_stat.orphan_type == "raised_only":
+                        status += " (raised only)"
+                    elif event_stat.orphan_type == "waited_only":
+                        status += " (waited only)"
+                
+                self.__botPrint(f"| {event_name:10} | {tasks_raising:7} | {tasks_waiting:7} | {status:6} |")
+        else:
+            self.__botPrint("No events found in the current task list.")
+
+        self.__botPrint("\n/list - return back to the task list")
 
     async def sendMessage(self, message: IMessage) -> None:
         if message.type != "OutboundMessage":

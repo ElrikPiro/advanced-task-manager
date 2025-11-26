@@ -123,9 +123,9 @@ class TaskProvider(ITaskProvider):
                 raises = task.getEventRaised()
                 waits = task.getEventWaited()
                 if isinstance(raises, str):
-                    self.dict_task_list["tasks"][index]["raises"] = raises
+                    self.dict_task_list["tasks"][index]["raised"] = raises
                 if isinstance(waits, str):
-                    self.dict_task_list["tasks"][index]["waits"] = waits
+                    self.dict_task_list["tasks"][index]["waited"] = waits
                 break
 
         self.taskJsonProvider.saveJson(self.dict_task_list)

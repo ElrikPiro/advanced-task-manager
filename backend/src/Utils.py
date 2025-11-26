@@ -119,6 +119,24 @@ class ExtendedTaskInformation:
 
 
 @dataclass
+class EventStatistics:
+    event_name: str
+    tasks_raising: int
+    tasks_waiting: int
+    is_orphaned: bool
+    orphan_type: str  # "raised_only", "waited_only", or "none"
+
+
+@dataclass
+class EventsContent:
+    total_events: int
+    total_raising_tasks: int
+    total_waiting_tasks: int
+    orphaned_events_count: int
+    event_statistics: list[EventStatistics]
+
+
+@dataclass
 class TaskInformation:
     task: TaskEntry
     extended: ExtendedTaskInformation | None

@@ -67,6 +67,7 @@ class TelegramReportingService(IReportingService):
             ("/schedule", self.scheduleCommand),
             ("/work", self.workCommand),
             ("/stats", self.statsCommand),
+            ("/events", self.eventsCommand),
             ("/snooze", self.snoozeCommand),
             ("/export", self.exportCommand),
             ("/import", self.importCommand),
@@ -543,6 +544,24 @@ class TelegramReportingService(IReportingService):
             destination=self.user,
             content=MessageContent(workloadStats=self._taskListManager.get_list_stats()),
             render_mode=RenderMode.TASK_STATS
+        )
+
+        await self.bot.sendMessage(message=message)
+
+    async def eventsCommand(self, messageText: str = "", expectAnswer: bool = True) -> None:
+        """
+        # Command /events
+        This command shows event statistics for tasks.
+        It displays overall event statistics including total events, raising/waiting tasks, and orphaned events.
+        For each event, it shows which tasks are raising it, which tasks are waiting for it, and if it's orphaned.
+        """
+        events_content = self._taskListManager.getEventStatistics()
+        
+        message = self.__messageBuilder.createOutboundMessage(
+            source=self.bot.getBotAgent(),
+            destination=self.user,
+            content=MessageContent(eventsContent=events_content),
+            render_mode=RenderMode.EVENTS
         )
 
         await self.bot.sendMessage(message=message)

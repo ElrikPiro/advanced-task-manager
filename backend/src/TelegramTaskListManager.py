@@ -1,5 +1,7 @@
 from typing import List, Tuple
 
+from src.Utils import EventsContent
+
 from .Utils import ActiveFilterEntry, AgendaContent, ExtendedTaskInformation, FilterListDict, FilterEntry, TaskEntry, TaskHeuristicsInfo, TaskInformation, TaskListContent, WorkloadStats
 
 from .wrappers.TimeManagement import TimeAmount, TimePoint
@@ -32,6 +34,9 @@ class TelegramTaskListManager(ITaskListManager):
         self.__statistics_service = statistics_service
 
         self.reset_pagination(tasksPerPage)
+
+    def getEventStatistics(self) -> EventsContent:
+        return self.__statistics_service.getEventStatistics(self.__taskModelList)
 
     @property
     def filtered_task_list(self) -> List[ITaskModel]:

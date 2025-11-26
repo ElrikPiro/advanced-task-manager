@@ -77,10 +77,10 @@ class ObsidianTaskProvider(ITaskProvider):
         calm = "true" if task.getCalm() else "false"
         
         raises = task.getEventRaised()
-        raises_str = f", [raises:: {raises}]" if isinstance(raises, str) else ""
+        raises_str = f", [raised:: {raises}]" if isinstance(raises, str) else ""
 
         waits = task.getEventWaited()
-        waits_str = f", [waits:: {waits}]" if isinstance(waits, str) else ""
+        waits_str = f", [waited:: {waits}]" if isinstance(waits, str) else ""
 
         return f"- [{status}] {description} [track:: {context}], [starts:: {start}], [due:: {due}], [severity:: {severity}], [remaining_cost:: {totalCost+investedEffort}], [invested:: {investedEffort}], [calm:: {calm}]{raises_str}{waits_str}\n"
 

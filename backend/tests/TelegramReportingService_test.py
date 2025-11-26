@@ -621,6 +621,69 @@ class TestTelegramReportingService(unittest.TestCase):
         self.messageBuilder.createOutboundMessage.assert_called_once()
         self.bot.sendMessage.assert_awaited_once()
 
+    def test_eventsCommand(self) -> None:
+        # Arrange
+        from src.Utils import EventsContent, EventStatistics
+        mock_events_content = EventsContent(
+            total_events=3,
+            total_raising_tasks=2,
+            total_waiting_tasks=1,
+            orphaned_events_count=1,
+            event_statistics=[
+                EventStatistics(
+                    event_name="test_event",
+                    tasks_raising=2,
+                    tasks_waiting=1,
+                    is_orphaned=False,
+                    orphan_type="none"
+                ),
+                EventStatistics(
+                    event_name="orphaned_event",
+                    tasks_raising=1,
+                    tasks_waiting=0,
+                    is_orphaned=True,
+                    orphan_type="raised_only"
+                )
+            ]
+        )
+        mock_filtered_tasks = [MagicMock(), MagicMock()]
+        self.task_list_manager.filtered_task_list = mock_filtered_tasks
+        self.statisticsProvider.getEventStatistics.return_value = mock_events_content
+        self.messageBuilder.createOutboundMessage.return_value = MagicMock()
+
+        # Act
+        asyncio.run(self.telegramReportingService.eventsCommand())
+
+        # Assert
+        self.statisticsProvider.getEventStatistics.assert_called_once_with(mock_filtered_tasks)
+        self.messageBuilder.createOutboundMessage.assert_called_once()
+        self.bot.sendMessage.assert_awaited_once()
+
+    def test_eventsCommand_no_answer(self) -> None:
+        # Arrange
+        from src.Utils import EventsContent
+        mock_events_content = EventsContent(
+            total_events=0,
+            total_raising_tasks=0,
+            total_waiting_tasks=0,
+            orphaned_events_count=0,
+            event_statistics=[]
+        )
+        mock_filtered_tasks = []
+        self.task_list_manager.filtered_task_list = mock_filtered_tasks
+        self.statisticsProvider.getEventStatistics.return_value = mock_events_content
+        self.messageBuilder.createOutboundMessage.return_value = MagicMock()
+
+        # Act
+        asyncio.run(self.telegramReportingService.eventsCommand("", False))
+
+        # Assert
+        self.statisticsProvider.getEventStatistics.assert_called_once_with(mock_filtered_tasks)
+        # When expectAnswer=False, the command still creates and sends the message
+        # This is different from other commands - events always sends a response
+        self.messageBuilder.createOutboundMessage.assert_called_once()
+        self.bot.sendMessage.assert_awaited_once()
+
     def test_snoozeCommand_default_time(self) -> None:
         # Arrange
         self.telegramReportingService.setCommand = AsyncMock()
