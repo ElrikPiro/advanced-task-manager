@@ -1,5 +1,7 @@
 from typing import List, Tuple
 
+from src.Utils import EventsContent
+
 from .Utils import ActiveFilterEntry, AgendaContent, ExtendedTaskInformation, FilterListDict, FilterEntry, TaskEntry, TaskHeuristicsInfo, TaskInformation, TaskListContent, WorkloadStats
 
 from .wrappers.TimeManagement import TimeAmount, TimePoint
@@ -33,6 +35,24 @@ class TelegramTaskListManager(ITaskListManager):
 
         self.reset_pagination(tasksPerPage)
 
+    def raiseEvent(self, event: str) -> list[ITaskModel]:
+        def awaits_event(task: ITaskModel) -> bool:
+            waited = task.getEventWaited()
+            if not isinstance(waited, str):
+                return False
+            else:
+                return waited == event
+
+        filtered = list(filter(awaits_event, self.__taskModelList))
+        for task in filtered:
+            task.setEventWaited(None)
+            task.setStart(TimePoint.now())
+
+        return filtered
+            
+    def getEventStatistics(self) -> EventsContent:
+        return self.__statistics_service.getEventStatistics(self.__taskModelList)
+
     @property
     def filtered_task_list(self) -> List[ITaskModel]:
 
@@ -40,7 +60,7 @@ class TelegramTaskListManager(ITaskListManager):
 
         for task in self.__taskModelList:
             for filterr in self.__filterList:
-                if filterr[2] and filterr[1].filter([task]):
+                if filterr[2] and filterr[1].filter([task]) and not isinstance(task.getEventWaited(), str):
                     newTaskList.append(task)
                     break
 

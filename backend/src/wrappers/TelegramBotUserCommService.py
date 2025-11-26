@@ -1,7 +1,7 @@
 import telegram
 
 from src.Interfaces.ITaskModel import ITaskModel
-from src.Utils import TaskListContent
+from src.Utils import EventsContent, TaskListContent
 from src.wrappers.TimeManagement import TimePoint, TimeAmount
 from src.wrappers.Messaging import IAgent, IMessage, OutboundMessage, RenderMode, UserAgent, InboundMessage
 from src.wrappers.interfaces.IUserCommService import IUserCommService
@@ -24,7 +24,8 @@ class TelegramBotUserCommService(IUserCommService):
             RenderMode.FILTER_LIST: self.__renderFilterList,
             RenderMode.TASK_STATS: self.__renderTaskStats,
             RenderMode.TASK_AGENDA: self.__renderTaskAgenda,
-            RenderMode.TASK_INFORMATION: self.__renderTaskInformation
+            RenderMode.TASK_INFORMATION: self.__renderTaskInformation,
+            RenderMode.EVENTS: self.__renderEvents
         }
 
     async def __renderFilterList(self, message: IMessage) -> None:
@@ -410,6 +411,65 @@ class TelegramBotUserCommService(IUserCommService):
         
         # Send the message with Markdown formatting
         await self.bot.send_message(chat_id, task_info, parse_mode="Markdown")
+
+    async def __renderEvents(self, message: IMessage) -> None:
+        # Get chat_id from message
+        chat_id = message.destination.id
+        
+        # Extract events content from the message
+        events = message.content.eventsContent
+        if not isinstance(events, EventsContent):
+            await self.bot.send_message(chat_id, "No events data available", parse_mode=None)
+            return
+
+        total_events = events.total_events
+        total_raising_tasks = events.total_raising_tasks
+        total_waiting_tasks = events.total_waiting_tasks
+        orphaned_events_count = events.orphaned_events_count
+        event_statistics = events.event_statistics
+
+        # Build the events message
+        events_message = "*Event Statistics Summary:*\n"
+        events_message += f"`Total Events: {total_events}`\n"
+        events_message += f"`Tasks Raising Events: {total_raising_tasks}`\n"
+        events_message += f"`Tasks Waiting for Events: {total_waiting_tasks}`\n"
+        events_message += f"`Orphaned Events: {orphaned_events_count}`\n\n"
+
+        # Display individual event statistics
+        if event_statistics:
+            events_message += "*Individual Event Statistics:*\n"
+            events_message += "`| Event Name     | Raising | Waiting | Status       |`\n"
+            events_message += "`|----------------|---------|---------|--------------|`\n"
+            
+            for event_stat in event_statistics:
+                event_name = self.__escapeMarkdown(event_stat.event_name)
+                tasks_raising = event_stat.tasks_raising
+                tasks_waiting = event_stat.tasks_waiting
+                status = "ORPHANED" if event_stat.is_orphaned else "OK"
+                if event_stat.is_orphaned:
+                    if event_stat.orphan_type == "raised_only":
+                        status += " (raised)"
+                    elif event_stat.orphan_type == "waited_only":
+                        status += " (waited)"
+                
+                # Pad the event name to fit the table format
+                padded_name = event_name[:14].ljust(14)
+                events_message += f"`| {padded_name} | {tasks_raising:7} | {tasks_waiting:7} | {status:12} |`\n"
+        else:
+            events_message += "No events found in the current task list.\n"
+
+        events_message += "\n/list - return back to the task list"
+
+        # Check message length limit for Telegram (4096 characters)
+        if len(events_message) > 4096:
+            events_message = events_message[:4092] + "\n..."
+
+        # Send the message with Markdown formatting
+        try:
+            await self.bot.send_message(chat_id, events_message, parse_mode="Markdown")
+        except Exception:
+            # Fallback to plain text if Markdown fails
+            await self.bot.send_message(chat_id, events_message)
 
     def getBotAgent(self) -> IAgent:
         return self.agent

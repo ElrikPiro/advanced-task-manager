@@ -67,6 +67,7 @@ class TelegramReportingService(IReportingService):
             ("/schedule", self.scheduleCommand),
             ("/work", self.workCommand),
             ("/stats", self.statsCommand),
+            ("/events", self.eventsCommand),
             ("/snooze", self.snoozeCommand),
             ("/export", self.exportCommand),
             ("/import", self.importCommand),
@@ -75,6 +76,7 @@ class TelegramReportingService(IReportingService):
             ("/project", self.projectCommand),
             ("/algorithm_", self.algorithmSelectionCommand),
             ("/algorithm", self.algorithmListCommand),
+            ("/raise", self.raiseAlgorithmCommand)
         ]
         pass
 
@@ -366,6 +368,15 @@ class TelegramReportingService(IReportingService):
 
         await self.bot.sendMessage(message=message)
 
+    async def raiseAlgorithmCommand(self, messageText: str = "", expectAnswer: bool = True) -> None:
+        arg = messageText.split(" ")[1:][0]
+        affected = self._taskListManager.raiseEvent(arg)
+        
+        for task in affected:
+            self.taskProvider.saveTask(task)
+
+        await self.__send_raw_text_message(f"{len(affected)} task affected.")
+
     async def filterListCommand(self, messageText: str = "", expectAnswer: bool = True) -> None:
         """
         # Command /filter
@@ -422,6 +433,13 @@ class TelegramReportingService(IReportingService):
         if selected_task is not None:
             task = selected_task
             task.setStatus("x")
+            
+            event = task.getEventRaised()
+            if isinstance(event, str):
+                batch = self._taskListManager.raiseEvent(event)
+                for t in batch:
+                    self.taskProvider.saveTask(t)
+            
             self.taskProvider.saveTask(task)
             if expectAnswer:
                 await self.sendTaskList()
@@ -543,6 +561,24 @@ class TelegramReportingService(IReportingService):
             destination=self.user,
             content=MessageContent(workloadStats=self._taskListManager.get_list_stats()),
             render_mode=RenderMode.TASK_STATS
+        )
+
+        await self.bot.sendMessage(message=message)
+
+    async def eventsCommand(self, messageText: str = "", expectAnswer: bool = True) -> None:
+        """
+        # Command /events
+        This command shows event statistics for tasks.
+        It displays overall event statistics including total events, raising/waiting tasks, and orphaned events.
+        For each event, it shows which tasks are raising it, which tasks are waiting for it, and if it's orphaned.
+        """
+        events_content = self._taskListManager.getEventStatistics()
+        
+        message = self.__messageBuilder.createOutboundMessage(
+            source=self.bot.getBotAgent(),
+            destination=self.user,
+            content=MessageContent(eventsContent=events_content),
+            render_mode=RenderMode.EVENTS
         )
 
         await self.bot.sendMessage(message=message)
@@ -830,6 +866,14 @@ class TelegramReportingService(IReportingService):
         task.setCalm(value.upper().startswith("TRUE"))
         pass
 
+    async def setWaitedCommand(self, task: ITaskModel, value: str) -> None:
+        task.setEventWaited(value)
+        pass
+
+    async def setRaisedCommand(self, task: ITaskModel, value: str) -> None:
+        task.setEventRaised(value)
+        pass
+
     async def processSetParam(self, task: ITaskModel, param: str, value: str) -> None:
 
         commands: list[Tuple[str, Callable[[ITaskModel, str], Coroutine[Any, Any, Any]]]] = [
@@ -841,6 +885,8 @@ class TelegramReportingService(IReportingService):
             ("total_cost", self.setTotalCostCommand),
             ("effort_invested", self.setEffortInvestedCommand),
             ("calm", self.setCalmCommand),
+            ("waited", self.setWaitedCommand),
+            ("raised", self.setRaisedCommand)
         ]
 
         command = next((command for command in commands if command[0].startswith(param)), ("", None))[1]

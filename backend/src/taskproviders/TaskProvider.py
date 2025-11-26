@@ -84,7 +84,9 @@ class TaskProvider(ITaskProvider):
             investedEffort=float(dict_task["investedEffort"]),
             status=dict_task["status"],
             calm=dict_task["calm"],
-            project=dict_task.get("project", "")
+            project=dict_task.get("project", ""),
+            raised=dict_task.get("raised"),
+            waited=dict_task.get("waited")
         )
 
     def getTaskListAttribute(self, string: str) -> list[dict[str, str]]:
@@ -115,8 +117,15 @@ class TaskProvider(ITaskProvider):
                     investedEffort=str(task.getInvestedEffort().as_pomodoros()),
                     status=task.getStatus(),
                     calm="True" if task.getCalm() else "False",
-                    project=task.getProject()
+                    project=task.getProject(),
                 )
+
+                raises = task.getEventRaised()
+                waits = task.getEventWaited()
+                if isinstance(raises, str):
+                    self.dict_task_list["tasks"][index]["raised"] = raises
+                if isinstance(waits, str):
+                    self.dict_task_list["tasks"][index]["waited"] = waits
                 break
 
         self.taskJsonProvider.saveJson(self.dict_task_list)

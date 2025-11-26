@@ -15,6 +15,22 @@ from ..wrappers.TimeManagement import TimePoint, TimeAmount
 class ITaskModel(ABC):
 
     @abstractmethod
+    def getEventRaised(self) -> str | None:
+        pass
+
+    @abstractmethod
+    def setEventRaised(self, event: str | None) -> None:
+        pass
+
+    @abstractmethod
+    def getEventWaited(self) -> str | None:
+        pass
+
+    @abstractmethod
+    def setEventWaited(self, event: str | None) -> None:
+        pass
+
+    @abstractmethod
     def getDescription(self) -> str:
         pass
 

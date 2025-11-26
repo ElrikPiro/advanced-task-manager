@@ -17,7 +17,9 @@ class TestTaskModel(unittest.TestCase):
             status="open",
             calm="true",
             project="",
-            index=1
+            index=1,
+            raised=None,
+            waited=None
         )
 
         # Description should match the task description without any project suffix
@@ -37,7 +39,9 @@ class TestTaskModel(unittest.TestCase):
             status="open",
             calm="true",
             project="TestProject",
-            index=1
+            index=1,
+            raised=None,
+            waited=None
         )
 
         # Description should include the project name appended with " @ "

@@ -49,7 +49,7 @@ class ObsidianTaskProvider(ITaskProvider):
         taskList: List[ITaskModel] = []
         for task in taskListJson:
             try:
-                obsidianTask = ObsidianTaskModel(task["taskText"], task["track"], int(task["starts"]), int(task["due"]), float(task["severity"]), float(task["total_cost"]), float(task["effort_invested"]), task["status"], task["file"], int(task["line"]), task["calm"])
+                obsidianTask = ObsidianTaskModel(task["taskText"], task["track"], int(task["starts"]), int(task["due"]), float(task["severity"]), float(task["total_cost"]), float(task["effort_invested"]), task["status"], task["file"], int(task["line"]), task["calm"], task.get("raised"), task.get("waited"))
                 taskList.append(obsidianTask)
             except Exception as e:
                 print(f"Error while reading task: {e}")
@@ -75,8 +75,14 @@ class ObsidianTaskProvider(ITaskProvider):
         investedEffort = task.getInvestedEffort().as_pomodoros()
         status = task.getStatus()
         calm = "true" if task.getCalm() else "false"
+        
+        raises = task.getEventRaised()
+        raises_str = f", [raised:: {raises}]" if isinstance(raises, str) else ""
 
-        return f"- [{status}] {description} [track:: {context}], [starts:: {start}], [due:: {due}], [severity:: {severity}], [remaining_cost:: {totalCost+investedEffort}], [invested:: {investedEffort}], [calm:: {calm}]\n"
+        waits = task.getEventWaited()
+        waits_str = f", [waited:: {waits}]" if isinstance(waits, str) else ""
+
+        return f"- [{status}] {description} [track:: {context}], [starts:: {start}], [due:: {due}], [severity:: {severity}], [remaining_cost:: {totalCost+investedEffort}], [invested:: {investedEffort}], [calm:: {calm}]{raises_str}{waits_str}\n"
 
     def saveTask(self, task: ITaskModel) -> None:
         taskLine = self._getTaskLine(task)
@@ -124,7 +130,7 @@ class ObsidianTaskProvider(ITaskProvider):
         status = " "
         calm = "False"
 
-        task = ObsidianTaskModel(description, "inbox", starts, due, 1, severity, invested, status, "", -1, calm)
+        task = ObsidianTaskModel(description, "inbox", starts, due, 1, severity, invested, status, "", -1, calm, None, None)
         return task
 
     def getTaskMetadata(self, task: ITaskModel) -> str:
