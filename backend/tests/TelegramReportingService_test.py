@@ -654,8 +654,7 @@ class TestTelegramReportingService(unittest.TestCase):
         # Act
         asyncio.run(self.telegramReportingService.eventsCommand())
 
-        # Assert
-        self.statisticsProvider.getEventStatistics.assert_called_once_with(mock_filtered_tasks)
+        self.task_list_manager.getEventStatistics.assert_called_once()
         self.messageBuilder.createOutboundMessage.assert_called_once()
         self.bot.sendMessage.assert_awaited_once()
 
@@ -677,8 +676,7 @@ class TestTelegramReportingService(unittest.TestCase):
         # Act
         asyncio.run(self.telegramReportingService.eventsCommand("", False))
 
-        # Assert
-        self.statisticsProvider.getEventStatistics.assert_called_once_with(mock_filtered_tasks)
+        self.task_list_manager.getEventStatistics.assert_called_once()
         # When expectAnswer=False, the command still creates and sends the message
         # This is different from other commands - events always sends a response
         self.messageBuilder.createOutboundMessage.assert_called_once()

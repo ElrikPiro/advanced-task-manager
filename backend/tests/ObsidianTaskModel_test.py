@@ -16,7 +16,9 @@ class TestObsidianTaskModel(unittest.TestCase):
             status="Pending",
             file="test_file.md",
             line=10,
-            calm="True"
+            calm="True",
+            raised=None,
+            waited=None
         )
 
     def test_getDescription(self):
@@ -59,7 +61,9 @@ class TestObsidianTaskModel(unittest.TestCase):
             status="Pending",
             file="test_file.md",
             line=10,
-            calm="True"
+            calm="True",
+            raised=None,
+            waited=None
         )
         self.assertTrue(self.task == other_task)
 
@@ -75,7 +79,9 @@ class TestObsidianTaskModel(unittest.TestCase):
             status="Pending",
             file="test_file.md",
             line=10,
-            calm="True"
+            calm="True",
+            raised=None,
+            waited=None
         )
         self.assertFalse(self.task == other_task)
 

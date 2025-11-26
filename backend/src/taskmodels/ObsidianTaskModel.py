@@ -37,7 +37,7 @@ class ObsidianTaskModel(TaskModel):
         return f"{self._file.split(slash).pop().split(dot)[0]}:{self._line}"
 
     def __eq__(self, other: ITaskModel):  # type: ignore
-        return self.getDescription() == other.getDescription() and self.getContext() == other.getContext() and self.getStart() == other.getStart() and self.getDue() == other.getDue() and self.getSeverity() == other.getSeverity() and self.getTotalCost().as_pomodoros() == other.getTotalCost().as_pomodoros() and self.getInvestedEffort().as_pomodoros() == other.getInvestedEffort().as_pomodoros() and self.getStatus() == other.getStatus() and self.getFile() == other.getFile() and self.getLine() == other.getLine() and self.getCalm() == other.getCalm()  # type: ignore
+        return self.getEventRaised() == other.getEventRaised() and self.getEventWaited() == other.getEventWaited() and self.getDescription() == other.getDescription() and self.getContext() == other.getContext() and self.getStart() == other.getStart() and self.getDue() == other.getDue() and self.getSeverity() == other.getSeverity() and self.getTotalCost().as_pomodoros() == other.getTotalCost().as_pomodoros() and self.getInvestedEffort().as_pomodoros() == other.getInvestedEffort().as_pomodoros() and self.getStatus() == other.getStatus() and self.getFile() == other.getFile() and self.getLine() == other.getLine() and self.getCalm() == other.getCalm()  # type: ignore
 
     # Class methods
     def getFile(self) -> str:

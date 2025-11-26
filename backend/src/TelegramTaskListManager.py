@@ -36,7 +36,7 @@ class TelegramTaskListManager(ITaskListManager):
         self.reset_pagination(tasksPerPage)
 
     def raiseEvent(self, event: str) -> list[ITaskModel]:
-        def awaits_event(task: ITaskModel):
+        def awaits_event(task: ITaskModel) -> bool:
             waited = task.getEventWaited()
             if not isinstance(waited, str):
                 return False

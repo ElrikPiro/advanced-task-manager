@@ -76,6 +76,7 @@ class TelegramReportingService(IReportingService):
             ("/project", self.projectCommand),
             ("/algorithm_", self.algorithmSelectionCommand),
             ("/algorithm", self.algorithmListCommand),
+            ("/raise", self.raiseAlgorithmCommand)
         ]
         pass
 
@@ -366,6 +367,15 @@ class TelegramReportingService(IReportingService):
         )
 
         await self.bot.sendMessage(message=message)
+
+    async def raiseAlgorithmCommand(self, messageText: str = "", expectAnswer: bool = True) -> None:
+        arg = messageText.split(" ")[1:][0]
+        affected = self._taskListManager.raiseEvent(arg)
+        
+        for task in affected:
+            self.taskProvider.saveTask(task)
+
+        await self.__send_raw_text_message(f"{len(affected)} task affected.")
 
     async def filterListCommand(self, messageText: str = "", expectAnswer: bool = True) -> None:
         """
@@ -856,6 +866,14 @@ class TelegramReportingService(IReportingService):
         task.setCalm(value.upper().startswith("TRUE"))
         pass
 
+    async def setWaitedCommand(self, task: ITaskModel, value: str) -> None:
+        task.setEventWaited(value)
+        pass
+
+    async def setRaisedCommand(self, task: ITaskModel, value: str) -> None:
+        task.setEventRaised(value)
+        pass
+
     async def processSetParam(self, task: ITaskModel, param: str, value: str) -> None:
 
         commands: list[Tuple[str, Callable[[ITaskModel, str], Coroutine[Any, Any, Any]]]] = [
@@ -867,6 +885,8 @@ class TelegramReportingService(IReportingService):
             ("total_cost", self.setTotalCostCommand),
             ("effort_invested", self.setEffortInvestedCommand),
             ("calm", self.setCalmCommand),
+            ("waited", self.setWaitedCommand),
+            ("raised", self.setRaisedCommand)
         ]
 
         command = next((command for command in commands if command[0].startswith(param)), ("", None))[1]
