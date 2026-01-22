@@ -9,6 +9,11 @@ from src.wrappers.TelegramBotUserCommService import InboundMessage, UserAgent
 from src.TelegramReportingService import IAgent, IMessage, IUserCommService
 from src.Interfaces.ITaskModel import ITaskModel
 
+# TODO: next steps:
+# - implement notifications (messages sent without request id)
+# - make a unit test file for this class and test it properly
+# - integrate with the rest of the system
+
 
 class HttpUserCommService(IUserCommService):
 
