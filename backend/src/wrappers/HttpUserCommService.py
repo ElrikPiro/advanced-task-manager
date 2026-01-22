@@ -179,8 +179,12 @@ class HttpUserCommService(IUserCommService):
         pendingMessage = (message, future)
         self.pendingMessages.append(pendingMessage)
 
-        await future
-        # self.pendingMessages.remove(pendingMessage)
+        try:
+            await asyncio.wait_for(future, timeout=5.0)
+        except asyncio.TimeoutError:
+            self.pendingMessages.remove(pendingMessage)
+            return web.Response(status=408, text="Request Timeout: Response took too long")
+
         outmessage = future.result()
         if not isinstance(outmessage, OutboundMessage):
             return web.Response(status=500, text="Internal Server Error: Invalid outbound message")
