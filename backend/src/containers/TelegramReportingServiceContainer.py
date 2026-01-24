@@ -138,7 +138,7 @@ class TelegramReportingServiceContainer():
             # we keeping this for legacy reasons
             defaultConfig["APPDATA"] = jsonPath
 
-        if appMode in ["1", "4"]:
+        if appMode in ["1", "4", "6"]:
             # ask the user for a vault path
             vaultPath = input("Please enter the markdown vault directory: ")
             while not os.path.exists(vaultPath):
