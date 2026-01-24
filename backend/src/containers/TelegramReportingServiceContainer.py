@@ -11,6 +11,7 @@ from src.taskjsonproviders.ObsidianVaultTaskJsonProvider import ObsidianVaultTas
 from src.TelegramTaskListManager import TelegramTaskListManager
 from src.wrappers.TelegramBotUserCommService import TelegramBotUserCommService
 from src.wrappers.ShellUserCommService import ShellUserCommService
+from src.wrappers.HttpUserCommService import HttpUserCommService
 from src.taskproviders.TaskProvider import TaskProvider
 from src.taskjsonproviders.TaskJsonProvider import TaskJsonProvider
 from src.HeuristicScheduling import HeuristicScheduling
@@ -91,12 +92,14 @@ class TelegramReportingServiceContainer():
 
         # ask the user for an app mode
         appMode = None
-        while appMode not in ["1", "2", "3", "4"]:
+        while appMode not in ["1", "2", "3", "4", "5", "6"]:
             print("Please select an app mode:")
             print("\t1 - Obsidian (cmd)")
             print("\t2 - JSON file (cmd)")
             print("\t3 - JSON file (telegram)")
             print("\t4 - Obsidian (telegram)")
+            print("\t5 - JSON file (HTTP)")
+            print("\t6 - Obsidian (HTTP)")
             appMode = input("App mode: ")
         defaultConfig["APP_MODE"] = appMode
 
@@ -115,6 +118,20 @@ class TelegramReportingServiceContainer():
             # ask the user for a telegram chat id
             telegramChatId = input("Please enter the telegram chat id: ")
             defaultConfig["TELEGRAM_CHAT_ID"] = telegramChatId
+
+        if appMode in ["5", "6"]:
+            # ask the user for HTTP configuration
+            httpUrl = input("Please enter the HTTP server URL (default: 0.0.0.0): ") or "0.0.0.0"
+            defaultConfig["HTTP_URL"] = httpUrl
+
+            httpPort = input("Please enter the HTTP server port (default: 8080): ") or "8080"
+            defaultConfig["HTTP_PORT"] = httpPort
+
+            httpToken = input("Please enter the HTTP authentication token: ")
+            defaultConfig["HTTP_TOKEN"] = httpToken
+
+            httpChatId = input("Please enter the HTTP chat ID (default: 1): ") or "1"
+            defaultConfig["HTTP_CHAT_ID"] = httpChatId
 
         # if os not windows
         if os.name != "nt":
@@ -191,12 +208,18 @@ class TelegramReportingServiceContainer():
         # Configuration values
         configMode: int = int(self.tryGetConfig("APP_MODE", required=True) or "")
         telegramMode = configMode in [3, 4]
-        obsidianMode = configMode in [1, 4]
+        httpMode = configMode in [5, 6]
+        obsidianMode = configMode in [1, 4, 6]
 
         jsonPath = self.tryGetConfig("JSON_PATH", required=True)
 
         token = self.tryGetConfig("TELEGRAM_BOT_TOKEN", telegramMode, default="NULL_TOKEN")
         chatId = self.tryGetConfig("TELEGRAM_CHAT_ID", telegramMode, default="0")
+
+        httpUrl = self.tryGetConfig("HTTP_URL", httpMode, default="0.0.0.0")
+        httpPort = int(self.tryGetConfig("HTTP_PORT", httpMode, default="8080") or "8080")
+        httpToken = self.tryGetConfig("HTTP_TOKEN", httpMode, default="NULL_HTTP_TOKEN")
+        httpChatId = int(self.tryGetConfig("HTTP_CHAT_ID", httpMode, default="1") or "1")
 
         appdata = self.tryGetConfig("APPDATA", obsidianMode, default="NULL_APPDATA")
         vaultPath = self.tryGetConfig("OBSIDIAN_VAULT_PATH", obsidianMode, default="NULL_VAULT_PATH")
@@ -225,8 +248,15 @@ class TelegramReportingServiceContainer():
 
         self.container.shellUserCommService = providers.Singleton(ShellUserCommService, chatId, botId)
         self.container.telegramUserCommService = providers.Singleton(TelegramBotUserCommService, self.container.bot, self.container.fileBroker, botId)
+        self.container.httpUserCommService = providers.Singleton(HttpUserCommService, httpUrl, httpPort, httpToken, httpChatId, botId)
 
-        self.container.userCommService = self.container.telegramUserCommService if telegramMode else self.container.shellUserCommService
+        # Select the appropriate user communication service based on mode
+        if telegramMode:
+            self.container.userCommService = self.container.telegramUserCommService
+        elif httpMode:
+            self.container.userCommService = self.container.httpUserCommService
+        else:
+            self.container.userCommService = self.container.shellUserCommService
 
         if obsidianMode:
             self.container.taskJsonProvider = providers.Singleton(ObsidianVaultTaskJsonProvider, self.container.fileBroker, taskDiscoveryPolicies)
