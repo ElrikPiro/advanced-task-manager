@@ -206,6 +206,6 @@ class HttpUserCommService(IUserCommService):
         if not isinstance(outmessage, OutboundMessage):
             return web.Response(status=500, text="Internal Server Error: Invalid outbound message")
 
-        render_mode = message.content.renderMode or RenderMode.RAW_TEXT
-        response: web.Response = await self.__renders[render_mode](message)
+        render_mode = outmessage.content.renderMode or RenderMode.RAW_TEXT
+        response: web.Response = await self.__renders[render_mode](outmessage)
         return response
