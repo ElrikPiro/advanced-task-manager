@@ -10,7 +10,6 @@ from src.TelegramReportingService import IAgent, IMessage, IUserCommService
 from src.Interfaces.ITaskModel import ITaskModel
 
 # TODO: next steps:
-# - implement notifications (messages sent without request id)
 # - make a unit test file for this class and test it properly
 # - integrate with the rest of the system
 
@@ -24,6 +23,7 @@ class HttpUserCommService(IUserCommService):
         self.server = web.Server(self.__handle_request__)
         self.runner = web.ServerRunner(self.server)
         self.pendingMessages: list[tuple[IMessage, asyncio.Future[IMessage]]] = []
+        self.notificationQueue: list[IMessage] = []
         self.chat_id = chat_id
         self.lock = threading.Lock()
         self.agent = agent
@@ -62,12 +62,25 @@ class HttpUserCommService(IUserCommService):
         # TODO: will need an arch refactor to send files over HTTP using messages
         pass
 
+    async def getNotifications(self) -> list[IMessage]:
+        """
+        Retrieves all pending notifications from the notification queue.
+        
+        Returns:
+            list[IMessage]: A list of all notification messages.
+        """
+        with self.lock:
+            notifications = self.notificationQueue.copy()
+            self.notificationQueue.clear()
+        return notifications
+
     async def sendMessage(self, message: IMessage) -> None:
         if not isinstance(message, OutboundMessage):
             raise ValueError("Only OutboundMessage is supported in HttpUserCommService")
         if message.content.requestId is None:
-            # TODO: delegate to notification list
-            pass
+            # Store notification in the notification queue
+            with self.lock:
+                self.notificationQueue.append(message)
         else:
             for pendingMessage, future in self.pendingMessages:
                 if pendingMessage.content.requestId == message.content.requestId:
