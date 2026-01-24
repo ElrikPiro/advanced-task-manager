@@ -11,9 +11,6 @@ from src.wrappers.TimeManagement import TimePoint
 from src.wrappers.interfaces.IUserCommService import IUserCommService
 from src.Interfaces.ITaskModel import ITaskModel
 
-# TODO: next steps:
-# - integrate with the rest of the system (add to TelegramReportingServiceContainer as a new APP_MODE option)
-
 
 class HttpUserCommService(IUserCommService):
 
