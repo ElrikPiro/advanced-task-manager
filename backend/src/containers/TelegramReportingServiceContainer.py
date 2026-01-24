@@ -231,7 +231,7 @@ class TelegramReportingServiceContainer():
         taskDiscoveryPolicies: TaskDiscoveryPolicies = TaskDiscoveryPolicies(
             context_missing_policy=self.tryGetConfig("CONTEXT_MISSING_POLICY", obsidianMode, default="0"),
             date_missing_policy=self.tryGetConfig("DATE_MISSING_POLICY", obsidianMode, default="0"),
-            default_context=self.tryGetConfig("DEFAULT_CONTEXT", obsidianMode, default="inbox"),
+            default_context=self.tryGetConfig("DEFAULT_CONTEXT", required=False, default="inbox"),
             categories_prefixes=[category["prefix"] for category in self.container.categories]
         )
 
