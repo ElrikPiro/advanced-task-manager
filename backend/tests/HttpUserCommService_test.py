@@ -3,7 +3,7 @@ import asyncio
 from unittest.mock import Mock, AsyncMock, patch
 from src.wrappers.HttpUserCommService import HttpUserCommService
 from src.wrappers.Messaging import (
-    IAgent, OutboundMessage, InboundMessage, MessageContent, 
+    IAgent, OutboundMessage, InboundMessage, MessageContent,
     RenderMode, UserAgent, BotAgent
 )
 

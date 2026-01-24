@@ -5,10 +5,10 @@ from typing import Dict, Any, List
 from aiohttp import web
 from dataclasses import asdict
 
-from src.wrappers.Messaging import OutboundMessage, RenderMode, TaskListContent
-from src.wrappers.TelegramBotUserCommService import InboundMessage, UserAgent
+from src.Utils import TaskListContent
+from src.wrappers.Messaging import OutboundMessage, RenderMode, InboundMessage, UserAgent, IAgent, IMessage
 from src.wrappers.TimeManagement import TimePoint
-from src.TelegramReportingService import IAgent, IMessage, IUserCommService
+from src.wrappers.interfaces.IUserCommService import IUserCommService
 from src.Interfaces.ITaskModel import ITaskModel
 
 # TODO: next steps:

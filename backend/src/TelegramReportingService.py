@@ -3,7 +3,6 @@ TelegramReportingService
 """
 
 import asyncio
-import re
 import threading
 import datetime
 
