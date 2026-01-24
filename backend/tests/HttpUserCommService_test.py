@@ -1,6 +1,6 @@
 import unittest
 import asyncio
-from unittest.mock import Mock, AsyncMock, patch, MagicMock
+from unittest.mock import Mock, AsyncMock, patch
 from src.wrappers.HttpUserCommService import HttpUserCommService
 from src.wrappers.Messaging import (
     IAgent, OutboundMessage, InboundMessage, MessageContent, 
