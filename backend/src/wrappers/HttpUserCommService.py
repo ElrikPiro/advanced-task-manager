@@ -1,11 +1,13 @@
 import asyncio
 import threading
 import json
+from typing import Dict, Any, List
 from aiohttp import web
 from dataclasses import asdict
 
 from src.wrappers.Messaging import OutboundMessage, RenderMode, TaskListContent
 from src.wrappers.TelegramBotUserCommService import InboundMessage, UserAgent
+from src.wrappers.TimeManagement import TimePoint
 from src.TelegramReportingService import IAgent, IMessage, IUserCommService
 from src.Interfaces.ITaskModel import ITaskModel
 
@@ -22,7 +24,7 @@ class HttpUserCommService(IUserCommService):
         self.server = web.Server(self.__handle_request__)
         self.runner = web.ServerRunner(self.server)
         self.pendingMessages: list[tuple[IMessage, asyncio.Future[IMessage]]] = []
-        self.notificationQueue: list[IMessage] = []
+        self.notificationQueue: list[tuple[IMessage, TimePoint]] = []
         self.chat_id = chat_id
         self.lock = threading.Lock()
         self.agent = agent
@@ -61,25 +63,29 @@ class HttpUserCommService(IUserCommService):
         # TODO: will need an arch refactor to send files over HTTP using messages
         pass
 
-    async def getNotifications(self) -> list[IMessage]:
+    async def getNotifications(self, delete_queue: bool = True) -> List[Dict[str, Any]]:
         """
         Retrieves all pending notifications from the notification queue.
         
+        Args:
+            delete_queue: If True, clears the queue after retrieving notifications.
+        
         Returns:
-            list[IMessage]: A list of all notification messages.
+            list[dict]: A list of notification dictionaries containing message and timestamp.
         """
         with self.lock:
-            notifications = self.notificationQueue.copy()
-            self.notificationQueue.clear()
+            notifications = [{"message": str(msg.content.text), "timestamp": str(timestamp)} for msg, timestamp in self.notificationQueue.copy()]
+            if delete_queue:
+                self.notificationQueue.clear()
         return notifications
 
     async def sendMessage(self, message: IMessage) -> None:
         if not isinstance(message, OutboundMessage):
             raise ValueError("Only OutboundMessage is supported in HttpUserCommService")
         if message.content.requestId is None:
-            # Store notification in the notification queue
+            # Store notification in the notification queue with timestamp
             with self.lock:
-                self.notificationQueue.append(message)
+                self.notificationQueue.append((message, TimePoint.now()))
         else:
             for pendingMessage, future in self.pendingMessages:
                 if pendingMessage.content.requestId == message.content.requestId:
@@ -187,6 +193,15 @@ class HttpUserCommService(IUserCommService):
 
         command = request.rel_url.path.lstrip('/')
         args = request.rel_url.query.get('args', '').split(' ')
+        
+        # Handle notifications command directly
+        if command == "notifications":
+            # Check for mask_as_read parameter
+            mask_as_read_param = request.rel_url.query.get('mask_as_read', 'true').lower()
+            delete_queue = mask_as_read_param == 'true'
+            
+            notifications = await self.getNotifications(delete_queue)
+            return web.Response(text=json.dumps(notifications, indent=2), content_type='application/json')
         
         source_agent: IAgent = UserAgent(str(self.chat_id))
         destination_agent: IAgent = self.getBotAgent()
