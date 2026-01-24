@@ -127,7 +127,10 @@ class TestHttpUserCommServiceAsync(unittest.IsolatedAsyncioTestCase):
         
         # Check that the message was added to notification queue
         self.assertEqual(len(self.service.notificationQueue), 1)
-        self.assertEqual(self.service.notificationQueue[0], outbound_message)
+        # The queue stores tuples of (message, timestamp)
+        stored_message, stored_timestamp = self.service.notificationQueue[0]
+        self.assertEqual(stored_message, outbound_message)
+        self.assertIsNotNone(stored_timestamp)
 
     async def test_sendMessage_with_invalid_message_type_raises_error(self):
         """Test sendMessage raises ValueError for non-OutboundMessage types"""
@@ -166,10 +169,12 @@ class TestHttpUserCommServiceAsync(unittest.IsolatedAsyncioTestCase):
         # Get notifications
         notifications = await self.service.getNotifications()
         
-        # Verify we got the correct notifications
+        # Verify we got the correct notifications (returns formatted dictionaries)
         self.assertEqual(len(notifications), 2)
-        self.assertEqual(notifications[0], notification1)
-        self.assertEqual(notifications[1], notification2)
+        self.assertEqual(notifications[0]['message'], 'Notification 1')
+        self.assertEqual(notifications[1]['message'], 'Notification 2')
+        self.assertIn('timestamp', notifications[0])
+        self.assertIn('timestamp', notifications[1])
         
         # Verify the queue is now empty
         self.assertEqual(len(self.service.notificationQueue), 0)
