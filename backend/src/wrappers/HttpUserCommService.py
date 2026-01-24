@@ -18,8 +18,6 @@ class HttpUserCommService(IUserCommService):
         self.url = url
         self.port = port
         self.token = token
-        self.server = web.Server(self.__handle_request__)
-        self.runner = web.ServerRunner(self.server)
         self.pendingMessages: list[tuple[IMessage, asyncio.Future[IMessage]]] = []
         self.notificationQueue: list[tuple[IMessage, TimePoint]] = []
         self.chat_id = chat_id
@@ -40,6 +38,8 @@ class HttpUserCommService(IUserCommService):
         }
 
     async def initialize(self) -> None:
+        self.server = web.Server(self.__handle_request__)
+        self.runner = web.ServerRunner(self.server)
         await self.runner.setup()
         self.site = web.TCPSite(self.runner, self.url, self.port)
         await self.site.start()
