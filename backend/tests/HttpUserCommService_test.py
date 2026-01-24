@@ -8,28 +8,32 @@ from src.wrappers.Messaging import (
 )
 
 
+def create_agent_mock():
+    """Helper function to create a mock IAgent for testing"""
+    mock = Mock(spec=IAgent)
+    mock.id = "bot_123"
+    mock.name = "TestBot"
+    mock.description = "Test bot agent"
+    return mock
+
+
+def build_http_service(agent_mock):
+    """Helper function to build HttpUserCommService with mocked web.Server"""
+    with patch('src.wrappers.HttpUserCommService.web.Server'):
+        return HttpUserCommService(
+            url="localhost",
+            port=8080,
+            token="test_token_123",
+            chat_id=12345,
+            agent=agent_mock
+        )
+
+
 class TestHttpUserCommService(unittest.TestCase):
     
-    def agent_mock(self):
-        mock = Mock(spec=IAgent)
-        mock.id = "bot_123"
-        mock.name = "TestBot"
-        mock.description = "Test bot agent"
-        return mock
-
-    def build_service(self, agent_mock):
-        with patch('src.wrappers.HttpUserCommService.web.Server'):
-            return HttpUserCommService(
-                url="localhost",
-                port=8080,
-                token="test_token_123",
-                chat_id=12345,
-                agent=agent_mock
-            )
-
     def setUp(self):
-        self.agent = self.agent_mock()
-        self.service = self.build_service(self.agent)
+        self.agent = create_agent_mock()
+        self.service = build_http_service(self.agent)
 
     def test_initialization(self):
         """Test that HttpUserCommService initializes with correct parameters"""
@@ -49,26 +53,9 @@ class TestHttpUserCommService(unittest.TestCase):
 
 class TestHttpUserCommServiceAsync(unittest.IsolatedAsyncioTestCase):
 
-    def agent_mock(self):
-        mock = Mock(spec=IAgent)
-        mock.id = "bot_123"
-        mock.name = "TestBot"
-        mock.description = "Test bot agent"
-        return mock
-
-    def build_service(self, agent_mock):
-        with patch('src.wrappers.HttpUserCommService.web.Server'):
-            return HttpUserCommService(
-                url="localhost",
-                port=8080,
-                token="test_token_123",
-                chat_id=12345,
-                agent=agent_mock
-            )
-
     def setUp(self):
-        self.agent = self.agent_mock()
-        self.service = self.build_service(self.agent)
+        self.agent = create_agent_mock()
+        self.service = build_http_service(self.agent)
 
     async def test_initialize_and_shutdown(self):
         """Test initialization and shutdown of the service"""
