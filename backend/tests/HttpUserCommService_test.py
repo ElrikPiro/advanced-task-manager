@@ -94,7 +94,7 @@ class TestHttpUserCommServiceAsync(unittest.IsolatedAsyncioTestCase):
         inbound_message.content.requestId = 1
         
         # Create a future for the pending message
-        future = asyncio.get_event_loop().create_future()
+        future = asyncio.get_running_loop().create_future()
         self.service.pendingMessages.append((inbound_message, future))
         
         # Create an outbound message with the same request ID
@@ -188,7 +188,7 @@ class TestHttpUserCommServiceAsync(unittest.IsolatedAsyncioTestCase):
         inbound_message = InboundMessage(user_agent, bot_agent, "test_command", ["arg1"])
         
         # Create a future and add to pending messages
-        future = asyncio.get_event_loop().create_future()
+        future = asyncio.get_running_loop().create_future()
         self.service.pendingMessages.append((inbound_message, future))
         
         # Get message updates
