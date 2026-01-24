@@ -10,8 +10,7 @@ from src.TelegramReportingService import IAgent, IMessage, IUserCommService
 from src.Interfaces.ITaskModel import ITaskModel
 
 # TODO: next steps:
-# - make a unit test file for this class and test it properly
-# - integrate with the rest of the system
+# - integrate with the rest of the system (add to TelegramReportingServiceContainer as a new APP_MODE option)
 
 
 class HttpUserCommService(IUserCommService):
