@@ -690,7 +690,7 @@ class TestTelegramReportingService(unittest.TestCase):
         asyncio.run(self.telegramReportingService.snoozeCommand("/snooze"))
 
         # Assert
-        self.telegramReportingService.setCommand.assert_awaited_once_with("/set start now;+5m")
+        self.telegramReportingService.setCommand.assert_awaited_once_with("/set start now;+5m", reqId=None)
 
     def test_snoozeCommand_custom_time(self) -> None:
         # Arrange
@@ -700,7 +700,7 @@ class TestTelegramReportingService(unittest.TestCase):
         asyncio.run(self.telegramReportingService.snoozeCommand("/snooze 10m"))
 
         # Assert
-        self.telegramReportingService.setCommand.assert_awaited_once_with("/set start now;+10m")
+        self.telegramReportingService.setCommand.assert_awaited_once_with("/set start now;+10m", reqId=None)
 
     def test_exportCommand_default_format(self) -> None:
         # Arrange

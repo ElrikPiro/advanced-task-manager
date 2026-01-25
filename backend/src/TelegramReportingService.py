@@ -446,7 +446,7 @@ class TelegramReportingService(IReportingService):
         else:
             await self.__send_raw_text_message("no task selected.")
 
-    async def setCommand(self, messageText: str = "", expectAnswer: bool = True) -> None:
+    async def setCommand(self, messageText: str = "", expectAnswer: bool = True, reqId=None) -> None:
         """
         # Command /set [parameter] [value]
         This command sets a parameter of the selected task.
@@ -597,7 +597,7 @@ class TelegramReportingService(IReportingService):
             params = "5m"
 
         startParams = f"/set start now;+{params}"
-        await self.setCommand(startParams)
+        await self.setCommand(startParams, reqId=None)
 
     async def exportCommand(self, messageText: str = "", expectAnswer: bool = True) -> None:
         """
