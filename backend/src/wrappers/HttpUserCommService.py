@@ -1,7 +1,8 @@
 import asyncio
 import threading
 import json
-from typing import Dict, Any, List
+import ssl
+from typing import Dict, Any, List, Optional
 from aiohttp import web
 from dataclasses import asdict
 
@@ -14,10 +15,13 @@ from src.Interfaces.ITaskModel import ITaskModel
 
 class HttpUserCommService(IUserCommService):
 
-    def __init__(self, url: str, port: int, token: str, chat_id: int, agent: IAgent) -> None:
+    def __init__(self, url: str, port: int, token: str, chat_id: int, agent: IAgent,
+                 ssl_cert_path: Optional[str] = None, ssl_key_path: Optional[str] = None) -> None:
         self.url = url
         self.port = port
         self.token = token
+        self.ssl_cert_path = ssl_cert_path
+        self.ssl_key_path = ssl_key_path
         self.pendingMessages: list[tuple[IMessage, asyncio.Future[IMessage]]] = []
         self.notificationQueue: list[tuple[IMessage, TimePoint]] = []
         self.chat_id = chat_id
@@ -41,10 +45,19 @@ class HttpUserCommService(IUserCommService):
         self.server = web.Server(self.__handle_request__)
         self.runner = web.ServerRunner(self.server)
         await self.runner.setup()
-        self.site = web.TCPSite(self.runner, self.url, self.port)
+        
+        # Create SSL context if certificate paths are provided
+        ssl_context = None
+        if self.ssl_cert_path and self.ssl_key_path:
+            ssl_context = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH)
+            ssl_context.load_cert_chain(self.ssl_cert_path, self.ssl_key_path)
+        
+        self.site = web.TCPSite(self.runner, self.url, self.port, ssl_context=ssl_context)
         await self.site.start()
         self.req_id_counter: int = 0
-        print(f"HTTP User Communication Service started at {self.url}:{self.port}")
+        
+        protocol = "HTTPS" if ssl_context else "HTTP"
+        print(f"{protocol} User Communication Service started at {self.url}:{self.port}")
 
     async def shutdown(self) -> None:
         await self.site.stop()
@@ -192,9 +205,11 @@ class HttpUserCommService(IUserCommService):
 
     async def __handle_request__(self, request: web.BaseRequest) -> web.Response:
         print(f"Received request: {request.method} {request.rel_url}")
-        # check if request is https
-        if request.secure is False:
-            return web.Response(status=403, text="Forbidden: HTTPS required")
+        
+        # Check if request is HTTPS when SSL is configured
+        if self.ssl_cert_path and self.ssl_key_path:
+            if not request.secure:
+                return web.Response(status=403, text="Forbidden: HTTPS required")
         
         # check if client token is valid
         client_token = request.headers.get('Authorization', '')
