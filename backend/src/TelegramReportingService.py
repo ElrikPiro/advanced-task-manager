@@ -603,7 +603,7 @@ class TelegramReportingService(IReportingService):
             params = "5m"
 
         startParams = f"/set start now;+{params}"
-        await self.setCommand(startParams)
+        await self.setCommand(startParams, reqId=reqId)
 
     async def exportCommand(self, messageText: str = "", expectAnswer: bool = True, reqId: int | None = None) -> None:
         """
