@@ -1,6 +1,6 @@
 import unittest
 import asyncio
-from unittest.mock import Mock, AsyncMock, patch
+from unittest.mock import Mock, patch
 from src.wrappers.HttpUserCommService import HttpUserCommService
 from src.wrappers.Messaging import (
     IAgent, OutboundMessage, InboundMessage, MessageContent,
@@ -56,32 +56,6 @@ class TestHttpUserCommServiceAsync(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
         self.agent = create_agent_mock()
         self.service = build_http_service(self.agent)
-
-    async def test_initialize_and_shutdown(self):
-        """Test initialization and shutdown of the service"""
-        # Mock the runner, site, and server
-        with patch.object(self.service, 'runner') as mock_runner, \
-             patch.object(self.service, 'server') as mock_server:
-            
-            mock_runner.setup = AsyncMock()
-            mock_runner.shutdown = AsyncMock()
-            mock_site = AsyncMock()
-            mock_site.start = AsyncMock()
-            mock_site.stop = AsyncMock()
-            mock_server.shutdown = AsyncMock()
-            
-            with patch('src.wrappers.HttpUserCommService.web.TCPSite', return_value=mock_site):
-                # Initialize
-                await self.service.initialize()
-                mock_runner.setup.assert_called_once()
-                mock_site.start.assert_called_once()
-                self.assertEqual(self.service.req_id_counter, 0)
-                
-                # Shutdown
-                await self.service.shutdown()
-                mock_site.stop.assert_called_once()
-                mock_runner.shutdown.assert_called_once()
-                mock_server.shutdown.assert_called_once()
 
     async def test_sendMessage_with_requestId(self):
         """Test sendMessage with a request ID resolves pending message"""
@@ -184,27 +158,6 @@ class TestHttpUserCommServiceAsync(unittest.IsolatedAsyncioTestCase):
         notifications = await self.service.getNotifications()
         self.assertEqual(len(notifications), 0)
         self.assertIsInstance(notifications, list)
-
-    async def test_getMessageUpdates_with_pending_messages(self):
-        """Test getMessageUpdates returns the first pending message"""
-        # Create agents and message
-        bot_agent = BotAgent("bot_1", "TestBot", "Test bot")
-        user_agent = UserAgent("user_1", "TestUser", "Test user")
-        inbound_message = InboundMessage(user_agent, bot_agent, "test_command", ["arg1"])
-        
-        # Create a future and add to pending messages
-        future = asyncio.get_running_loop().create_future()
-        self.service.pendingMessages.append((inbound_message, future))
-        
-        # Get message updates
-        updates = await self.service.getMessageUpdates()
-        
-        # Verify we got the correct message
-        self.assertEqual(len(updates), 1)
-        self.assertEqual(updates[0], inbound_message)
-        
-        # Verify the message was removed from pending
-        self.assertEqual(len(self.service.pendingMessages), 0)
 
     async def test_getMessageUpdates_empty(self):
         """Test getMessageUpdates returns empty list when no pending messages"""

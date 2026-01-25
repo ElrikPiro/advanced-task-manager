@@ -5,11 +5,16 @@ from src.taskmodels.ObsidianTaskModel import ObsidianTaskModel
 class TestObsidianTaskModel(unittest.TestCase):
 
     def setUp(self):
+        # Use valid timestamps instead of 1 and 2
+        import time
+        current_time = int(time.time() * 1000)  # Current time in milliseconds
+        future_time = current_time + (24 * 60 * 60 * 1000)  # 24 hours later
+        
         self.task = ObsidianTaskModel(
             description="Test Task",
             context="Test Context",
-            start=1,
-            due=2,
+            start=current_time,
+            due=future_time,
             severity=3.0,
             totalCost=4.0,
             investedEffort=5.0,
@@ -50,11 +55,16 @@ class TestObsidianTaskModel(unittest.TestCase):
         self.assertEqual(self.task.getLine(), 20)
 
     def test_eq(self):
+        # Use valid timestamps (current time for start, future time for due)
+        import time
+        current_time = int(time.time() * 1000)  # Current time in milliseconds
+        future_time = current_time + (24 * 60 * 60 * 1000)  # 24 hours later
+        
         other_task = ObsidianTaskModel(
             description="Test Task",
             context="Test Context",
-            start=1,
-            due=2,
+            start=current_time,
+            due=future_time,
             severity=3.0,
             totalCost=4.0,
             investedEffort=5.0,
@@ -65,6 +75,11 @@ class TestObsidianTaskModel(unittest.TestCase):
             raised=None,
             waited=None
         )
+        
+        # Update self.task to use the same timestamps for comparison
+        self.task._start = current_time
+        self.task._due = future_time
+        
         self.assertTrue(self.task == other_task)
 
     def test_not_eq(self):

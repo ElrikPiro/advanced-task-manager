@@ -167,7 +167,7 @@ class HttpUserCommService(IUserCommService):
 
         retval = []
         for key in filter_list:
-            retval.append(asdict(key))  # type: ignore
+            retval.append(asdict(key))
 
         return web.Response(text=json.dumps(retval, indent=2), content_type='application/json')
     
