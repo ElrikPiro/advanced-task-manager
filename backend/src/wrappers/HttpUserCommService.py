@@ -44,7 +44,7 @@ class HttpUserCommService(IUserCommService):
         self.site = web.TCPSite(self.runner, self.url, self.port)
         await self.site.start()
         self.req_id_counter: int = 0
-        pass
+        print(f"HTTP User Communication Service started at {self.url}:{self.port}")
 
     async def shutdown(self) -> None:
         await self.site.stop()
@@ -53,8 +53,16 @@ class HttpUserCommService(IUserCommService):
         pass
 
     async def getMessageUpdates(self) -> list[IMessage]:
-        retval = [self.pendingMessages.pop(0)[0]] if len(self.pendingMessages) > 0 else []
-        return retval
+        await asyncio.sleep(0)  # yield control to event loop
+        # Get the first pending message that has the future object not yet done
+        
+        retval: list[IMessage] = []
+        with self.lock:
+            for pendingMessage in self.pendingMessages:
+                message, future = pendingMessage
+                if not future.done():
+                    retval.append(message)
+        return [retval[0]] if len(retval) > 0 else []
 
     async def sendFile(self, chat_id: int, data: bytearray) -> None:
         # TODO: will need an arch refactor to send files over HTTP using messages
@@ -85,7 +93,7 @@ class HttpUserCommService(IUserCommService):
                 self.notificationQueue.append((message, TimePoint.now()))
         else:
             for pendingMessage, future in self.pendingMessages:
-                if pendingMessage.content.requestId == message.content.requestId:
+                if pendingMessage.content.requestId == message.content.requestId and not future.done():
                     future.set_result(message)
         return
 
@@ -144,7 +152,11 @@ class HttpUserCommService(IUserCommService):
         if not filter_list:
             return web.Response(status=200, text="{'error': 'No filters available'}", content_type='application/json')
 
-        return web.Response(text=json.dumps(filter_list, indent=2), content_type='application/json')
+        retval = []
+        for key in filter_list:
+            retval.append(asdict(key))  # type: ignore
+
+        return web.Response(text=json.dumps(retval, indent=2), content_type='application/json')
     
     async def __renderTaskStats(self, message: IMessage) -> web.Response:
         workload_stats = message.content.workloadStats
@@ -179,6 +191,7 @@ class HttpUserCommService(IUserCommService):
         return web.Response(text=json.dumps(asdict(events_content), indent=2), content_type='application/json')
 
     async def __handle_request__(self, request: web.BaseRequest) -> web.Response:
+        print(f"Received request: {request.method} {request.rel_url}")
         # check if request is https
         if request.secure is False:
             return web.Response(status=403, text="Forbidden: HTTPS required")
@@ -189,7 +202,7 @@ class HttpUserCommService(IUserCommService):
             return web.Response(status=401, text="Unauthorized: Invalid token")
 
         command = request.rel_url.path.lstrip('/')
-        args = request.rel_url.query.get('args', '').split(' ')
+        args = request.rel_url.query.get('args', '').split(' ') if 'args' in request.rel_url.query else []
         
         # Handle notifications command directly
         if command == "notifications":
@@ -209,7 +222,8 @@ class HttpUserCommService(IUserCommService):
         self.pendingMessages.append(pendingMessage)
 
         try:
-            await asyncio.wait_for(future, timeout=5.0)
+            await asyncio.wait_for(future, timeout=10.0)
+            self.pendingMessages.remove(pendingMessage)
         except asyncio.TimeoutError:
             self.pendingMessages.remove(pendingMessage)
             return web.Response(status=408, text="Request Timeout: Response took too long")

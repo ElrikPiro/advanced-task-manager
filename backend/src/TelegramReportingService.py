@@ -566,6 +566,7 @@ class TelegramReportingService(IReportingService):
             content=MessageContent(workloadStats=self._taskListManager.get_list_stats()),
             render_mode=RenderMode.TASK_STATS
         )
+        message.content.requestId = reqId
 
         await self.bot.sendMessage(message=message)
 
@@ -584,6 +585,7 @@ class TelegramReportingService(IReportingService):
             content=MessageContent(eventsContent=events_content),
             render_mode=RenderMode.EVENTS
         )
+        message.content.requestId = reqId
 
         await self.bot.sendMessage(message=message)
 
@@ -713,6 +715,8 @@ class TelegramReportingService(IReportingService):
             content=MessageContent(agendaContent=agenda_content),
             render_mode=RenderMode.TASK_AGENDA
         )
+        message.content.requestId = reqId
+
         await self.bot.sendMessage(message=message)
 
     async def projectCommand(self, messageText: str = "", expectAnswer: bool = True, reqId: int | None = None) -> None:
