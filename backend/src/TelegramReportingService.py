@@ -902,7 +902,6 @@ class TelegramReportingService(IReportingService):
         command = next((command for command in commands if command[0].startswith(param)), ("", None))[1]
         if command is not None:
             await command(task, value, reqId)
-            await self.__send_raw_text_message("", reqId=reqId)
         else:
             errorMessage = f"Invalid parameter {param}\nvalid parameters would be: description, context, start, due, severity, total_cost, effort_invested, calm"
             await self.__send_raw_text_message(errorMessage, reqId=reqId)
