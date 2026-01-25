@@ -7,7 +7,7 @@ import threading
 import datetime
 
 from time import sleep as sleepSync
-from typing import Callable, List, Coroutine, Any, Tuple
+from typing import Callable, List, Coroutine, Any, Tuple, Optional
 
 from src.algorithms.Interfaces.IAlgorithm import IAlgorithm
 
@@ -446,7 +446,7 @@ class TelegramReportingService(IReportingService):
         else:
             await self.__send_raw_text_message("no task selected.")
 
-    async def setCommand(self, messageText: str = "", expectAnswer: bool = True, reqId=None) -> None:
+    async def setCommand(self, messageText: str = "", expectAnswer: bool = True, reqId: Optional[str] = None) -> None:
         """
         # Command /set [parameter] [value]
         This command sets a parameter of the selected task.
