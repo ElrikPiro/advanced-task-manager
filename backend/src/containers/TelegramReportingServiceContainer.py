@@ -315,7 +315,7 @@ class TelegramReportingServiceContainer():
         )
 
         # Scheduling algorithm
-        self.container.heristicScheduling = providers.Singleton(HeuristicScheduling, dedicationTime)
+        self.container.heristicScheduling = providers.Singleton(HeuristicScheduling, dedicationTime, self.container.taskProvider)
 
         # Statistics service
         self.container.statisticsService = providers.Singleton(StatisticsService, self.container.fileBroker, self.container.workLoadAbleFilter, self.container.remainingEffortHeuristic(1.0), self.container.slackHeuristic)

@@ -521,15 +521,38 @@ class TelegramReportingService(IReportingService):
         This command reschedules the selected task.
         You can provide the expected work per day to distribute the effort.
         The task due date will be rescheduled according to the provided value.
-        if no value is provided, task severity will be adjusted, keeping the same due date.
+        If no value is provided, task severity will be adjusted, keeping the same due date.
+        If the required effort per day would result in severity < 1, the task will be automatically split into multiple parts.
         """
         selected_task = self._taskListManager.selected_task
         params = messageText.split(" ")[1:]
         if selected_task is not None:
-            self.scheduling.schedule(selected_task, params.pop() if len(params) > 0 else "")
-            self.taskProvider.saveTask(selected_task)
-            if expectAnswer:
-                await self.sendTaskInformation(selected_task, reqId=reqId)
+            # Enhanced scheduling returns list of tasks (may include splits)
+            resulting_tasks = self.scheduling.schedule(selected_task, params.pop() if len(params) > 0 else "")
+            
+            # Handle multiple tasks (task was split)
+            if len(resulting_tasks) > 1:
+                # Save all tasks
+                for task in resulting_tasks:
+                    self.taskProvider.saveTask(task)
+                    # Add new tasks to task manager (except original which was modified)
+                    if task != selected_task:
+                        self._taskListManager.add_task(task)
+                
+                if expectAnswer:
+                    split_count = len(resulting_tasks)
+                    original_description = resulting_tasks[0].getDescription().replace(f" 1/{split_count}", "")
+                    await self.__send_raw_text_message(
+                        f"Task '{original_description}' was split into {split_count} parts due to high effort per day. This tight deadline may be unrealistic.",
+                        reqId=reqId
+                    )
+                    # Show the first split task
+                    await self.sendTaskInformation(resulting_tasks[0], reqId=reqId)
+            else:
+                # Normal single task scheduling
+                self.taskProvider.saveTask(resulting_tasks[0])
+                if expectAnswer:
+                    await self.sendTaskInformation(resulting_tasks[0], reqId=reqId)
         else:
             await self.__send_raw_text_message("no task provided.", reqId=reqId)
 
