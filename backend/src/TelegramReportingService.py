@@ -543,8 +543,8 @@ class TelegramReportingService(IReportingService):
                     split_count = len(resulting_tasks)
                     original_description = resulting_tasks[0].getDescription().replace(f" 1/{split_count}", "")
                     await self.__send_raw_text_message(
-                        f"Task '{original_description}' was split into {split_count} parts due to high effort per day. This tight deadline may be unrealistic.",
-                        reqId=reqId
+                        f"Task '{original_description}' was split into {split_count} parts due to high effort per day.",
+                        reqId=None
                     )
                     # Show the first split task
                     await self.sendTaskInformation(resulting_tasks[0], reqId=reqId)
