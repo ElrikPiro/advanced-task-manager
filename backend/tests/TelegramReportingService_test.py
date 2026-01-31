@@ -209,7 +209,7 @@ class TestTelegramReportingService(unittest.TestCase):
 
         # Assert
         self.task_list_manager.select_task.assert_called_once_with("task_1")
-        self.telegramReportingService.sendTaskInformation.assert_awaited_once_with(mock_task)
+        self.telegramReportingService.sendTaskInformation.assert_awaited_once_with(mock_task, reqId=None)
 
     def test_checkFilteredListChanges_no_change(self) -> None:
         # Arrange
@@ -322,7 +322,7 @@ class TestTelegramReportingService(unittest.TestCase):
         asyncio.run(self.telegramReportingService.taskInfoCommand())
 
         # Assert
-        self.telegramReportingService.sendTaskInformation.assert_awaited_once_with(mock_task, True)
+        self.telegramReportingService.sendTaskInformation.assert_awaited_once_with(mock_task, True, reqId=None)
 
     def test_taskInfoCommand_no_selected_task(self) -> None:
         # Arrange
@@ -333,7 +333,7 @@ class TestTelegramReportingService(unittest.TestCase):
         asyncio.run(self.telegramReportingService.taskInfoCommand())
 
         # Assert
-        self.telegramReportingService._TelegramReportingService__send_raw_text_message.assert_awaited_once_with("No task selected.")
+        self.telegramReportingService._TelegramReportingService__send_raw_text_message.assert_awaited_once_with("No task selected.", reqId=None)
 
     def test_helpCommand_no_args(self) -> None:
         # Arrange
@@ -473,7 +473,7 @@ class TestTelegramReportingService(unittest.TestCase):
         asyncio.run(self.telegramReportingService.doneCommand())
 
         # Assert
-        self.telegramReportingService._TelegramReportingService__send_raw_text_message.assert_awaited_once_with("no task selected.")
+        self.telegramReportingService._TelegramReportingService__send_raw_text_message.assert_awaited_once_with("no task selected.", reqId=None)
 
     def test_setCommand_with_selected_task(self) -> None:
         # Arrange
@@ -486,9 +486,9 @@ class TestTelegramReportingService(unittest.TestCase):
         asyncio.run(self.telegramReportingService.setCommand("/set description test description"))
 
         # Assert
-        self.telegramReportingService.processSetParam.assert_awaited_once_with(mock_task, "description", "test description")
+        self.telegramReportingService.processSetParam.assert_awaited_once_with(mock_task, "description", "test description", reqId=None)
         self.taskProvider.saveTask.assert_called_once_with(mock_task)
-        self.telegramReportingService.sendTaskInformation.assert_awaited_once_with(mock_task)
+        self.telegramReportingService.sendTaskInformation.assert_awaited_once_with(mock_task, reqId=None)
 
     def test_setCommand_no_selected_task(self) -> None:
         # Arrange
@@ -499,7 +499,7 @@ class TestTelegramReportingService(unittest.TestCase):
         asyncio.run(self.telegramReportingService.setCommand("/set description test"))
 
         # Assert
-        self.telegramReportingService._TelegramReportingService__send_raw_text_message.assert_awaited_once_with("no task selected.")
+        self.telegramReportingService._TelegramReportingService__send_raw_text_message.assert_awaited_once_with("no task selected.", reqId=None)
 
     def test_setCommand_with_two_params(self) -> None:
         # Arrange
@@ -528,7 +528,7 @@ class TestTelegramReportingService(unittest.TestCase):
         self.taskProvider.createDefaultTask.assert_called_once_with("test task")
         self.taskProvider.saveTask.assert_called_once_with(mock_task)
         self.task_list_manager.add_task.assert_called_once_with(mock_task)
-        self.telegramReportingService.sendTaskInformation.assert_awaited_once_with(mock_task)
+        self.telegramReportingService.sendTaskInformation.assert_awaited_once_with(mock_task, reqId=None)
 
     def test_newCommand_with_extended_params(self) -> None:
         # Arrange
@@ -553,7 +553,7 @@ class TestTelegramReportingService(unittest.TestCase):
         asyncio.run(self.telegramReportingService.newCommand("/new"))
 
         # Assert
-        self.telegramReportingService._TelegramReportingService__send_raw_text_message.assert_awaited_once_with("no description provided.")
+        self.telegramReportingService._TelegramReportingService__send_raw_text_message.assert_awaited_once_with("no description provided.", reqId=None)
 
     def test_scheduleCommand_with_selected_task(self) -> None:
         # Arrange
@@ -567,7 +567,7 @@ class TestTelegramReportingService(unittest.TestCase):
         # Assert
         self.scheduling.schedule.assert_called_once_with(mock_task, "2h")
         self.taskProvider.saveTask.assert_called_once_with(mock_task)
-        self.telegramReportingService.sendTaskInformation.assert_awaited_once_with(mock_task)
+        self.telegramReportingService.sendTaskInformation.assert_awaited_once_with(mock_task, reqId=None)
 
     def test_scheduleCommand_no_selected_task(self) -> None:
         # Arrange
@@ -578,7 +578,7 @@ class TestTelegramReportingService(unittest.TestCase):
         asyncio.run(self.telegramReportingService.scheduleCommand("/schedule 2h"))
 
         # Assert
-        self.telegramReportingService._TelegramReportingService__send_raw_text_message.assert_awaited_once_with("no task provided.")
+        self.telegramReportingService._TelegramReportingService__send_raw_text_message.assert_awaited_once_with("no task provided.", reqId=None)
 
     def test_workCommand_with_selected_task(self) -> None:
         # Arrange
@@ -594,7 +594,7 @@ class TestTelegramReportingService(unittest.TestCase):
         self.telegramReportingService.processSetParam.assert_awaited_once()
         self.taskProvider.saveTask.assert_called_once_with(mock_task)
         self.statisticsProvider.doWork.assert_called_once()
-        self.telegramReportingService.sendTaskInformation.assert_awaited_once_with(mock_task)
+        self.telegramReportingService.sendTaskInformation.assert_awaited_once_with(mock_task, reqId=None)
 
     def test_workCommand_no_selected_task(self) -> None:
         # Arrange
@@ -605,7 +605,7 @@ class TestTelegramReportingService(unittest.TestCase):
         asyncio.run(self.telegramReportingService.workCommand("/work 1h"))
 
         # Assert
-        self.telegramReportingService._TelegramReportingService__send_raw_text_message.assert_awaited_once_with("no task provided.")
+        self.telegramReportingService._TelegramReportingService__send_raw_text_message.assert_awaited_once_with("no task provided.", reqId=None)
 
     def test_statsCommand(self) -> None:
         # Arrange
@@ -690,7 +690,7 @@ class TestTelegramReportingService(unittest.TestCase):
         asyncio.run(self.telegramReportingService.snoozeCommand("/snooze"))
 
         # Assert
-        self.telegramReportingService.setCommand.assert_awaited_once_with("/set start now;+5m")
+        self.telegramReportingService.setCommand.assert_awaited_once_with("/set start now;+5m", reqId=None)
 
     def test_snoozeCommand_custom_time(self) -> None:
         # Arrange
@@ -700,7 +700,7 @@ class TestTelegramReportingService(unittest.TestCase):
         asyncio.run(self.telegramReportingService.snoozeCommand("/snooze 10m"))
 
         # Assert
-        self.telegramReportingService.setCommand.assert_awaited_once_with("/set start now;+10m")
+        self.telegramReportingService.setCommand.assert_awaited_once_with("/set start now;+10m", reqId=None)
 
     def test_exportCommand_default_format(self) -> None:
         # Arrange
@@ -760,7 +760,7 @@ class TestTelegramReportingService(unittest.TestCase):
         # Assert
         self.task_list_manager.search_tasks.assert_called_once_with(["test"])
         self.assertEqual(self.task_list_manager.selected_task, mock_task)
-        self.telegramReportingService.sendTaskInformation.assert_awaited_once_with(mock_task)
+        self.telegramReportingService.sendTaskInformation.assert_awaited_once_with(mock_task, reqId=None)
 
     def test_searchCommand_multiple_results(self) -> None:
         # Arrange
@@ -803,7 +803,7 @@ class TestTelegramReportingService(unittest.TestCase):
 
         # Assert
         self.task_list_manager.search_tasks.assert_called_once_with(["nonexistent"])
-        self.telegramReportingService._TelegramReportingService__send_raw_text_message.assert_awaited_once_with("No results found")
+        self.telegramReportingService._TelegramReportingService__send_raw_text_message.assert_awaited_once_with("No results found", reqId=None)
 
     def test_agendaCommand(self) -> None:
         # Arrange
@@ -827,7 +827,7 @@ class TestTelegramReportingService(unittest.TestCase):
         asyncio.run(self.telegramReportingService.projectCommand("/project"))
 
         # Assert
-        self.telegramReportingService._TelegramReportingService__send_raw_text_message.assert_awaited_once_with("No project command provided")
+        self.telegramReportingService._TelegramReportingService__send_raw_text_message.assert_awaited_once_with("No project command provided", reqId=None)
 
     def test_projectCommand_invalid_command(self) -> None:
         # Arrange
@@ -837,7 +837,7 @@ class TestTelegramReportingService(unittest.TestCase):
         asyncio.run(self.telegramReportingService.projectCommand("/project invalid"))
 
         # Assert
-        self.telegramReportingService._TelegramReportingService__send_raw_text_message.assert_awaited_once_with("Invalid project command")
+        self.telegramReportingService._TelegramReportingService__send_raw_text_message.assert_awaited_once_with("Invalid project command", reqId=None)
 
     def test_processMessage_calls_handler(self) -> None:
         # Arrange - Test that processMessage method exists and can be called
@@ -866,7 +866,7 @@ class TestTelegramReportingService(unittest.TestCase):
         asyncio.run(self.telegramReportingService.processMessage(mock_message, True))
 
         # Assert
-        self.telegramReportingService.helpCommand.assert_awaited_once_with("/unknown", True)
+        self.telegramReportingService.helpCommand.assert_awaited_once_with("/unknown", True, None)
 
     def test_sendTaskList(self) -> None:
         # Arrange
@@ -1117,7 +1117,7 @@ class TestTelegramReportingService(unittest.TestCase):
         asyncio.run(self.telegramReportingService.processSetParam(mock_task, "description", "New Description"))
         
         # Assert
-        self.telegramReportingService.setDescriptionCommand.assert_awaited_once_with(mock_task, "New Description")
+        self.telegramReportingService.setDescriptionCommand.assert_awaited_once_with(mock_task, "New Description", None)
 
     def test_processSetParam_invalid_param(self) -> None:
         # Arrange
@@ -1223,7 +1223,7 @@ class TestTelegramReportingService(unittest.TestCase):
         asyncio.run(self.telegramReportingService.setCommand("/set description test", False))
 
         # Assert
-        self.telegramReportingService.processSetParam.assert_awaited_once_with(mock_task, "description", "test")
+        self.telegramReportingService.processSetParam.assert_awaited_once_with(mock_task, "description", "test", reqId=None)
         self.taskProvider.saveTask.assert_called_once_with(mock_task)
         self.telegramReportingService.sendTaskInformation.assert_not_awaited()
 
@@ -1328,7 +1328,7 @@ class TestTelegramReportingService(unittest.TestCase):
 
         # Assert
         self.projectManager.process_command.assert_called_once_with("help", [])
-        self.telegramReportingService._TelegramReportingService__send_raw_text_message.assert_awaited_once_with("Command executed")
+        self.telegramReportingService._TelegramReportingService__send_raw_text_message.assert_awaited_once_with("Command executed", reqId=None)
 
     def test_importCommand_specific_format(self) -> None:
         # Arrange
@@ -1358,7 +1358,7 @@ class TestTelegramReportingService(unittest.TestCase):
         # Assert
         self.scheduling.schedule.assert_called_once_with(mock_task, "")
         self.taskProvider.saveTask.assert_called_once_with(mock_task)
-        self.telegramReportingService.sendTaskInformation.assert_awaited_once_with(mock_task)
+        self.telegramReportingService.sendTaskInformation.assert_awaited_once_with(mock_task, reqId=None)
 
 
 if __name__ == '__main__':

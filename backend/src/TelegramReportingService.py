@@ -51,7 +51,7 @@ class TelegramReportingService(IReportingService):
 
         self._categories = categories
 
-        self.commands: List[Tuple[str, Callable[[str, bool], Coroutine[Any, Any, Any]]]] = [
+        self.commands: List[Tuple[str, Callable[[str, bool, int | None], Coroutine[Any, Any, Any]]]] = [
             ("/list", self.listCommand),
             ("/next", self.nextCommand),
             ("/previous", self.previousCommand),
@@ -167,13 +167,13 @@ class TelegramReportingService(IReportingService):
 
             for message in messages:
                 isLastIteration = message == messages[-1]
-                if self.chatId == 0:
+                if self.chatId == 0:  # TODO: esta policy debe moverse a telegram
                     self.chatId = int(message.source.id)
-                elif message.source.id == str(self.chatId):
+                if message.source.id == str(self.chatId):
                     await self.processMessage(message, isLastIteration)
 
     # Each command must be made into an object and injected into this class
-    async def listCommand(self, messageText: str = "", expectAnswer: bool = True) -> None:
+    async def listCommand(self, messageText: str = "", expectAnswer: bool = True, reqId: int | None = None) -> None:
         """
         # Command /list
         This command lists the tasks in the current view.
@@ -185,9 +185,9 @@ class TelegramReportingService(IReportingService):
         - Tasks are sorted according the selected /heuristic strategy
         """
         self._taskListManager.reset_pagination()
-        await self.sendTaskList()
+        await self.sendTaskList(reqId=reqId)
 
-    async def nextCommand(self, messageText: str = "", expectAnswer: bool = True) -> None:
+    async def nextCommand(self, messageText: str = "", expectAnswer: bool = True, reqId: int | None = None) -> None:
         """
         # Command /next
         This command shows the next page of tasks.
@@ -195,9 +195,9 @@ class TelegramReportingService(IReportingService):
         """
         self._taskListManager.next_page()
         if expectAnswer:
-            await self.sendTaskList()
+            await self.sendTaskList(reqId=reqId)
 
-    async def previousCommand(self, messageText: str = "", expectAnswer: bool = True) -> None:
+    async def previousCommand(self, messageText: str = "", expectAnswer: bool = True, reqId: int | None = None) -> None:
         """
         # Command /previous
         This command shows the previous page of tasks.
@@ -205,9 +205,9 @@ class TelegramReportingService(IReportingService):
         """
         self._taskListManager.prior_page()
         if expectAnswer:
-            await self.sendTaskList()
+            await self.sendTaskList(reqId=reqId)
 
-    async def selectTaskCommand(self, messageText: str = "", expectAnswer: bool = True) -> None:
+    async def selectTaskCommand(self, messageText: str = "", expectAnswer: bool = True, reqId: int | None = None) -> None:
         """
         # Command /task_[task_number]
         This command selects a task to show more information.
@@ -218,9 +218,9 @@ class TelegramReportingService(IReportingService):
         selectedTask = self._taskListManager.selected_task
 
         if expectAnswer and isinstance(selectedTask, ITaskModel):
-            await self.sendTaskInformation(selectedTask)
+            await self.sendTaskInformation(selectedTask, reqId=reqId)
 
-    async def taskInfoCommand(self, messageText: str = "", expectAnswer: bool = True) -> None:
+    async def taskInfoCommand(self, messageText: str = "", expectAnswer: bool = True, reqId: int | None = None) -> None:
         """
         # Command /info
         This command shows detailed information about the selected task.
@@ -237,11 +237,11 @@ class TelegramReportingService(IReportingService):
         """
         selectedTask = self._taskListManager.selected_task
         if selectedTask is not None:
-            await self.sendTaskInformation(selectedTask, True)
+            await self.sendTaskInformation(selectedTask, True, reqId=reqId)
         else:
-            await self.__send_raw_text_message("No task selected.")
+            await self.__send_raw_text_message("No task selected.", reqId=reqId)
 
-    async def helpCommand(self, messageText: str = "", expectAnswer: bool = True) -> None:
+    async def helpCommand(self, messageText: str = "", expectAnswer: bool = True, reqId: int | None = None) -> None:
         """
         # Command Manual
         This manual will show what features are available and how to use them.
@@ -330,9 +330,9 @@ class TelegramReportingService(IReportingService):
             assert isinstance(helpCommandDoc, str)
             helpMessage.append(helpCommandDoc)
 
-        await self.__send_raw_text_message("\n".join(helpMessage))
+        await self.__send_raw_text_message("\n".join(helpMessage), reqId=reqId)
 
-    async def heuristicListCommand(self, messageText: str = "", expectAnswer: bool = True) -> None:
+    async def heuristicListCommand(self, messageText: str = "", expectAnswer: bool = True, reqId: int | None = None) -> None:
         """
         # Command /heuristic
         This command lists the available heuristic options.
@@ -347,10 +347,11 @@ class TelegramReportingService(IReportingService):
             content=MessageContent(anonObjectList=heuristic_list_content),
             render_mode=RenderMode.HEURISTIC_LIST
         )
+        message.content.requestId = reqId
 
         await self.bot.sendMessage(message=message)
 
-    async def algorithmListCommand(self, messageText: str = "", expectAnswer: bool = True) -> None:
+    async def algorithmListCommand(self, messageText: str = "", expectAnswer: bool = True, reqId: int | None = None) -> None:
         """
         # Command /algorithm
         This command lists the available algorithm options.
@@ -365,19 +366,20 @@ class TelegramReportingService(IReportingService):
             content=MessageContent(anonObjectList=algorithm_list),
             render_mode=RenderMode.ALGORITHM_LIST
         )
+        message.content.requestId = reqId
 
         await self.bot.sendMessage(message=message)
 
-    async def raiseAlgorithmCommand(self, messageText: str = "", expectAnswer: bool = True) -> None:
+    async def raiseAlgorithmCommand(self, messageText: str = "", expectAnswer: bool = True, reqId: int | None = None) -> None:
         arg = messageText.split(" ")[1:][0]
         affected = self._taskListManager.raiseEvent(arg)
         
         for task in affected:
             self.taskProvider.saveTask(task)
 
-        await self.__send_raw_text_message(f"{len(affected)} task affected.")
+        await self.__send_raw_text_message(f"{len(affected)} task affected.", reqId=reqId)
 
-    async def filterListCommand(self, messageText: str = "", expectAnswer: bool = True) -> None:
+    async def filterListCommand(self, messageText: str = "", expectAnswer: bool = True, reqId: int | None = None) -> None:
         """
         # Command /filter
         This command lists the available filter options.
@@ -391,9 +393,11 @@ class TelegramReportingService(IReportingService):
             content=MessageContent(filterListDict=filterListContent),
             render_mode=RenderMode.FILTER_LIST
         )
+        message.content.requestId = reqId
+
         await self.bot.sendMessage(message=message)
 
-    async def heuristicSelectionCommand(self, messageText: str = "", expectAnswer: bool = True) -> None:
+    async def heuristicSelectionCommand(self, messageText: str = "", expectAnswer: bool = True, reqId: int | None = None) -> None:
         """
         # Command /heuristic_[heuristic]
         This command selects a heuristic to sort the tasks.
@@ -401,9 +405,9 @@ class TelegramReportingService(IReportingService):
         """
         self._taskListManager.select_heuristic(messageText)
         if expectAnswer:
-            await self.sendTaskList()
+            await self.sendTaskList(reqId=reqId)
 
-    async def algorithmSelectionCommand(self, messageText: str = "", expectAnswer: bool = True) -> None:
+    async def algorithmSelectionCommand(self, messageText: str = "", expectAnswer: bool = True, reqId: int | None = None) -> None:
         """
         # Command /algorithm_[algorithm]
         This command selects an algorithm to sort the tasks.
@@ -411,9 +415,9 @@ class TelegramReportingService(IReportingService):
         """
         self._taskListManager.select_algorithm(messageText)
         if expectAnswer:
-            await self.sendTaskList()
+            await self.sendTaskList(reqId=reqId)
 
-    async def filterSelectionCommand(self, messageText: str = "", expectAnswer: bool = True) -> None:
+    async def filterSelectionCommand(self, messageText: str = "", expectAnswer: bool = True, reqId: int | None = None) -> None:
         """
         # Command /filter_[filter]
         This command toggles a filter to show only the tasks that match the criteria.
@@ -421,9 +425,9 @@ class TelegramReportingService(IReportingService):
         """
         self._taskListManager.select_filter(messageText)
         if expectAnswer:
-            await self.sendTaskList()
+            await self.sendTaskList(reqId=reqId)
 
-    async def doneCommand(self, messageText: str = "", expectAnswer: bool = True) -> None:
+    async def doneCommand(self, messageText: str = "", expectAnswer: bool = True, reqId: int | None = None) -> None:
         """
         # Command /done
         This command marks the selected task as done.
@@ -442,11 +446,11 @@ class TelegramReportingService(IReportingService):
             
             self.taskProvider.saveTask(task)
             if expectAnswer:
-                await self.sendTaskList()
+                await self.sendTaskList(reqId=reqId)
         else:
-            await self.__send_raw_text_message("no task selected.")
+            await self.__send_raw_text_message("no task selected.", reqId=reqId)
 
-    async def setCommand(self, messageText: str = "", expectAnswer: bool = True) -> None:
+    async def setCommand(self, messageText: str = "", expectAnswer: bool = True, reqId: int | None = None) -> None:
         """
         # Command /set [parameter] [value]
         This command sets a parameter of the selected task.
@@ -474,14 +478,14 @@ class TelegramReportingService(IReportingService):
             if len(params) < 2:
                 params[0] = "help"
                 params[1] = "me"
-            await self.processSetParam(task, params[0], " ".join(params[1:]) if len(params) > 2 else params[1])
+            await self.processSetParam(task, params[0], " ".join(params[1:]) if len(params) > 2 else params[1], reqId=reqId)
             self.taskProvider.saveTask(task)
             if expectAnswer:
-                await self.sendTaskInformation(task)
+                await self.sendTaskInformation(task, reqId=reqId)
         else:
-            await self.__send_raw_text_message("no task selected.")
+            await self.__send_raw_text_message("no task selected.", reqId=reqId)
 
-    async def newCommand(self, messageText: str = "", expectAnswer: bool = True) -> None:
+    async def newCommand(self, messageText: str = "", expectAnswer: bool = True, reqId: int | None = None) -> None:
         """
         # Command /new [description](;[context];[total_cost])
         This command creates a new task with the provided description.
@@ -507,11 +511,11 @@ class TelegramReportingService(IReportingService):
             self.taskProvider.saveTask(selected_task)
             self._taskListManager.add_task(selected_task)
             if expectAnswer:
-                await self.sendTaskInformation(selected_task)
+                await self.sendTaskInformation(selected_task, reqId=reqId)
         else:
-            await self.__send_raw_text_message("no description provided.")
+            await self.__send_raw_text_message("no description provided.", reqId=reqId)
 
-    async def scheduleCommand(self, messageText: str = "", expectAnswer: bool = True) -> None:
+    async def scheduleCommand(self, messageText: str = "", expectAnswer: bool = True, reqId: int | None = None) -> None:
         """
         # Command /schedule [expected work per day (optional)]
         This command reschedules the selected task.
@@ -525,11 +529,11 @@ class TelegramReportingService(IReportingService):
             self.scheduling.schedule(selected_task, params.pop() if len(params) > 0 else "")
             self.taskProvider.saveTask(selected_task)
             if expectAnswer:
-                await self.sendTaskInformation(selected_task)
+                await self.sendTaskInformation(selected_task, reqId=reqId)
         else:
-            await self.__send_raw_text_message("no task provided.")
+            await self.__send_raw_text_message("no task provided.", reqId=reqId)
 
-    async def workCommand(self, messageText: str = "", expectAnswer: bool = True) -> None:
+    async def workCommand(self, messageText: str = "", expectAnswer: bool = True, reqId: int | None = None) -> None:
         """
         # Command /work [time]
         This command adds work to the selected task.
@@ -546,11 +550,11 @@ class TelegramReportingService(IReportingService):
             date = datetime.datetime.now().date()
             self.statiticsProvider.doWork(date, work_units, task)
             if expectAnswer:
-                await self.sendTaskInformation(task)
+                await self.sendTaskInformation(task, reqId=reqId)
         else:
-            await self.__send_raw_text_message("no task provided.")
+            await self.__send_raw_text_message("no task provided.", reqId=reqId)
 
-    async def statsCommand(self, messageText: str = "", expectAnswer: bool = True) -> None:
+    async def statsCommand(self, messageText: str = "", expectAnswer: bool = True, reqId: int | None = None) -> None:
         """
         # Command /stats
         This command shows work done statistics.
@@ -562,10 +566,11 @@ class TelegramReportingService(IReportingService):
             content=MessageContent(workloadStats=self._taskListManager.get_list_stats()),
             render_mode=RenderMode.TASK_STATS
         )
+        message.content.requestId = reqId
 
         await self.bot.sendMessage(message=message)
 
-    async def eventsCommand(self, messageText: str = "", expectAnswer: bool = True) -> None:
+    async def eventsCommand(self, messageText: str = "", expectAnswer: bool = True, reqId: int | None = None) -> None:
         """
         # Command /events
         This command shows event statistics for tasks.
@@ -580,10 +585,11 @@ class TelegramReportingService(IReportingService):
             content=MessageContent(eventsContent=events_content),
             render_mode=RenderMode.EVENTS
         )
+        message.content.requestId = reqId
 
         await self.bot.sendMessage(message=message)
 
-    async def snoozeCommand(self, messageText: str = "", expectAnswer: bool = True) -> None:
+    async def snoozeCommand(self, messageText: str = "", expectAnswer: bool = True, reqId: int | None = None) -> None:
         """
         # Command /snooze [time]
         This command snoozes the selected task.
@@ -597,9 +603,9 @@ class TelegramReportingService(IReportingService):
             params = "5m"
 
         startParams = f"/set start now;+{params}"
-        await self.setCommand(startParams)
+        await self.setCommand(startParams, reqId=reqId)
 
-    async def exportCommand(self, messageText: str = "", expectAnswer: bool = True) -> None:
+    async def exportCommand(self, messageText: str = "", expectAnswer: bool = True, reqId: int | None = None) -> None:
         """
         # Command /export [format]
         This command exports tasks to a file.
@@ -630,7 +636,7 @@ class TelegramReportingService(IReportingService):
         # send the exported data
         await self.bot.sendFile(chat_id=self.chatId, data=exportData)
 
-    async def importCommand(self, messageText: str = "", expectAnswer: bool = True) -> None:
+    async def importCommand(self, messageText: str = "", expectAnswer: bool = True, reqId: int | None = None) -> None:
         """
         # Command /import [format]
         This command imports tasks from a file.
@@ -659,9 +665,9 @@ class TelegramReportingService(IReportingService):
         self.taskProvider.importTasks(selectedFormat)
         self._taskListManager.update_taskList(self.taskProvider.getTaskList())
         await self.__send_raw_text_message(f"{selectedFormat} file imported", parse_mode="Markdown")
-        await self.listCommand(messageText, expectAnswer)
+        await self.listCommand(messageText, expectAnswer, reqId)
 
-    async def searchCommand(self, messageText: str = "", expectAnswer: bool = True) -> None:
+    async def searchCommand(self, messageText: str = "", expectAnswer: bool = True, reqId: int | None = None) -> None:
         """
         # Command /search [search terms]
         This command searches for tasks.
@@ -677,7 +683,7 @@ class TelegramReportingService(IReportingService):
         # processing results
         if len(searchResults) == 1:
             self._taskListManager.selected_task = searchResults[0]
-            await self.sendTaskInformation(searchResults[0])
+            await self.sendTaskInformation(searchResults[0], reqId=reqId)
         elif len(searchResults) > 0:
             taskListContent = searchResultsManager.get_task_list_content()
             # TaskListContent is a dataclass - modify the interactive field directly
@@ -688,11 +694,13 @@ class TelegramReportingService(IReportingService):
                 content=MessageContent(taskListContent=taskListContent),
                 render_mode=RenderMode.TASK_LIST
             )
+            message.content.requestId = reqId
+
             await self.bot.sendMessage(message=message)
         else:
-            await self.__send_raw_text_message("No results found")
+            await self.__send_raw_text_message("No results found", reqId=reqId)
 
-    async def agendaCommand(self, messageText: str = "", expectAnswer: bool = True) -> None:
+    async def agendaCommand(self, messageText: str = "", expectAnswer: bool = True, reqId: int | None = None) -> None:
         """
         # Command /agenda
         This command shows the tasks for today.
@@ -707,9 +715,11 @@ class TelegramReportingService(IReportingService):
             content=MessageContent(agendaContent=agenda_content),
             render_mode=RenderMode.TASK_AGENDA
         )
+        message.content.requestId = reqId
+
         await self.bot.sendMessage(message=message)
 
-    async def projectCommand(self, messageText: str = "", expectAnswer: bool = True) -> None:
+    async def projectCommand(self, messageText: str = "", expectAnswer: bool = True, reqId: int | None = None) -> None:
         """
         # Command /project [command]
         This command manages projects.
@@ -718,17 +728,17 @@ class TelegramReportingService(IReportingService):
         SUPPORTED_COMMANDS = ProjectCommands.values()
         messageArgs = messageText.split(" ")
         if len(messageArgs) < 2:
-            await self.__send_raw_text_message("No project command provided")
+            await self.__send_raw_text_message("No project command provided", reqId=reqId)
             return
 
         command = messageArgs[1]
         if command not in SUPPORTED_COMMANDS:
-            await self.__send_raw_text_message("Invalid project command")
+            await self.__send_raw_text_message("Invalid project command", reqId=reqId)
             return
 
         response = self.__projectManager.process_command(command, messageArgs[2:])  # TODO: technical debt, this should be returning a dict with enought info to build a message
 
-        await self.__send_raw_text_message(response)
+        await self.__send_raw_text_message(response, reqId=reqId)
 
     async def processMessage(self, message: IMessage, isLastIteration: bool) -> None:
         """
@@ -755,7 +765,7 @@ class TelegramReportingService(IReportingService):
         command_handler = next((command[1] for command in commands if command_name.startswith(command[0])), self.helpCommand)
 
         # Execute the command
-        await command_handler(message_text, isLastIteration)
+        await command_handler(message_text, isLastIteration, message.content.requestId)
 
     def processRelativeTimeSet(self, current: TimePoint, value: str) -> TimePoint:
         """
@@ -788,19 +798,19 @@ class TelegramReportingService(IReportingService):
                 currentTimePoint = currentTimePoint + TimeAmount(value)
         return currentTimePoint
 
-    async def setDescriptionCommand(self, task: ITaskModel, value: str) -> None:
+    async def setDescriptionCommand(self, task: ITaskModel, value: str, reqId: int | None = None) -> None:
         task.setDescription(value)
         pass
 
-    async def setContextCommand(self, task: ITaskModel, value: str) -> None:
+    async def setContextCommand(self, task: ITaskModel, value: str, reqId: int | None = None) -> None:
         # check if context is equal to any of the categories prefixes throw error if not
         if any([value.startswith(category["prefix"]) for category in self._categories]):
             task.setContext(value)
         else:
             errorMessage = f"Invalid context {value}\nvalid contexts would be: {', '.join([category['prefix'] for category in self._categories])}"
-            await self.__send_raw_text_message(errorMessage)
+            await self.__send_raw_text_message(errorMessage, reqId=reqId)
 
-    async def setStartCommand(self, task: ITaskModel, value: str) -> None:
+    async def setStartCommand(self, task: ITaskModel, value: str, reqId: int | None = None) -> None:
         """
         Sets the start date/time of a task.
 
@@ -823,7 +833,7 @@ class TelegramReportingService(IReportingService):
             task.setStart(TimePoint(start_datetime))
         pass
 
-    async def setDueCommand(self, task: ITaskModel, value: str) -> None:
+    async def setDueCommand(self, task: ITaskModel, value: str, reqId: int | None = None) -> None:
         """
         Sets the due date/time of a task.
 
@@ -846,37 +856,37 @@ class TelegramReportingService(IReportingService):
             task.setDue(TimePoint(due_datetime))
         pass
 
-    async def setSeverityCommand(self, task: ITaskModel, value: str) -> None:
+    async def setSeverityCommand(self, task: ITaskModel, value: str, reqId: int | None = None) -> None:
         task.setSeverity(float(value))
         pass
 
-    async def setTotalCostCommand(self, task: ITaskModel, value: str) -> None:
+    async def setTotalCostCommand(self, task: ITaskModel, value: str, reqId: int | None = None) -> None:
         timeAmount = TimeAmount(value)
         task.setTotalCost(timeAmount)
         pass
 
-    async def setEffortInvestedCommand(self, task: ITaskModel, value: str) -> None:
+    async def setEffortInvestedCommand(self, task: ITaskModel, value: str, reqId: int | None = None) -> None:
         newInvestedEffort = task.getInvestedEffort() + TimeAmount(value)
         newTotalCost = task.getTotalCost() - TimeAmount(value)
         task.setInvestedEffort(newInvestedEffort)
         task.setTotalCost(newTotalCost)
         pass
 
-    async def setCalmCommand(self, task: ITaskModel, value: str) -> None:
+    async def setCalmCommand(self, task: ITaskModel, value: str, reqId: int | None = None) -> None:
         task.setCalm(value.upper().startswith("TRUE"))
         pass
 
-    async def setWaitedCommand(self, task: ITaskModel, value: str) -> None:
+    async def setWaitedCommand(self, task: ITaskModel, value: str, reqId: int | None = None) -> None:
         task.setEventWaited(value)
         pass
 
-    async def setRaisedCommand(self, task: ITaskModel, value: str) -> None:
+    async def setRaisedCommand(self, task: ITaskModel, value: str, reqId: int | None = None) -> None:
         task.setEventRaised(value)
         pass
 
-    async def processSetParam(self, task: ITaskModel, param: str, value: str) -> None:
+    async def processSetParam(self, task: ITaskModel, param: str, value: str, reqId: int | None = None) -> None:
 
-        commands: list[Tuple[str, Callable[[ITaskModel, str], Coroutine[Any, Any, Any]]]] = [
+        commands: list[Tuple[str, Callable[[ITaskModel, str, int | None], Coroutine[Any, Any, Any]]]] = [
             ("description", self.setDescriptionCommand),
             ("context", self.setContextCommand),
             ("start", self.setStartCommand),
@@ -891,12 +901,12 @@ class TelegramReportingService(IReportingService):
 
         command = next((command for command in commands if command[0].startswith(param)), ("", None))[1]
         if command is not None:
-            await command(task, value)
+            await command(task, value, reqId)
         else:
             errorMessage = f"Invalid parameter {param}\nvalid parameters would be: description, context, start, due, severity, total_cost, effort_invested, calm"
-            await self.__send_raw_text_message(errorMessage)
+            await self.__send_raw_text_message(errorMessage, reqId=reqId)
 
-    async def sendTaskList(self, interactive: bool = True) -> None:
+    async def sendTaskList(self, interactive: bool = True, reqId: int | None = None) -> None:
         self._taskListManager.clear_selected_task()
 
         # Get structured task list content
@@ -910,11 +920,12 @@ class TelegramReportingService(IReportingService):
             content=MessageContent(taskListContent=task_list_content),
             render_mode=RenderMode.TASK_LIST
         )
+        message.content.requestId = reqId
 
         # Send the structured message
         await self.bot.sendMessage(message=message)
 
-    async def sendTaskInformation(self, task: ITaskModel, extended: bool = False) -> None:
+    async def sendTaskInformation(self, task: ITaskModel, extended: bool = False, reqId: int | None = None) -> None:
         # Get structured task information
         task_info = self._taskListManager.get_task_information(task, self.taskProvider, extended)
 
@@ -925,11 +936,12 @@ class TelegramReportingService(IReportingService):
             content=MessageContent(taskInformation=task_info),
             render_mode=RenderMode.TASK_INFORMATION
         )
+        message.content.requestId = reqId
 
         # Send the structured message
         await self.bot.sendMessage(message=message)
 
-    async def __send_raw_text_message(self, text: str, parse_mode: str = "Markdown") -> None:
+    async def __send_raw_text_message(self, text: str, parse_mode: str = "Markdown", reqId: int | None = None) -> None:
         """
         Private helper method to send raw text messages using the structured message approach.
 
@@ -943,4 +955,6 @@ class TelegramReportingService(IReportingService):
             content=MessageContent(text=text),
             render_mode=RenderMode.RAW_TEXT
         )
+
+        message.content.requestId = reqId
         await self.bot.sendMessage(message=message)

@@ -32,6 +32,7 @@ class MessageContent:
     agendaContent: AgendaContent | None = None
     taskInformation: TaskInformation | None = None
     eventsContent: EventsContent | None = None
+    requestId: int | None = None
 
 
 class IAgent(ABC):

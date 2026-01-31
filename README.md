@@ -16,6 +16,15 @@ The first time the application is running it will ask you a few questions about 
 - **Markdown vault** : The application will scan a given directory and subdirectories for markdown files and query for tasks in them.
 - **cmd** : Means that the application will interact with the user by using a command console.
 - **telegram** : Means that the application will interact with the user by using a telegram bot. (Bot credentials should be provided)
+- **HTTP** : Means that the application will interact with the user via an HTTP REST API interface. (HTTP server configuration should be provided)
+
+Available combinations:
+1. **Obsidian (cmd)** - Markdown vault with command line interface
+2. **JSON file (cmd)** - JSON storage with command line interface
+3. **JSON file (telegram)** - JSON storage with Telegram bot interface
+4. **Obsidian (telegram)** - Markdown vault with Telegram bot interface
+5. **JSON file (HTTP)** - JSON storage with HTTP REST API interface
+6. **Obsidian (HTTP)** - Markdown vault with HTTP REST API interface
 
 Note: by now Markdown vault mode will only show tasks that have the following strings that start with '- [ ]' and contain '[track:: (category)]', '[start:: (date in YYYY-MM-DD format)]' and '[due:: (date in YYYY-MM-DD format)]'. It is projected to add some configurability on these matters to ease up it's use.
 
@@ -28,6 +37,16 @@ It will ask you for a directory to save your data files, uses the current direct
 If a telegram mode is selected, it will ask for a telegram bot token, if you don't know how, please check the section `Getting Ready>Obtain your bot token` from this site: https://core.telegram.org/bots/tutorial.
 
 It will also ask you for a telegram chat Id, you can get it by following this tutorial: https://www.wikihow.com/Know-Chat-ID-on-Telegram-on-Android
+
+#### HTTP credentials
+
+If an HTTP mode is selected, you will need to provide:
+- **HTTP server URL** - The IP address or hostname for the HTTP server to bind to (default: 0.0.0.0)
+- **HTTP server port** - The port number for the HTTP server (default: 8080)
+- **HTTP authentication token** - A secure token that clients must provide in the Authorization header
+- **HTTP chat ID** - A user identifier for the HTTP session (default: 1)
+
+The HTTP API requires HTTPS connections and Bearer token authentication. All requests must include `Authorization: Bearer <your-token>` in the header.
 
 #### Markdown vault directory
 
@@ -120,7 +139,50 @@ config.json
     "APP_MODE": 3,
     "JSON_PATH": ".",
     "TELEGRAM_BOT_TOKEN": "<Your telegram bot token>",
-    "TELEGRAM_CHAT_ID": "<Your telegram user id>",
+    "TELEGRAM_CHAT_ID": "<Your telegram user id>"
+}
+```
+
+##### HTTP Mode JSON example
+config.json
+```json
+{
+    "categories": [
+        {
+            "prefix": "alert",
+            "description": "Alert and events"
+        },
+        {
+            "prefix": "billable",
+            "description": "Tasks that generate income"
+        },
+        {
+            "prefix": "indoor",
+            "description": "Indoor dynamic tasks"
+        },
+        {
+            "prefix": "aux_device",
+            "description": "Lightweight digital/analogic tasks"
+        },
+        {
+            "prefix": "bujo",
+            "description": "Bullet journal tasks"
+        },
+        {
+            "prefix": "workstation",
+            "description": "Heavyweight digital tasks"
+        },
+        {
+            "prefix": "outdoor",
+            "description": "Outdoor dynamic tasks"
+        }
+    ],
+    "APP_MODE": 5,
+    "JSON_PATH": ".",
+    "HTTP_URL": "0.0.0.0",
+    "HTTP_PORT": "8080",
+    "HTTP_TOKEN": "<Your secure authentication token>",
+    "HTTP_CHAT_ID": "1"
 }
 ```
 

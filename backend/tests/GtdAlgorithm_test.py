@@ -1,3 +1,4 @@
+import datetime
 import unittest
 from unittest.mock import Mock
 from src.algorithms.GtdAlgorithm import GtdAlgorithm
@@ -12,7 +13,7 @@ class TestGtdAlgorithm(unittest.TestCase):
         self.mock_filter = Mock(spec=IFilter)
         self.mock_heuristic = Mock(spec=IHeuristic)
         self.mock_task = Mock(spec=ITaskModel)
-        self.mock_task.getDue.return_value = TimePoint(0)
+        self.mock_task.getDue.return_value = TimePoint(datetime.datetime.now())
         self.mock_task.getCalm.return_value = False
 
         self.algorithm = GtdAlgorithm(

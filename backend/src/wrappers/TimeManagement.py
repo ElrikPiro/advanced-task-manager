@@ -4,12 +4,15 @@ This module contains the TimeAmount and TimePoint classes, which are wrappers
 for time amounts and time points, respectively.
 """
 
+from dataclasses import dataclass
 import datetime
 import typing
 from math import ceil
 
 
+@dataclass
 class TimeAmount:
+    int_representation: int
     """
     This module contains the TimeAmount class, which is a wrapper for
         time amounts.
@@ -58,7 +61,10 @@ class TimeAmount:
         return int(self.int_representation / 86400000)
 
 
+@dataclass
 class TimePoint:
+    timestamp: float
+    str_representation: str
     """
     This module contains the TimePoint class, which is a wrapper for time points.
     It allows for easy manipulation of time points in a human-readable format.
@@ -66,6 +72,8 @@ class TimePoint:
 
     def __init__(self, datetime_representation: datetime.datetime) -> None:
         self.datetime_representation = datetime_representation
+        self.timestamp = datetime_representation.timestamp()
+        self.str_representation = datetime_representation.strftime("%Y-%m-%d")
 
     def __add__(self, other: TimeAmount) -> "TimePoint":
         return TimePoint(datetime.datetime.fromtimestamp(self.datetime_representation.timestamp() + other.int_representation / 1000))
