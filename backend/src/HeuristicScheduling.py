@@ -47,7 +47,7 @@ class HeuristicScheduling(IScheduling):
 
     def _schedule_with_effort_per_day(self, task: ITaskModel, effort_per_day: float, p: float, r: float) -> List[ITaskModel]:
         """Schedule task with specified effort per day, splitting if necessary."""
-        severity = 1 / effort_per_day
+        severity = p / effort_per_day
         
         if severity >= 1.0:
             # Normal scheduling - no split needed
@@ -64,7 +64,7 @@ class HeuristicScheduling(IScheduling):
 
     def _apply_normal_scheduling(self, task: ITaskModel, effort_per_day: float, p: float, r: float) -> ITaskModel:
         """Apply normal scheduling logic to a single task."""
-        severity = 1 / effort_per_day
+        severity = p / effort_per_day
         optimal_days = ceil((r * (p * severity + 1)) / p)
         task.setDue(task.getStart() + TimeAmount(f"{optimal_days}d"))
         task.setSeverity(severity)
@@ -72,7 +72,7 @@ class HeuristicScheduling(IScheduling):
 
     def _split_task(self, task: ITaskModel, effort_per_day: float, p: float, r: float) -> List[ITaskModel]:
         """Split task into multiple parts when severity would be < 1."""
-        severity = 1 / effort_per_day
+        severity = p / effort_per_day
         split_count = ceil(1.0 / severity)
         optimal_effort_per_day = 1.0  # Target severity = 1
         effort_per_split = r / split_count

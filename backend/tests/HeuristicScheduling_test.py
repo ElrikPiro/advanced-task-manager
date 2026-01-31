@@ -53,13 +53,12 @@ class TestHeuristicScheduling(unittest.TestCase):
         result = self.scheduler.schedule(self.task, param)
 
         # Assert
-        # When param = 2, severity = 1/2 = 0.5 < 1, so splitting should occur
-        # split_count = ceil(1/0.5) = ceil(2) = 2
-        expected_split_count = 2
+        # When param = 2, severity = p/effort_per_day = 2/2 = 1.0, so NO splitting should occur
+        expected_split_count = 1
         self.assertEqual(len(result), expected_split_count)
         
-        # Verify task provider was called to create new tasks
-        self.assertEqual(self.mock_task_provider.createDefaultTask.call_count, expected_split_count - 1)
+        # Verify task provider was NOT called since no splitting occurred
+        self.assertEqual(self.mock_task_provider.createDefaultTask.call_count, 0)
 
     def test_schedule_with_decimal_param_high_severity(self):
         # Arrange
@@ -70,9 +69,10 @@ class TestHeuristicScheduling(unittest.TestCase):
 
         # Assert
         self.assertEqual(len(result), 1)  # No splitting needed
-        # When param = 0.5, severity should be 1/0.5 = 2.0
-        expected_severity = 2.0
-        expected_days = 25
+        # When param = 0.5, severity should be p/effort_per_day = 2/0.5 = 4.0
+        expected_severity = 4.0
+        # optimal_days = ceil((r * (p * severity + 1)) / p) = ceil((10 * (2 * 4 + 1)) / 2) = ceil(45) = 45
+        expected_days = 45
 
         self.task.setSeverity.assert_called_once_with(expected_severity)
         self.task.setDue.assert_called_once()
@@ -87,9 +87,9 @@ class TestHeuristicScheduling(unittest.TestCase):
         result = self.scheduler.schedule(self.task, param)
 
         # Assert
-        # When param = 20, severity = 1/20 = 0.05 < 1, so splitting should occur
-        # split_count = ceil(1/0.05) = ceil(20) = 20
-        expected_split_count = 20
+        # When param = 20, severity = p/effort_per_day = 2/20 = 0.1 < 1, so splitting should occur
+        # split_count = ceil(1/0.1) = ceil(10) = 10
+        expected_split_count = 10
         self.assertEqual(len(result), expected_split_count)
         
         # Verify task provider was called to create new tasks
@@ -98,7 +98,7 @@ class TestHeuristicScheduling(unittest.TestCase):
         # Check that all tasks have sequential naming
         for i, task in enumerate(result):
             if i == 0:
-                # Original task should be modified with 1/20 suffix
+                # Original task should be modified with 1/10 suffix
                 self.task.setDescription.assert_called_with(f"Test Task {i+1}/{expected_split_count}")
             else:
                 # New tasks should be created with proper naming
@@ -113,9 +113,9 @@ class TestHeuristicScheduling(unittest.TestCase):
         result = self.scheduler.schedule(self.task, param)
 
         # Assert
-        # 2h = 4.8p, severity = 1/4.8 = 0.208 < 1, so splitting should occur
-        # split_count = ceil(1/0.208) = ceil(4.8) = 5
-        expected_split_count = 5
+        # 2h = 4.8p, severity = p/effort_per_day = 2/4.8 = 0.416... < 1, so splitting should occur
+        # split_count = ceil(1/0.416) = ceil(2.4) = 3
+        expected_split_count = 3
         self.assertEqual(len(result), expected_split_count)
 
     def test_schedule_with_time_format_minutes(self):
@@ -126,8 +126,8 @@ class TestHeuristicScheduling(unittest.TestCase):
         result = self.scheduler.schedule(self.task, param)
 
         # Assert
-        # severity = 1/2.4 = 0.416... < 1, should trigger splitting
-        expected_split_count = 3  # ceil(1/0.416) = 3
+        # severity = p/effort_per_day = 2/2.4 = 0.833... < 1, should trigger splitting
+        expected_split_count = 2  # ceil(1/0.833) = 2
         self.assertEqual(len(result), expected_split_count)
 
     def test_schedule_with_time_format_pomodoros(self):
@@ -138,8 +138,8 @@ class TestHeuristicScheduling(unittest.TestCase):
         result = self.scheduler.schedule(self.task, param)
 
         # Assert
-        # severity = 1/1.5 = 0.666... < 1, should trigger splitting
-        expected_split_count = 2  # ceil(1/0.666) = 2
+        # severity = p/effort_per_day = 2/1.5 = 1.333... >= 1, should NOT trigger splitting
+        expected_split_count = 1  # No splitting needed
         self.assertEqual(len(result), expected_split_count)
 
     def test_schedule_with_invalid_time_format_fallback_to_auto(self):
@@ -212,16 +212,16 @@ class TestHeuristicScheduling(unittest.TestCase):
 
     def test_split_effort_distribution(self):
         # Arrange
-        param = "8"  # effort that should trigger a 2-way split
+        param = "8"  # effort that should trigger a 4-way split
         self.task.getTotalCost.return_value = TimeAmount("8p")  # 8 pomodoros total
         
         # Act
         result = self.scheduler.schedule(self.task, param)
 
         # Assert
-        # severity = 1/8 = 0.125 < 1, split_count = ceil(1/0.125) = 8
-        expected_split_count = 8
-        expected_effort_per_split = 1.0  # 8p / 8 = 1p per split
+        # severity = p/effort_per_day = 2/8 = 0.25 < 1, split_count = ceil(1/0.25) = 4
+        expected_split_count = 4
+        expected_effort_per_split = 2.0  # 8p / 4 = 2p per split
         
         self.assertEqual(len(result), expected_split_count)
         
@@ -236,7 +236,7 @@ class TestHeuristicScheduling(unittest.TestCase):
 
     def test_boundary_case_severity_exactly_one(self):
         # Arrange
-        param = "1"  # effort per day = 1 pomodoro, severity = 1/1 = 1.0
+        param = "2"  # effort per day = 2 pomodoros, severity = p/effort_per_day = 2/2 = 1.0
 
         # Act
         result = self.scheduler.schedule(self.task, param)
@@ -248,21 +248,21 @@ class TestHeuristicScheduling(unittest.TestCase):
 
     def test_boundary_case_severity_just_above_one(self):
         # Arrange
-        param = "0.99"  # effort per day = 0.99 pomodoros, severity = 1/0.99 = 1.01 > 1
+        param = "1.98"  # effort per day = 1.98 pomodoros, severity = p/effort_per_day = 2/1.98 = 1.01 > 1
 
         # Act
         result = self.scheduler.schedule(self.task, param)
 
         # Assert
         self.assertEqual(len(result), 1)  # Just above boundary, no split
-        # expected_severity ≈ 1.0101 (1/0.99)
+        # expected_severity ≈ 1.0101 (2/1.98)
         self.task.setSeverity.assert_called_once()
         severity_call_arg = self.task.setSeverity.call_args[0][0]
         self.assertGreater(severity_call_arg, 1.0)
 
     def test_boundary_case_severity_just_below_one(self):
         # Arrange
-        param = "1.01"  # effort per day = 1.01 pomodoros, severity = 1/1.01 = 0.99 < 1
+        param = "2.02"  # effort per day = 2.02 pomodoros, severity = p/effort_per_day = 2/2.02 = 0.99 < 1
 
         # Act
         result = self.scheduler.schedule(self.task, param)
