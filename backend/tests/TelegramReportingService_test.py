@@ -555,10 +555,11 @@ class TestTelegramReportingService(unittest.TestCase):
         # Assert
         self.telegramReportingService._TelegramReportingService__send_raw_text_message.assert_awaited_once_with("no description provided.", reqId=None)
 
-    def test_scheduleCommand_with_selected_task(self) -> None:
+    def test_scheduleCommand_with_selected_task_no_split(self) -> None:
         # Arrange
         mock_task = MagicMock()
         self.task_list_manager.selected_task = mock_task
+        self.scheduling.schedule.return_value = [mock_task]  # No split, single task returned
         self.telegramReportingService.sendTaskInformation = AsyncMock()
 
         # Act
@@ -568,6 +569,40 @@ class TestTelegramReportingService(unittest.TestCase):
         self.scheduling.schedule.assert_called_once_with(mock_task, "2h")
         self.taskProvider.saveTask.assert_called_once_with(mock_task)
         self.telegramReportingService.sendTaskInformation.assert_awaited_once_with(mock_task, reqId=None)
+
+    def test_scheduleCommand_with_task_splitting(self) -> None:
+        # Arrange
+        mock_original_task = MagicMock()
+        mock_original_task.getDescription.return_value = "Test Task"
+        
+        mock_split_task1 = MagicMock()
+        mock_split_task1.getDescription.return_value = "Test Task 1/2"
+        mock_split_task2 = MagicMock()
+        mock_split_task2.getDescription.return_value = "Test Task 2/2"
+        
+        split_tasks = [mock_split_task1, mock_split_task2]
+        
+        self.task_list_manager.selected_task = mock_original_task
+        self.scheduling.schedule.return_value = split_tasks  # Task was split
+        self.telegramReportingService.sendTaskInformation = AsyncMock()
+        self.telegramReportingService._TelegramReportingService__send_raw_text_message = AsyncMock()
+
+        # Act
+        asyncio.run(self.telegramReportingService.scheduleCommand("/schedule 10h"))
+
+        # Assert
+        self.scheduling.schedule.assert_called_once_with(mock_original_task, "10h")
+        # Both tasks should be saved
+        self.assertEqual(self.taskProvider.saveTask.call_count, 2)
+        self.taskProvider.saveTask.assert_any_call(mock_split_task1)
+        self.taskProvider.saveTask.assert_any_call(mock_split_task2)
+        # New task should be added to task manager (except original)
+        # Both new tasks should be added
+        self.task_list_manager.add_task.assert_any_call(mock_split_task2)
+        # Should send split message
+        self.telegramReportingService._TelegramReportingService__send_raw_text_message.assert_awaited_once()
+        # Should show first split task
+        self.telegramReportingService.sendTaskInformation.assert_awaited_once_with(mock_split_task1, reqId=None)
 
     def test_scheduleCommand_no_selected_task(self) -> None:
         # Arrange
@@ -1246,6 +1281,7 @@ class TestTelegramReportingService(unittest.TestCase):
         # Arrange
         mock_task = MagicMock()
         self.task_list_manager.selected_task = mock_task
+        self.scheduling.schedule.return_value = [mock_task]  # No split
         self.telegramReportingService.sendTaskInformation = AsyncMock()
 
         # Act
@@ -1350,6 +1386,7 @@ class TestTelegramReportingService(unittest.TestCase):
         # Arrange
         mock_task = MagicMock()
         self.task_list_manager.selected_task = mock_task
+        self.scheduling.schedule.return_value = [mock_task]  # No split
         self.telegramReportingService.sendTaskInformation = AsyncMock()
 
         # Act
@@ -1359,6 +1396,39 @@ class TestTelegramReportingService(unittest.TestCase):
         self.scheduling.schedule.assert_called_once_with(mock_task, "")
         self.taskProvider.saveTask.assert_called_once_with(mock_task)
         self.telegramReportingService.sendTaskInformation.assert_awaited_once_with(mock_task, reqId=None)
+
+    def test_scheduleCommand_task_splitting_no_answer(self) -> None:
+        # Arrange
+        mock_original_task = MagicMock()
+        mock_original_task.getDescription.return_value = "Test Task"
+        
+        mock_split_task1 = MagicMock()
+        mock_split_task1.getDescription.return_value = "Test Task 1/3"
+        mock_split_task2 = MagicMock()
+        mock_split_task2.getDescription.return_value = "Test Task 2/3"
+        mock_split_task3 = MagicMock()
+        mock_split_task3.getDescription.return_value = "Test Task 3/3"
+        
+        split_tasks = [mock_split_task1, mock_split_task2, mock_split_task3]
+        
+        self.task_list_manager.selected_task = mock_original_task
+        self.scheduling.schedule.return_value = split_tasks  # Task was split into 3
+        self.telegramReportingService.sendTaskInformation = AsyncMock()
+        self.telegramReportingService._TelegramReportingService__send_raw_text_message = AsyncMock()
+
+        # Act
+        asyncio.run(self.telegramReportingService.scheduleCommand("/schedule 15h", False))
+
+        # Assert
+        self.scheduling.schedule.assert_called_once_with(mock_original_task, "15h")
+        # All tasks should be saved
+        self.assertEqual(self.taskProvider.saveTask.call_count, 3)
+        # Check that tasks other than the selected_task get added
+        self.task_list_manager.add_task.assert_any_call(mock_split_task2)
+        self.task_list_manager.add_task.assert_any_call(mock_split_task3)
+        # Should not send any messages when expectAnswer=False
+        self.telegramReportingService._TelegramReportingService__send_raw_text_message.assert_not_awaited()
+        self.telegramReportingService.sendTaskInformation.assert_not_awaited()
 
 
 if __name__ == '__main__':
