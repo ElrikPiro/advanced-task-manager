@@ -4,6 +4,7 @@ from unittest.mock import Mock
 from src.algorithms.GtdAlgorithm import GtdAlgorithm
 from src.Interfaces.ITaskModel import ITaskModel
 from src.Interfaces.IHeuristic import IHeuristic
+from src.Interfaces.IStatisticsService import IStatisticsService
 from src.Interfaces.IFilter import IFilter
 from src.wrappers.TimeManagement import TimeAmount, TimePoint
 
@@ -12,6 +13,8 @@ class TestGtdAlgorithm(unittest.TestCase):
     def setUp(self):
         self.mock_filter = Mock(spec=IFilter)
         self.mock_heuristic = Mock(spec=IHeuristic)
+        self.mock_statistics_service = Mock(spec=IStatisticsService)
+        self.mock_calm_heuristic = Mock(spec=IHeuristic)
         self.mock_task = Mock(spec=ITaskModel)
         self.mock_task.getDue.return_value = TimePoint(datetime.datetime.now())
         self.mock_task.getCalm.return_value = False
@@ -19,7 +22,9 @@ class TestGtdAlgorithm(unittest.TestCase):
         self.algorithm = GtdAlgorithm(
             orderedCategories=[("Category1", self.mock_filter, True)],
             orderedHeuristics=[(self.mock_heuristic, 0.5)],
-            defaultHeuristic=(self.mock_heuristic, 0.2)
+            defaultHeuristic=(self.mock_heuristic, 0.2),
+            statisticService=self.mock_statistics_service,
+            calmHeuristic=self.mock_calm_heuristic
         )
 
     def test_filter_urgents(self):
