@@ -14,7 +14,7 @@ class CfdHeuristic(IHeuristic):
     def sort(self, tasks: List[ITaskModel]) -> List[Tuple[ITaskModel, float]]:
         pomodorosPerDay = self.dedication.as_pomodoros()
         retval = [(task, self.fastEvaluate(task, pomodorosPerDay)) for task in tasks]
-        retval.sort(key=lambda x: x[1], reverse=True)
+        retval.sort(key=lambda x: x[1], reverse=False)
         return retval
 
     def fastEvaluate(self, task: ITaskModel, pomodorosPerDay: float) -> float:
@@ -24,7 +24,7 @@ class CfdHeuristic(IHeuristic):
         period = TimeAmount(f"{nice / ppd}p").as_pomodoros()
         divisor = 1 + daysActive / period
 
-        return divisor / task.getInvestedEffort().as_pomodoros()
+        return task.getInvestedEffort().as_pomodoros() / divisor
 
     def evaluate(self, task: ITaskModel) -> float:
         p = self.dedication.as_pomodoros()
