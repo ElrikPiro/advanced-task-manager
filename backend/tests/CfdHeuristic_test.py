@@ -56,25 +56,30 @@ class TestCfdHeuristic(unittest.TestCase):
         """
         Manual calculation with fixed values:
         - dedication = 4p  → ppd = 4.0
-        - severity = 2, totalCost = 10p → remaining = 10.0
+        - severity = 2
         - investedEffort = 5p → 5.0 pomodoros
         - start = 2026-01-05 00:00  (10 days before fixed_today)
         - daysActive = TimeAmount("{today_ts - start_ts}s").as_days()
           today_ts = 1736899200.0, start_ts = 1736035200.0
           diff = 864000 seconds
           TimeAmount("864000s").as_days() → 864000*1000 / 86400000 = 10
-        - period = TimeAmount(f"{int(2 * 10 / 4)}p").as_pomodoros()
-                 = TimeAmount("5p").as_pomodoros() = 5.0
-        - divisor = 1 + 10 / 5.0 = 3.0
-        - result = 5.0 / 3.0 ≈ 1.6667
+        - period = TimeAmount(f"{2 / 4}p").as_pomodoros()
+                 = TimeAmount("0.5p") → 750000ms → ceil(750000*25 / 1500000)/25
+                 = ceil(12.5)/25 = 13/25 = 0.52
+        - divisor = 1 + 10 / 0.52 ≈ 20.2308
+        - result = 5.0 / 20.2308 ≈ 0.2471
         """
         start = TimePoint(datetime.datetime(2026, 1, 5, 0, 0, 0))
         task = self._make_task(
             severity=2, total_cost_str="10p", invested_effort_str="5p", start=start
         )
 
+        period = TimeAmount(f"{2 / 4}p").as_pomodoros()
+        divisor = 1 + 10 / period
+        expected = 5.0 / divisor
+
         result = self.heuristic.evaluate(task)
-        self.assertAlmostEqual(result, 5.0 / 3.0, places=2)
+        self.assertAlmostEqual(result, expected, places=4)
 
     def test_fast_evaluate_same_as_evaluate(self):
         start = TimePoint(datetime.datetime(2026, 1, 5, 0, 0, 0))

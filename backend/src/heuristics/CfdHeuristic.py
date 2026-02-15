@@ -40,7 +40,7 @@ class CfdHeuristic(IHeuristic):
         return (
             "CFD (Cumulative Flow Diagram) Heuristic: Prioritizes tasks that are falling behind schedule. "
             "It computes a score by dividing the invested effort by a divisor that grows as the task ages "
-            "relative to its expected completion period (severity * remaining_cost / daily_dedication). "
+            "relative to its expected completion period (severity / daily_dedication). "
             "Tasks with lower scores—meaning less effort invested relative to how overdue they are—are "
             "prioritized first, surfacing neglected or under-progressed tasks."
         )
