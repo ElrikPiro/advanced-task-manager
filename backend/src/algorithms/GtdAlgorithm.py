@@ -76,10 +76,18 @@ class GtdAlgorithm(IAlgorithm):
             retval = self._filterByHeuristic(heuristic, threshold, nonCalm)
             self.description = f"{self.baseDescription} \n    - {heuristic.__class__.__name__} >= {threshold} ({self.category})"
         else:
-            calmTasks = self._filterCalmTasks(taskList, notCalm=False)
-            sortedTasks = self.calmHeuristic.sort(calmTasks)
-            retval = [task for task, _ in sortedTasks]
-            self.description = f"{self.baseDescription} \n    - {self.calmHeuristic.__class__.__name__}"
+            return self.use_calm_instead(taskList)
+        
+        if len(retval) > 0:
+            return retval
+        
+        return self.use_calm_instead(taskList)
+
+    def use_calm_instead(self, taskList: List[ITaskModel]) -> List[ITaskModel]:
+        calmTasks = self._filterCalmTasks(taskList, notCalm=False)
+        sortedTasks = self.calmHeuristic.sort(calmTasks)
+        retval = [task for task, _ in sortedTasks]
+        self.description = f"{self.baseDescription} \n    - Daily objective fulfilled, falling back to {self.calmHeuristic.__class__.__name__}"
         return retval
 
     def getDescription(self) -> str:
