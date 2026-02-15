@@ -109,4 +109,4 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: Task-Manager x64-windows
-          path: backend/dist/windows/backend
+          path: backend/dist
