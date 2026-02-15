@@ -122,7 +122,7 @@ class TelegramTaskListManager(ITaskListManager):
             taskListString += "\n\nselected filters: "
             for i, filter in enumerate(self.__filterList):
                 if filter[2]:
-                    taskListString += f"\n/filter_{i+1}: {filter[0]}"
+                    taskListString += f"\n/filter_{i + 1}: {filter[0]}"
         return taskListString
 
     def update_taskList(self, taskModelList: List[ITaskModel]) -> None:

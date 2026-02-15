@@ -100,7 +100,7 @@ class ObsidianProjectManager(IProjectManager):
 
         # list the projects with a enumerated list in which the number has 2 digits
         for i, project in enumerate(projectList):
-            retval.append(f"{(i+1):02d}: {project['name'].strip().replace(' ', '_')}")
+            retval.append(f"{(i + 1):02d}: {project['name'].strip().replace(' ', '_')}")
 
         return "\n".join(retval)
 
@@ -126,7 +126,7 @@ class ObsidianProjectManager(IProjectManager):
         lines = self.__fileBroker.getVaultFileLines(VaultRegistry.OBSIDIAN, projectPath)
         # foreach line set the line number with a 3 digit number
         for i, line in enumerate(lines):
-            lines[i] = f"{(i+1):03d}: {line}"
+            lines[i] = f"{(i + 1):03d}: {line}"
         return "".join(lines)
 
     def _edit_project_line(self, messageArgs: List[str]) -> str:

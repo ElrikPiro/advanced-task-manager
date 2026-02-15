@@ -93,7 +93,7 @@ class JsonProjectManager(IProjectManager):
 
         # list the projects with a enumerated list in which the number has 2 digits
         for i, project in enumerate(projectList):
-            retval.append(f"{(i+1):02d}: {project['name'].strip().replace(' ', '_')}")
+            retval.append(f"{(i + 1):02d}: {project['name'].strip().replace(' ', '_')}")
 
         return "\n".join(retval)
 

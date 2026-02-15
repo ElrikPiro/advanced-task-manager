@@ -39,7 +39,7 @@ class TelegramBotUserCommService(IUserCommService):
             name = filter_info.name
             description = filter_info.description
             enabled = filter_info.enabled
-            text += f" - (/filter_{i+1}) {name}: {description} [{'ENABLED' if enabled else 'DISABLED'}]\n"
+            text += f" - (/filter_{i + 1}) {name}: {description} [{'ENABLED' if enabled else 'DISABLED'}]\n"
         await self.bot.send_message(chat_id, text, parse_mode=None)
         pass
 
@@ -175,7 +175,7 @@ class TelegramBotUserCommService(IUserCommService):
         tasks = taskListContent.tasks
 
         interactiveId = "/task_" if interactive else ""
-        subTaskListDescriptions = [(f"{interactiveId}{i+1}: {task.description}") for i, task in enumerate(tasks)]
+        subTaskListDescriptions = [(f"{interactiveId}{i + 1}: {task.description}") for i, task in enumerate(tasks)]
 
         active_filters_name = [filt.name for _, filt in enumerate(active_filters)]
 
@@ -222,7 +222,7 @@ class TelegramBotUserCommService(IUserCommService):
         chat_id = message.destination.id
         text = "Available Heuristics:\n"
         for i, heuristic in enumerate(heuristic_list):
-            text += f" - (/heuristic_{i+1}) {heuristic['name']}: {heuristic['description']}\n"
+            text += f" - (/heuristic_{i + 1}) {heuristic['name']}: {heuristic['description']}\n"
 
         await self.bot.send_message(chat_id, text, parse_mode=None)
 
@@ -237,7 +237,7 @@ class TelegramBotUserCommService(IUserCommService):
         chat_id = message.destination.id
         text = "Available Algorithms:\n"
         for i, algorithm in enumerate(algorithm_list):
-            text += f" - (/algorithm_{i+1}) {algorithm['name']}: {algorithm['description']}\n"
+            text += f" - (/algorithm_{i + 1}) {algorithm['name']}: {algorithm['description']}\n"
 
         await self.bot.send_message(chat_id, text, parse_mode=None)
 
