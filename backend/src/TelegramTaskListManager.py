@@ -291,7 +291,7 @@ class TelegramTaskListManager(ITaskListManager):
         urgent_tasks: list[ITaskModel] = []
         deadline: TimePoint = ((date + TimeAmount("1d")) + TimeAmount("-1s"))
         for task in self.__taskModelList:
-            if task.getDue().as_int() < deadline.as_int() and task.getStatus() != "x":
+            if task.getDue().as_int() < deadline.as_int() and task.getStatus() != "x" and task.getCalm() is False and task.getEventWaited() is None:
                 urgent_tasks.append(task)
         return urgent_tasks
 
