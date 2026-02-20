@@ -310,7 +310,7 @@ class TelegramTaskListManager(ITaskListManager):
         taskModelList: List[ITaskModel] = [task for task, _ in taskModelListTupled]
 
         for task in taskModelList:
-            if task not in urgent_tasks and task.getStatus() != "x" and task.getStart().as_int() < TimePoint.now().as_int() and task.getDue().as_int() >= TimePoint.tomorrow().as_int():
+            if task not in urgent_tasks and task.getStatus() != "x" and task.getStart().as_int() < TimePoint.now().as_int() and task.getDue().as_int() >= TimePoint.tomorrow().as_int() and task.getCalm() is False and task.getEventWaited() is None:
                 high_heuristic_tasks.append(task)
 
         return high_heuristic_tasks
