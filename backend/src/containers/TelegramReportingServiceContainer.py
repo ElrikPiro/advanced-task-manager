@@ -32,6 +32,7 @@ from src.algorithms.GtdAlgorithm import GtdAlgorithm
 from src.algorithms.EdfAlgorithm import EdfAlgorithm
 from src.algorithms.ShortestJobAlgorithm import ShortestJobAlgorithm
 from src.heuristics.StartTimeHeuristic import StartTimeHeuristic
+from src.heuristics.CfdHeuristic import CfdHeuristic
 
 
 class TelegramReportingServiceContainer():
@@ -269,6 +270,7 @@ class TelegramReportingServiceContainer():
         self.container.daysToThresholdHeuristic = providers.Factory(DaysToThresholdHeuristic, dedicationTime)
         self.container.slackHeuristic = providers.Factory(SlackHeuristic, dedicationTime)
         self.container.tomorrowSlackHeuristic = providers.Factory(SlackHeuristic, dedicationTime, 1)
+        self.container.cfdHeuristic = providers.Factory(CfdHeuristic, dedicationTime)
 
         ## Heuristic list
         self.container.heuristicList = providers.List(
@@ -277,6 +279,7 @@ class TelegramReportingServiceContainer():
             ("Remaining Time(1)", self.container.daysToThresholdHeuristic(1.0)),
             ("Slack Heuristic", self.container.slackHeuristic()),
             ("Start Time Heuristic", StartTimeHeuristic()),
+            ("CFD Heuristic", self.container.cfdHeuristic()),
         )
 
         # Filters
@@ -307,18 +310,18 @@ class TelegramReportingServiceContainer():
         ]
         self.container.filterList.extend(self.container.orderedCategories)
 
+        # Statistics service
+        self.container.statisticsService = providers.Singleton(StatisticsService, self.container.fileBroker, self.container.workLoadAbleFilter, self.container.remainingEffortHeuristic(1.0), self.container.slackHeuristic)
+
         # Algorithm list
         self.container.algorithmList = providers.List(
-            ("GTD Algorithm", GtdAlgorithm(self.container.orderedCategories, self.container.orderedHeuristics(), self.container.defaultHeuristic())),
+            ("GTD Algorithm", GtdAlgorithm(self.container.orderedCategories, self.container.orderedHeuristics(), self.container.defaultHeuristic(), self.container.statisticsService(), self.container.cfdHeuristic())),
             ("EDF Algorithm", EdfAlgorithm()),
             ("Shortest Job Algorithm", ShortestJobAlgorithm()),
         )
 
         # Scheduling algorithm
         self.container.heristicScheduling = providers.Singleton(HeuristicScheduling, dedicationTime, self.container.taskProvider)
-
-        # Statistics service
-        self.container.statisticsService = providers.Singleton(StatisticsService, self.container.fileBroker, self.container.workLoadAbleFilter, self.container.remainingEffortHeuristic(1.0), self.container.slackHeuristic)
 
         # Task Manager
         self.container.taskListManager = providers.Singleton(TelegramTaskListManager, self.container.taskProvider().getTaskList(), self.container.algorithmList, self.container.heuristicList, self.container.filterList, self.container.statisticsService)

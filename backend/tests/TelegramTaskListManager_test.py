@@ -14,6 +14,8 @@ class TestTelegramTaskListManager(unittest.TestCase):
         self.task1.getContext.return_value = "catA:foo"
         self.task1.getDue.return_value = MagicMock(as_int=MagicMock(return_value=2000))
         self.task1.getStart.return_value = MagicMock(as_int=MagicMock(return_value=500))
+        self.task1.getCalm.return_value = False
+        self.task1.getEventWaited.return_value = None
 
         self.task2 = MagicMock()
         self.task2.getDescription.return_value = "Task 2"
@@ -21,6 +23,8 @@ class TestTelegramTaskListManager(unittest.TestCase):
         self.task2.getContext.return_value = "catB:bar"
         self.task2.getDue.return_value = MagicMock(as_int=MagicMock(return_value=3000))
         self.task2.getStart.return_value = MagicMock(as_int=MagicMock(return_value=1500))
+        self.task2.getCalm.return_value = False
+        self.task2.getEventWaited.return_value = None
 
         self.task3 = MagicMock()
         self.task3.getDescription.return_value = "Task 3"
@@ -28,6 +32,8 @@ class TestTelegramTaskListManager(unittest.TestCase):
         self.task3.getContext.return_value = "catA:baz"
         self.task3.getDue.return_value = MagicMock(as_int=MagicMock(return_value=4000))
         self.task3.getStart.return_value = MagicMock(as_int=MagicMock(return_value=2500))
+        self.task3.getCalm.return_value = False
+        self.task3.getEventWaited.return_value = None
 
         self.task_list = [self.task1, self.task2, self.task3]
 
@@ -121,14 +127,20 @@ class TestTelegramTaskListManagerAdditional(unittest.TestCase):
         self.task1 = MagicMock()
         self.task1.getDescription.return_value = "Task 1"
         self.task1.getStatus.return_value = ""
+        self.task1.getCalm.return_value = False
+        self.task1.getEventWaited.return_value = None
 
         self.task2 = MagicMock()
         self.task2.getDescription.return_value = "Task 2"
         self.task2.getStatus.return_value = ""
+        self.task2.getCalm.return_value = False
+        self.task2.getEventWaited.return_value = None
 
         self.task3 = MagicMock()
         self.task3.getDescription.return_value = "Task 3"
         self.task3.getStatus.return_value = ""
+        self.task3.getCalm.return_value = False
+        self.task3.getEventWaited.return_value = None
 
         self.task_list = [self.task1, self.task2, self.task3]
 

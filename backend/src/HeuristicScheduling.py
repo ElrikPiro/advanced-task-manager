@@ -87,11 +87,11 @@ class HeuristicScheduling(IScheduling):
                 split_task = task
             else:
                 # Create new task using TaskProvider
-                split_task = self.__task_provider.createDefaultTask(f"{original_description} {i+1}/{split_count}")
+                split_task = self.__task_provider.createDefaultTask(f"{original_description} {i + 1}/{split_count}")
                 self._copy_task_properties(task, split_task)
             
             # Apply sequential naming to all tasks (including original)
-            split_task.setDescription(f"{original_description} {i+1}/{split_count}")
+            split_task.setDescription(f"{original_description} {i + 1}/{split_count}")
             split_task.setTotalCost(TimeAmount(f"{effort_per_split}p"))
             
             # Apply optimal scheduling with severity = 1

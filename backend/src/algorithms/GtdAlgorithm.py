@@ -1,7 +1,9 @@
+from datetime import datetime
 from typing import List, Tuple
 
 from src.Interfaces.IFilter import IFilter
 from src.Interfaces.IHeuristic import IHeuristic
+from src.Interfaces.IStatisticsService import IStatisticsService
 from src.wrappers.TimeManagement import TimePoint
 from src.Interfaces.ITaskModel import ITaskModel
 from src.algorithms.Interfaces.IAlgorithm import IAlgorithm
@@ -25,10 +27,12 @@ class GtdAlgorithm(IAlgorithm):
     6. Return the filtered list of tasks.
     """
 
-    def __init__(self, orderedCategories: list[tuple[str, IFilter, bool]], orderedHeuristics: list[tuple[IHeuristic, float]], defaultHeuristic: Tuple[IHeuristic, float]) -> None:
+    def __init__(self, orderedCategories: list[tuple[str, IFilter, bool]], orderedHeuristics: list[tuple[IHeuristic, float]], defaultHeuristic: Tuple[IHeuristic, float], statisticService: IStatisticsService, calmHeuristic: IHeuristic) -> None:
         self.orderedCategories = orderedCategories
         self.orderedHeuristics = orderedHeuristics
         self.defaultHeuristic = defaultHeuristic
+        self.statisticService = statisticService
+        self.calmHeuristic = calmHeuristic
         self.baseDescription = "GTD Task Algorithm"
         self.description = self.baseDescription
         self.category = "all"
@@ -48,7 +52,8 @@ class GtdAlgorithm(IAlgorithm):
         self.category = "all"
 
         # get all task with due date before now
-        retval = self._filterUrgents(taskList)
+        nonCalm = self._filterCalmTasks(taskList)
+        retval = self._filterUrgents(nonCalm)
         retval = self._filterOrderedCategories(retval)
 
         if len(retval) > 0:
@@ -57,18 +62,32 @@ class GtdAlgorithm(IAlgorithm):
 
         # get all task with heuristic value above threshold and NOT calm
         for heuristic, threshold in self.orderedHeuristics:
-            retval = self._filterByHeuristic(heuristic, threshold, taskList)
-            retval = self._filterCalmTasks(retval)
+            retval = self._filterByHeuristic(heuristic, threshold, nonCalm)
             retval = self._filterOrderedCategories(retval)
             if len(retval) > 0:
                 self.description = f"{self.baseDescription} \n    - {heuristic.__class__.__name__} >= {threshold} ({self.category})"
                 return retval
 
         # get default working model
-        heuristic, threshold = self.defaultHeuristic
-        retval = self._filterByHeuristic(heuristic, threshold, taskList)
-        self.description = f"{self.baseDescription} \n    - {heuristic.__class__.__name__} >= {threshold} ({self.category})"
+        isoformatDate = datetime.now().date().isoformat()
+        workStats = self.statisticService.getWorkloadStats(nonCalm)
+        if workStats.workDone.get(isoformatDate, 0.0) < workStats.workload.as_pomodoros():
+            heuristic, threshold = self.defaultHeuristic
+            retval = self._filterByHeuristic(heuristic, threshold, nonCalm)
+            self.description = f"{self.baseDescription} \n    - {heuristic.__class__.__name__} >= {threshold} ({self.category})"
+        else:
+            return self.use_calm_instead(taskList)
+        
+        if len(retval) > 0:
+            return retval
+        
+        return self.use_calm_instead(taskList)
 
+    def use_calm_instead(self, taskList: List[ITaskModel]) -> List[ITaskModel]:
+        calmTasks = self._filterCalmTasks(taskList, notCalm=False)
+        sortedTasks = self.calmHeuristic.sort(calmTasks)
+        retval = [task for task, _ in sortedTasks]
+        self.description = f"{self.baseDescription} \n    - Daily objective fulfilled, falling back to {self.calmHeuristic.__class__.__name__}"
         return retval
 
     def getDescription(self) -> str:

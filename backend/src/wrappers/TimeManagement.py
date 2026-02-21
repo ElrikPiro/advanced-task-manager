@@ -177,5 +177,5 @@ def _convert_seconds_to_time_string(miliseconds: int) -> str:
     hours, miliseconds = divmod(miliseconds, 3600000)
     minutes, miliseconds = divmod(miliseconds, 60000)
     # a value only appears if it is not zero
-    retval = f"{days}d" * bool(days) + f"{hours}h" * bool(hours) + f"{minutes}m" * bool(minutes) + f"{miliseconds/1000}s" * bool(miliseconds)
+    retval = f"{days}d" * bool(days) + f"{hours}h" * bool(hours) + f"{minutes}m" * bool(minutes) + f"{miliseconds / 1000}s" * bool(miliseconds)
     return retval + f" ({pomodoros} pomodoros)" if pomodoros > 0 else "None"

@@ -82,7 +82,7 @@ class ObsidianTaskProvider(ITaskProvider):
         waits = task.getEventWaited()
         waits_str = f", [waited:: {waits}]" if isinstance(waits, str) else ""
 
-        return f"- [{status}] {description} [track:: {context}], [starts:: {start}], [due:: {due}], [severity:: {severity}], [remaining_cost:: {totalCost+investedEffort}], [invested:: {investedEffort}], [calm:: {calm}]{raises_str}{waits_str}\n"
+        return f"- [{status}] {description} [track:: {context}], [starts:: {start}], [due:: {due}], [severity:: {severity}], [remaining_cost:: {totalCost + investedEffort}], [invested:: {investedEffort}], [calm:: {calm}]{raises_str}{waits_str}\n"
 
     def saveTask(self, task: ITaskModel) -> None:
         taskLine = self._getTaskLine(task)

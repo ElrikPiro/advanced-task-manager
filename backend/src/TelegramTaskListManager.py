@@ -122,7 +122,7 @@ class TelegramTaskListManager(ITaskListManager):
             taskListString += "\n\nselected filters: "
             for i, filter in enumerate(self.__filterList):
                 if filter[2]:
-                    taskListString += f"\n/filter_{i+1}: {filter[0]}"
+                    taskListString += f"\n/filter_{i + 1}: {filter[0]}"
         return taskListString
 
     def update_taskList(self, taskModelList: List[ITaskModel]) -> None:
@@ -291,7 +291,7 @@ class TelegramTaskListManager(ITaskListManager):
         urgent_tasks: list[ITaskModel] = []
         deadline: TimePoint = ((date + TimeAmount("1d")) + TimeAmount("-1s"))
         for task in self.__taskModelList:
-            if task.getDue().as_int() < deadline.as_int() and task.getStatus() != "x":
+            if task.getDue().as_int() < deadline.as_int() and task.getStatus() != "x" and task.getCalm() is False and task.getEventWaited() is None:
                 urgent_tasks.append(task)
         return urgent_tasks
 
@@ -310,7 +310,7 @@ class TelegramTaskListManager(ITaskListManager):
         taskModelList: List[ITaskModel] = [task for task, _ in taskModelListTupled]
 
         for task in taskModelList:
-            if task not in urgent_tasks and task.getStatus() != "x" and task.getStart().as_int() < TimePoint.now().as_int() and task.getDue().as_int() >= TimePoint.tomorrow().as_int():
+            if task not in urgent_tasks and task.getStatus() != "x" and task.getStart().as_int() < TimePoint.now().as_int() and task.getDue().as_int() >= TimePoint.tomorrow().as_int() and task.getCalm() is False and task.getEventWaited() is None:
                 high_heuristic_tasks.append(task)
 
         return high_heuristic_tasks

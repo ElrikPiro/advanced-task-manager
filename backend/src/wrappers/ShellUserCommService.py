@@ -34,7 +34,7 @@ class ShellUserCommService(IUserCommService):
             name = filter_info.name
             description = filter_info.description
             enabled = filter_info.enabled
-            self.__botPrint(f" - (/filter_{i+1}) {name}: {description} [{'ENABLED' if enabled else 'DISABLED'}]")
+            self.__botPrint(f" - (/filter_{i + 1}) {name}: {description} [{'ENABLED' if enabled else 'DISABLED'}]")
 
     async def initialize(self) -> None:
         print("ShellUserBotService initialized")
@@ -133,7 +133,7 @@ class ShellUserCommService(IUserCommService):
         self.__botPrint("Available Heuristics:")
         for i, heuristic in enumerate(heuristic_list):
             assert isinstance(heuristic, dict)
-            self.__botPrint(f" - (/heuristic_{i+1}) {heuristic['name']}: {heuristic['description']}")
+            self.__botPrint(f" - (/heuristic_{i + 1}) {heuristic['name']}: {heuristic['description']}")
 
     def __renderAlgorithmList(self, message: IMessage) -> None:
         self.__botPrint("(Info) Algorithm List Render Mode")
@@ -146,7 +146,7 @@ class ShellUserCommService(IUserCommService):
         self.__botPrint("Available Algorithms:")
         for i, algorithm in enumerate(algorithm_list):
             assert isinstance(algorithm, dict)
-            self.__botPrint(f" - (/algorithm_{i+1}) {algorithm['name']}: {algorithm['description']}")
+            self.__botPrint(f" - (/algorithm_{i + 1}) {algorithm['name']}: {algorithm['description']}")
 
     def __botPrint(self, text: str) -> None:
         print(f"[bot -> {self.chatId}]: {text}")
