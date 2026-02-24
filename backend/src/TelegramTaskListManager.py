@@ -114,7 +114,8 @@ class TelegramTaskListManager(ITaskListManager):
                     taskListSearched.append(task)
                     break
 
-        return TelegramTaskListManager(taskListSearched, [], [], self.__filterList, self.__statistics_service, self.__tasksPerPage)
+        deactivatedFilters = [(name, filt, True) for name, filt, _ in self.__filterList]
+        return TelegramTaskListManager(taskListSearched, [], [], deactivatedFilters, self.__statistics_service, self.__tasksPerPage)
 
     def render_filter_summary(self, taskListString: str) -> str:
         isOnlyFirstFilterActive = len([f for f in self.__filterList if f[2]]) == 1 and self.__filterList[0][2]
