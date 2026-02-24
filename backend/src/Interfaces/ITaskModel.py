@@ -107,6 +107,10 @@ class ITaskModel(ABC):
         pass
 
     @abstractmethod
+    def getTaskUID(self) -> str:
+        pass
+
+    @abstractmethod
     def calculateRemainingTime(self) -> TimeAmount:
         pass
 

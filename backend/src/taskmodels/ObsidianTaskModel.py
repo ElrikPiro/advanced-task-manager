@@ -1,3 +1,4 @@
+import hashlib
 from ..Interfaces.ITaskModel import ITaskModel
 from .TaskModel import TaskModel
 
@@ -38,6 +39,10 @@ class ObsidianTaskModel(TaskModel):
 
     def __eq__(self, other: ITaskModel):  # type: ignore
         return self.getEventRaised() == other.getEventRaised() and self.getEventWaited() == other.getEventWaited() and self.getDescription() == other.getDescription() and self.getContext() == other.getContext() and self.getStart() == other.getStart() and self.getDue() == other.getDue() and self.getSeverity() == other.getSeverity() and self.getTotalCost().as_pomodoros() == other.getTotalCost().as_pomodoros() and self.getInvestedEffort().as_pomodoros() == other.getInvestedEffort().as_pomodoros() and self.getStatus() == other.getStatus() and self.getFile() == other.getFile() and self.getLine() == other.getLine() and self.getCalm() == other.getCalm()  # type: ignore
+
+    def getTaskUID(self) -> str:
+        hash_input = f"{self._description}{self._file}{self._line}"
+        return hashlib.md5(hash_input.encode()).hexdigest()
 
     # Class methods
     def getFile(self) -> str:
