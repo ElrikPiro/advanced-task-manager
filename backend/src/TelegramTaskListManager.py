@@ -221,8 +221,7 @@ class TelegramTaskListManager(ITaskListManager):
             if len(self.__heuristicList) > 0 and isinstance(self.__selectedHeuristic, tuple):
                 heuristic_value = self.__selectedHeuristic[1].evaluate(task)
             
-            # Use hash of description as ID if getId is not available
-            task_id = getattr(task, "getId", lambda: str(i + 1))()
+            task_id = task.getTaskUID()
             
             tasks.append(TaskEntry(
                 id=task_id,
@@ -336,9 +335,8 @@ class TelegramTaskListManager(ITaskListManager):
         
         # Format the active urgent tasks
         active_urgent_tasks: list[TaskEntry] = []
-        for i, task in enumerate(current_urgents_by_categories):
-            # Use task description hash as ID if getId is not available
-            task_id = getattr(task, "getId", lambda: f"active_{i}")()
+        for _, task in enumerate(current_urgents_by_categories):
+            task_id = task.getTaskUID()
             
             active_urgent_tasks.append(
                 TaskEntry(
@@ -359,9 +357,8 @@ class TelegramTaskListManager(ITaskListManager):
         planned_urgent_tasks: list[TaskEntry] = []
         planned_tasks_by_date: dict[str, list[TaskEntry]] = {}
         
-        for i, task in enumerate(urgent_tasks_by_start):
-            # Use task description hash as ID if getId is not available
-            task_id = getattr(task, "getId", lambda: f"planned_{i}")()
+        for _, task in enumerate(urgent_tasks_by_start):
+            task_id = task.getTaskUID()
             
             task_data = TaskEntry(
                 id=task_id,
@@ -385,9 +382,8 @@ class TelegramTaskListManager(ITaskListManager):
             
         # Format the other tasks
         other_tasks_formatted: list[TaskEntry] = []
-        for i, task in enumerate(other_tasks):
-            # Use task description hash as ID if getId is not available
-            task_id = getattr(task, "getId", lambda: f"other_{i}")()
+        for _, task in enumerate(other_tasks):
+            task_id = task.getTaskUID()
             
             other_tasks_formatted.append(
                 TaskEntry(

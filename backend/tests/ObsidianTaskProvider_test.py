@@ -1,3 +1,4 @@
+import hashlib
 import json
 import unittest
 from unittest.mock import MagicMock
@@ -151,8 +152,11 @@ class TestObsidianTaskProvider(unittest.TestCase):
             _file = task["file"]
             _line = task["line"]
 
+            hash_input = f"{text}{_file}{_line}"
+            task_uid = hashlib.md5(hash_input.encode()).hexdigest()[0:5]
+
             retval["tasks"].append({
-                "description": f"({task['track']}) {text} @ '{_file.split(slash).pop().split(dot)[0]}:{_line}'",
+                "description": f"({task['track']}) {text} @ '{_file.split(slash).pop().split(dot)[0]}:{_line}' [{task_uid}]",
                 "context": task["track"],
                 "start": str(int(task["starts"])),
                 "due": str(int(task["due"])),

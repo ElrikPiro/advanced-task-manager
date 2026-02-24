@@ -27,7 +27,7 @@ class ObsidianTaskModel(TaskModel):
         Returns:
             str: The enriched task description.
         """
-        return f"({self._context}) {self._description} @ '{self.getProject()}'"
+        return f"({self._context}) {self._description} @ '{self.getProject()}' [{self.getTaskUID()[0:5]}]"
 
     def getProject(self) -> str:
         """
