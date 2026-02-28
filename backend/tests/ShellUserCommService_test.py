@@ -9,7 +9,7 @@ class TestShellUserCommService(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
         self.chat_id = 12345
         self.agent = Mock(spec=IAgent)
-        self.service = ShellUserCommService(self.chat_id, self.agent)
+        self.service = ShellUserCommService(self.chat_id, self.agent, useColors=False)
 
 
 if __name__ == '__main__':
