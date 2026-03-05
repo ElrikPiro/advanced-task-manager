@@ -113,6 +113,9 @@ class TaskModel(ITaskModel):
         d = max(0, d)
         d = ceil(d)
         return TimeAmount(f"{d}d")
+    
+    def getTaskUID(self) -> str:
+        return f"{self._index}"
 
     def __eq__(self, other: ITaskModel):  # type: ignore
         return self._index == other._index  # type: ignore

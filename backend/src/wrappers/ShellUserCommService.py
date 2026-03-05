@@ -5,10 +5,20 @@ from src.wrappers.interfaces.IUserCommService import IUserCommService
 
 
 class ShellUserCommService(IUserCommService):
-    def __init__(self, chatId: int, agent: IAgent) -> None:
+    RESET = "\033[0m"
+    BOLD = "\033[1m"
+    RED = "\033[91m"
+    GREEN = "\033[92m"
+    YELLOW = "\033[93m"
+    BLUE = "\033[94m"
+    MAGENTA = "\033[95m"
+    CYAN = "\033[96m"
+
+    def __init__(self, chatId: int, agent: IAgent, useColors: bool = True) -> None:
         self.offset = 0
         self.chatId = int(chatId)
         self.agent = agent
+        self.__useColors = useColors
 
         self.__renders = {
             RenderMode.TASK_LIST: self.__renderTaskList,
@@ -24,7 +34,7 @@ class ShellUserCommService(IUserCommService):
         }
 
     def __renderFilterList(self, message: IMessage) -> None:
-        self.__botPrint("(Info) Filter List Render Mode")
+        self.__botPrint(self.__bold("(Info) Filter List Render Mode"))
         filter_list = message.content.filterListDict
         if not isinstance(filter_list, list) or not filter_list:
             self.__botPrint("No filters available")
@@ -34,7 +44,8 @@ class ShellUserCommService(IUserCommService):
             name = filter_info.name
             description = filter_info.description
             enabled = filter_info.enabled
-            self.__botPrint(f" - (/filter_{i + 1}) {name}: {description} [{'ENABLED' if enabled else 'DISABLED'}]")
+            status = self.__green("ENABLED") if enabled else self.__red("DISABLED")
+            self.__botPrint(f" - (/filter_{i + 1}) {name}: {description} [{status}]")
 
     async def initialize(self) -> None:
         print("ShellUserBotService initialized")
@@ -85,7 +96,7 @@ class ShellUserCommService(IUserCommService):
         return self.agent
 
     def __renderTaskList(self, message: IMessage) -> None:
-        self.__botPrint("(Info) Task List Render Mode")
+        self.__botPrint(self.__bold("(Info) Task List Render Mode"))
         
         content = message.content.taskListContent
         if not isinstance(content, TaskListContent):
@@ -97,20 +108,20 @@ class ShellUserCommService(IUserCommService):
         tasks = content.tasks
 
         # Print the algorithm details as a header
-        print(f"Algorithm: {algorithm_name}\nDescription: {algorithm_desc}\nSort Heuristic: {sort_heuristic}\n")
-        print("Tasks:")
+        print(f"{self.__cyan('Algorithm:')} {algorithm_name}\n{self.__cyan('Description:')} {algorithm_desc}\n{self.__cyan('Sort Heuristic:')} {sort_heuristic}\n")
+        print(self.__bold("Tasks:"))
         for task in tasks:
             task_id = task.id
             task_desc = task.description
             task_context = task.context
-            print(f"  - Task ID: {task_id}, Description: {task_desc}, Context: {task_context}")
+            print(f"  - {self.__blue('Task ID:')} {task_id}, {self.__blue('Description:')} {task_desc}, {self.__blue('Context:')} {task_context}")
 
     def __renderRawText(self, message: IMessage) -> None:
-        self.__botPrint("(Info) Raw Text Render Mode")
+        self.__botPrint(self.__bold("(Info) Raw Text Render Mode"))
         self.__botPrint(str(message.content.text))
 
     def __notifyListUpdated(self, message: IMessage) -> None:
-        self.__botPrint("(Info) List Updated Render Mode")
+        self.__botPrint(self.__bold("(Info) List Updated Render Mode"))
 
         algorithm_desc = message.content.text
         most_priority_task = message.content.task
@@ -120,10 +131,10 @@ class ShellUserCommService(IUserCommService):
             self.__botPrint("No tasks available")
             return
 
-        self.__botPrint(f"Most priority task: {most_priority_task.getDescription()} (ID: /task_1, Context: {most_priority_task.getContext()})")
+        self.__botPrint(f"Most priority task: {self.__green(most_priority_task.getDescription())} (ID: /task_1, Context: {most_priority_task.getContext()})")
 
     def __renderHeuristicList(self, message: IMessage) -> None:
-        self.__botPrint("(Info) Heuristic List Render Mode")
+        self.__botPrint(self.__bold("(Info) Heuristic List Render Mode"))
         heuristic_list = message.content.anonObjectList
 
         if not isinstance(heuristic_list, list) or not heuristic_list:
@@ -136,7 +147,7 @@ class ShellUserCommService(IUserCommService):
             self.__botPrint(f" - (/heuristic_{i + 1}) {heuristic['name']}: {heuristic['description']}")
 
     def __renderAlgorithmList(self, message: IMessage) -> None:
-        self.__botPrint("(Info) Algorithm List Render Mode")
+        self.__botPrint(self.__bold("(Info) Algorithm List Render Mode"))
         algorithm_list = message.content.anonObjectList
 
         if not isinstance(algorithm_list, list) or not algorithm_list:
@@ -148,11 +159,41 @@ class ShellUserCommService(IUserCommService):
             assert isinstance(algorithm, dict)
             self.__botPrint(f" - (/algorithm_{i + 1}) {algorithm['name']}: {algorithm['description']}")
 
-    def __botPrint(self, text: str) -> None:
-        print(f"[bot -> {self.chatId}]: {text}")
+    def __botPrint(self, text: str, color: str = "") -> None:
+        prefix = f"[bot -> {self.chatId}]: "
+        if self.__useColors and color:
+            print(f"{prefix}{color}{text}{self.RESET}")
+        else:
+            print(f"{prefix}{text}")
+
+    def __colorize(self, text: str, color: str) -> str:
+        if self.__useColors:
+            return f"{color}{text}{self.RESET}"
+        return text
+
+    def __bold(self, text: str) -> str:
+        return self.__colorize(text, self.BOLD)
+
+    def __red(self, text: str) -> str:
+        return self.__colorize(text, self.RED)
+
+    def __green(self, text: str) -> str:
+        return self.__colorize(text, self.GREEN)
+
+    def __yellow(self, text: str) -> str:
+        return self.__colorize(text, self.YELLOW)
+
+    def __blue(self, text: str) -> str:
+        return self.__colorize(text, self.BLUE)
+
+    def __magenta(self, text: str) -> str:
+        return self.__colorize(text, self.MAGENTA)
+
+    def __cyan(self, text: str) -> str:
+        return self.__colorize(text, self.CYAN)
 
     def __renderTaskStats(self, message: IMessage) -> None:
-        self.__botPrint("(Info) Task Stats Render Mode")
+        self.__botPrint(self.__bold("(Info) Task Stats Render Mode"))
         
         # Import time management classes
         from src.wrappers.TimeManagement import TimePoint, TimeAmount
@@ -171,7 +212,7 @@ class ShellUserCommService(IUserCommService):
         work_done_log = stats.workDoneLog
         
         # Format and display workload statistics
-        self.__botPrint("Work done in the last 7 days:")
+        self.__botPrint(self.__cyan("Work done in the last 7 days:"))
         self.__botPrint("|    Date    | Work  Done |")
         self.__botPrint("|------------|------------|")
         
@@ -194,14 +235,14 @@ class ShellUserCommService(IUserCommService):
         self.__botPrint("|------------|------------|")
         
         # Display workload statistics
-        self.__botPrint("\nWorkload statistics:")
+        self.__botPrint(self.__bold("\nWorkload statistics:"))
         self.__botPrint(f"current workload: {workload} per day")
-        self.__botPrint(f"max Offender: '{offender}' with {offender_max} per day")
+        self.__botPrint(f"max Offender: '{self.__red(offender)}' with {offender_max} per day")
         self.__botPrint(f"total remaining effort: {remaining_effort}")
         self.__botPrint(f"max {heuristic_name}: {heuristic_value}")
         
         # Display work done log
-        self.__botPrint("\nWork done log:")
+        self.__botPrint(self.__bold("\nWork done log:"))
         for entry in work_done_log:
             task = entry.task
             work_units = entry.work_units
@@ -213,7 +254,7 @@ class ShellUserCommService(IUserCommService):
         self.__botPrint("\n/list - return back to the task list")
         
     def __renderTaskAgenda(self, message: IMessage) -> None:
-        self.__botPrint("(Info) Task Agenda Render Mode")
+        self.__botPrint(self.__bold("(Info) Task Agenda Render Mode"))
         
         # Get content from message
         agenda = message.content.agendaContent
@@ -231,14 +272,14 @@ class ShellUserCommService(IUserCommService):
         
         # Display active urgent tasks
         if active_urgent_tasks:
-            self.__botPrint("# Active Urgent tasks:")
+            self.__botPrint(self.__red("# Active Urgent tasks:"))
             for task in active_urgent_tasks:
                 self.__botPrint(f"- {task.description} (Context: {task.context})")
             self.__botPrint("")
         
         # Display planned urgent tasks
         if planned_urgent_tasks:
-            self.__botPrint("# Planned Urgent tasks:")
+            self.__botPrint(self.__yellow("# Planned Urgent tasks:"))
             for dateStr, tasks in planned_tasks_by_date.items():
                 self.__botPrint(f"## {dateStr}")
                 for task in tasks:
@@ -247,7 +288,7 @@ class ShellUserCommService(IUserCommService):
         
         # Display other tasks
         if other_tasks:
-            self.__botPrint("# Other tasks:")
+            self.__botPrint(self.__cyan("# Other tasks:"))
             for task in other_tasks:
                 self.__botPrint(f"- {task.description} (Context: {task.context})")
             self.__botPrint("")
@@ -255,7 +296,7 @@ class ShellUserCommService(IUserCommService):
         self.__botPrint("/list - return back to the task list")
         
     def __renderTaskInformation(self, message: IMessage) -> None:
-        self.__botPrint("(Info) Task Information Render Mode")
+        self.__botPrint(self.__bold("(Info) Task Information Render Mode"))
         
         # Extract task information from the message
         taskinfo = message.content.taskInformation
@@ -275,7 +316,7 @@ class ShellUserCommService(IUserCommService):
         # task_calm = message.content.get('calm', False)
         
         # Format the basic task information
-        self.__botPrint(f"Task: {task_description}")
+        self.__botPrint(f"Task: {self.__green(task_description)}")
         self.__botPrint(f"Context: {task_context}")
         self.__botPrint(f"Start Date: {task_start_date}")
         self.__botPrint(f"Due Date: {task_due_date}")
@@ -286,23 +327,23 @@ class ShellUserCommService(IUserCommService):
         # Include extended information if available
         extended_task_data = taskinfo.extended
         if isinstance(extended_task_data, ExtendedTaskInformation):
-            self.__botPrint("\nHeuristic Values:")
+            self.__botPrint(self.__bold("\nHeuristic Values:"))
             for heuristic in extended_task_data.heuristics:
                 self.__botPrint(f"- {heuristic.name}: {heuristic.comment}")
         
-            self.__botPrint("\nMetadata:")
+            self.__botPrint(self.__bold("\nMetadata:"))
             self.__botPrint(extended_task_data.metadata)
         
         # Add command options
-        self.__botPrint("\n/list - Return to list")
-        self.__botPrint("/done - Mark task as done")
-        self.__botPrint("/set [param] [value] - Set task parameter")
-        self.__botPrint("/work [work_units] - Invest work units in the task")
-        self.__botPrint("/snooze - Snooze the task for 5 minutes")
-        self.__botPrint("/info - Show extended information")
+        self.__botPrint(self.__cyan("\n/list - Return to list"))
+        self.__botPrint(self.__cyan("/done - Mark task as done"))
+        self.__botPrint(self.__cyan("/set [param] [value] - Set task parameter"))
+        self.__botPrint(self.__cyan("/work [work_units] - Invest work units in the task"))
+        self.__botPrint(self.__cyan("/snooze - Snooze the task for 5 minutes"))
+        self.__botPrint(self.__cyan("/info - Show extended information"))
 
     def __renderEvents(self, message: IMessage) -> None:
-        self.__botPrint("(Info) Events Render Mode")
+        self.__botPrint(self.__bold("(Info) Events Render Mode"))
         
         # Extract events content from the message
         events = message.content.eventsContent
@@ -317,16 +358,16 @@ class ShellUserCommService(IUserCommService):
         event_statistics = events.event_statistics
 
         # Display overall statistics
-        self.__botPrint("Event Statistics Summary:")
+        self.__botPrint(self.__cyan("Event Statistics Summary:"))
         self.__botPrint(f"Total Events: {total_events}")
         self.__botPrint(f"Tasks Raising Events: {total_raising_tasks}")
         self.__botPrint(f"Tasks Waiting for Events: {total_waiting_tasks}")
-        self.__botPrint(f"Orphaned Events: {orphaned_events_count}")
+        self.__botPrint(f"Orphaned Events: {self.__red(str(orphaned_events_count))}")
         self.__botPrint("")
 
         # Display individual event statistics
         if event_statistics:
-            self.__botPrint("Individual Event Statistics:")
+            self.__botPrint(self.__bold("Individual Event Statistics:"))
             self.__botPrint("| Event Name | Raising | Waiting | Status |")
             self.__botPrint("|------------|---------|---------|--------|")
             
@@ -334,18 +375,18 @@ class ShellUserCommService(IUserCommService):
                 event_name = event_stat.event_name
                 tasks_raising = event_stat.tasks_raising
                 tasks_waiting = event_stat.tasks_waiting
-                status = "ORPHANED" if event_stat.is_orphaned else "OK"
+                status = self.__red("ORPHANED") if event_stat.is_orphaned else self.__green("OK")
                 if event_stat.is_orphaned:
                     if event_stat.orphan_type == "raised_only":
-                        status += " (raised only)"
+                        status += self.__red(" (raised only)")
                     elif event_stat.orphan_type == "waited_only":
-                        status += " (waited only)"
+                        status += self.__red(" (waited only)")
                 
                 self.__botPrint(f"| {event_name:10} | {tasks_raising:7} | {tasks_waiting:7} | {status:6} |")
         else:
             self.__botPrint("No events found in the current task list.")
 
-        self.__botPrint("\n/list - return back to the task list")
+        self.__botPrint(self.__cyan("\n/list - return back to the task list"))
 
     async def sendMessage(self, message: IMessage) -> None:
         if message.type != "OutboundMessage":
