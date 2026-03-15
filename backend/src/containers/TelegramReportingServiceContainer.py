@@ -33,6 +33,7 @@ from src.algorithms.EdfAlgorithm import EdfAlgorithm
 from src.algorithms.ShortestJobAlgorithm import ShortestJobAlgorithm
 from src.heuristics.StartTimeHeuristic import StartTimeHeuristic
 from src.heuristics.CfdHeuristic import CfdHeuristic
+from src.heuristics.WorkloadHeuristic import WorkloadHeuristic
 
 
 class TelegramReportingServiceContainer():
@@ -271,6 +272,7 @@ class TelegramReportingServiceContainer():
         self.container.slackHeuristic = providers.Factory(SlackHeuristic, dedicationTime)
         self.container.tomorrowSlackHeuristic = providers.Factory(SlackHeuristic, dedicationTime, 1)
         self.container.cfdHeuristic = providers.Factory(CfdHeuristic, dedicationTime)
+        self.container.workloadHeuristic = providers.Factory(WorkloadHeuristic)
 
         ## Heuristic list
         self.container.heuristicList = providers.List(
@@ -280,6 +282,7 @@ class TelegramReportingServiceContainer():
             ("Slack Heuristic", self.container.slackHeuristic()),
             ("Start Time Heuristic", StartTimeHeuristic()),
             ("CFD Heuristic", self.container.cfdHeuristic()),
+            ("Workload Heuristic", self.container.workloadHeuristic()),
         )
 
         # Filters
