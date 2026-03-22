@@ -142,6 +142,7 @@ The application uses several heuristics to prioritize tasks:
 - **Slack Heuristic** - Balance between available time and work
 - **CFD Heuristic** - Critical path analysis
 - **Start Time Heuristic** - Prioritize by availability
+- **Workload Heuristic** - Prioritizes by calculating remaining cost divided by remaining days (remaining_cost / remaining_days)
 
 ## Core Components
 
