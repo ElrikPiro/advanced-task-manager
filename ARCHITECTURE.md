@@ -80,7 +80,7 @@ advanced-task-manager/
 │   │   ├── filters/            # Task filtering logic
 │   │   ├── algorithms/         # GTD, EDF, Shortest Job algorithms
 │   │   ├── wrappers/           # External service adapters
-│   │   └── Interfaces/         # Abstract interfaces
+│   │   └── Interfaces/         # Abstract interfaces (ILogger, ITaskModel, IFilter, etc.)
 │   └── tests/                  # Test suite
 ├── config.json                 # User configuration
 ├── tasks.json                  # Task data storage
