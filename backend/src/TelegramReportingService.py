@@ -20,19 +20,21 @@ from .Interfaces.ITaskProvider import ITaskProvider
 from .Interfaces.ITaskModel import ITaskModel
 from .Interfaces.IScheduling import IScheduling
 from .Interfaces.IStatisticsService import IStatisticsService
+from .Interfaces.ILogger import ILogger
 from .wrappers.interfaces.IUserCommService import IUserCommService
 from .wrappers.TimeManagement import TimeAmount, TimePoint
 
 
 class TelegramReportingService(IReportingService):
 
-    def __init__(self, bot: IUserCommService, taskProvider: ITaskProvider, scheduling: IScheduling, statiticsProvider: IStatisticsService, task_list_manager: ITaskListManager, categories: list[dict[str, str]], projectManager: IProjectManager, messageBuilder: IMessageBuilder, user: IAgent):
+    def __init__(self, bot: IUserCommService, taskProvider: ITaskProvider, scheduling: IScheduling, statiticsProvider: IStatisticsService, task_list_manager: ITaskListManager, categories: list[dict[str, str]], projectManager: IProjectManager, messageBuilder: IMessageBuilder, user: IAgent, logger: ILogger):
         # Private Attributes
         self.MAX_ERRORS = 30
         self.ERROR_TIMEOUT = 10
 
         self.run = True
         self.bot = bot
+        self._logger = logger
         self.user: IAgent = user
         self.chatId: int = int(user.id)
         self.taskProvider = taskProvider
@@ -101,11 +103,11 @@ class TelegramReportingService(IReportingService):
                 errCount = 0
             except Exception as e:
                 self._lastError = f"Error: {repr(e)}"
-                print(self._lastError)
+                self._logger.error(self._lastError)
                 sleepSync(self.ERROR_TIMEOUT)
                 errCount += 1
                 if errCount > self.MAX_ERRORS:
-                    print("stopping container")
+                    self._logger.critical("stopping container")
                     self.run = False
                     break
 
@@ -119,7 +121,7 @@ class TelegramReportingService(IReportingService):
                 try:
                     await self.bot.shutdown()
                 except Exception as e:
-                    print(f"Fatal error: {repr(e)} shutting down.")
+                    self._logger.critical(f"Fatal error: {repr(e)} shutting down.")
                     self.run = False
                 finally:
                     raise
