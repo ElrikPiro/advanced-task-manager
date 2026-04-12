@@ -218,6 +218,7 @@ class TelegramReportingService(IReportingService):
         """
         self._taskListManager.select_task(messageText)
         selectedTask = self._taskListManager.selected_task
+        self._logger.debug(f"Selected task: {selectedTask.getDescription() if isinstance(selectedTask, ITaskModel) else 'None'}")
 
         if expectAnswer and isinstance(selectedTask, ITaskModel):
             await self.sendTaskInformation(selectedTask, reqId=reqId)
@@ -375,6 +376,7 @@ class TelegramReportingService(IReportingService):
     async def raiseAlgorithmCommand(self, messageText: str = "", expectAnswer: bool = True, reqId: int | None = None) -> None:
         arg = messageText.split(" ")[1:][0]
         affected = self._taskListManager.raiseEvent(arg)
+        self._logger.debug(f"Raised event '{arg}' affecting {len(affected)} tasks.")
         
         for task in affected:
             self.taskProvider.saveTask(task)
@@ -447,6 +449,7 @@ class TelegramReportingService(IReportingService):
                     self.taskProvider.saveTask(t)
             
             self.taskProvider.saveTask(task)
+            self._logger.debug(f"Task '{task.getDescription()}' marked as done.")
             if expectAnswer:
                 await self.sendTaskList(reqId=reqId)
         else:
@@ -481,6 +484,7 @@ class TelegramReportingService(IReportingService):
                 params[0] = "help"
                 params[1] = "me"
             await self.processSetParam(task, params[0], " ".join(params[1:]) if len(params) > 2 else params[1], reqId=reqId)
+            self._logger.debug(f"Task '{task.getDescription()}' set parameter '{params[0]}' to '{' '.join(params[1:])}'.")
             self.taskProvider.saveTask(task)
             if expectAnswer:
                 await self.sendTaskInformation(task, reqId=reqId)
@@ -512,6 +516,7 @@ class TelegramReportingService(IReportingService):
 
             self.taskProvider.saveTask(selected_task)
             self._taskListManager.add_task(selected_task)
+            self._logger.debug(f"Task '{selected_task.getDescription()}' created.")
             if expectAnswer:
                 await self.sendTaskInformation(selected_task, reqId=reqId)
         else:
@@ -550,9 +555,12 @@ class TelegramReportingService(IReportingService):
                     )
                     # Show the first split task
                     await self.sendTaskInformation(resulting_tasks[0], reqId=reqId)
+
+                self._logger.debug(f"Task '{selected_task.getDescription()}' was rescheduled and split into {len(resulting_tasks)} parts.")
             else:
                 # Normal single task scheduling
                 self.taskProvider.saveTask(resulting_tasks[0])
+                self._logger.debug(f"Task '{selected_task.getDescription()}' was rescheduled.")
                 if expectAnswer:
                     await self.sendTaskInformation(resulting_tasks[0], reqId=reqId)
         else:
@@ -574,6 +582,7 @@ class TelegramReportingService(IReportingService):
             self.taskProvider.saveTask(task)
             date = datetime.datetime.now().date()
             self.statiticsProvider.doWork(date, work_units, task)
+            self._logger.debug(f"Added {str(work_units)} of work to task '{task.getDescription()}'.")
             if expectAnswer:
                 await self.sendTaskInformation(task, reqId=reqId)
         else:
@@ -628,6 +637,7 @@ class TelegramReportingService(IReportingService):
             params = "5m"
 
         startParams = f"/set start now;+{params}"
+        self._logger.debug(f"Snoozing task with params: {startParams}")
         await self.setCommand(startParams, reqId=reqId)
 
     async def exportCommand(self, messageText: str = "", expectAnswer: bool = True, reqId: int | None = None) -> None:
@@ -708,6 +718,7 @@ class TelegramReportingService(IReportingService):
         # processing results
         if len(searchResults) == 1:
             self._taskListManager.selected_task = searchResults[0]
+            self._logger.debug(f"Search found one result, selecting task: {searchResults[0].getDescription()}")
             await self.sendTaskInformation(searchResults[0], reqId=reqId)
         elif len(searchResults) > 0:
             taskListContent = searchResultsManager.get_task_list_content()
