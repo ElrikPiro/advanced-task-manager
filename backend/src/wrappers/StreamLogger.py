@@ -1,5 +1,5 @@
 from typing import TextIO
-from datetime import datetime, timezone
+from datetime import datetime
 
 from src.Interfaces.ILogger import ILogger
 
@@ -16,7 +16,7 @@ class StreamLogger(ILogger):
         self._stream = stream
 
     def _log(self, level: str, message: str) -> None:
-        timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+        timestamp = datetime.now().astimezone().strftime("%Y-%m-%d %H:%M:%S %Z")
         formatted = self.LOG_FORMAT.format(
             timestamp=timestamp,
             level=level,
