@@ -1,5 +1,6 @@
 import json
 import os
+import sys
 from dependency_injector import containers, providers
 import telegram
 import typing
@@ -34,6 +35,7 @@ from src.algorithms.ShortestJobAlgorithm import ShortestJobAlgorithm
 from src.heuristics.StartTimeHeuristic import StartTimeHeuristic
 from src.heuristics.CfdHeuristic import CfdHeuristic
 from src.heuristics.WorkloadHeuristic import WorkloadHeuristic
+from src.wrappers.StreamLogger import StreamLogger
 
 
 class TelegramReportingServiceContainer():
@@ -338,6 +340,9 @@ class TelegramReportingServiceContainer():
         # Message builder
         self.container.messageBuilder = providers.Singleton(MessageBuilder)
 
+        # Logger
+        self.container.logger = providers.Singleton(StreamLogger, sys.stdout)
+
         # Reporting service
         user: UserAgent = UserAgent(id=chatId, name="User", description="User Agent for Telegram Reporting Service")
-        self.container.telegramReportingService = providers.Singleton(TelegramReportingService, self.container.userCommService(), self.container.taskProvider(), self.container.heristicScheduling(), self.container.statisticsService(), self.container.taskListManager(), self.container.categories, self.container.projectManager, self.container.messageBuilder, user)
+        self.container.telegramReportingService = providers.Singleton(TelegramReportingService, self.container.userCommService(), self.container.taskProvider(), self.container.heristicScheduling(), self.container.statisticsService(), self.container.taskListManager(), self.container.categories, self.container.projectManager, self.container.messageBuilder, user, self.container.logger)

@@ -19,6 +19,7 @@ class TestTelegramReportingService(unittest.TestCase):
         self.projectManager = MagicMock()
         self.messageBuilder = MagicMock()
         self.user = MagicMock()
+        self.logger = MagicMock()
         
         self.bot.sendMessage = AsyncMock()
         self.bot.shutdown = AsyncMock()
@@ -32,7 +33,8 @@ class TestTelegramReportingService(unittest.TestCase):
             categories=self.categories,
             projectManager=self.projectManager,
             messageBuilder=self.messageBuilder,
-            user=self.user
+            user=self.user,
+            logger=self.logger
         )
 
     def test_dispose(self) -> None:
