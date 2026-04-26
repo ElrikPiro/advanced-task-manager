@@ -613,7 +613,7 @@ export function App(): JSX.Element {
         <ul>
           <li><code>config.json</code> must have <code>APP_MODE</code> set to <code>5</code> or <code>6</code>.</li>
           <li>Backend process must be running and reachable from the machine running Vite.</li>
-          <li>For remote backends, enter the full URL in the connection field (for example <code>http://82.165.173.73:8081</code>).</li>
+          <li>For remote backends, enter the full URL in the connection field (for example <code>http://82.34.78.15:8081</code>).</li>
           <li>Use the HTTP token from <code>config.json</code> in the Bearer token field.</li>
         </ul>
       </section>

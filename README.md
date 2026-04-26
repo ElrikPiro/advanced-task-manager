@@ -103,7 +103,7 @@ Open `http://localhost:5173` and configure:
 By default, Vite proxies `/api/*` to `http://127.0.0.1:8080/*` using `GET` passthrough.
 This keeps requests same-origin in development so the browser does not need CORS preflight handling.
 If a cross-origin absolute URL is entered in the frontend, the client automatically routes through `/api` and sends the selected target to the Vite proxy.
-This allows testing arbitrary remote HTTP backends (for example `http://82.165.173.73:8081`) without changing backend code.
+This allows testing arbitrary remote HTTP backends (for example `http://82.34.78.15:8081`) without changing backend code.
 To point to another backend host in development, set:
 
 ```bash
