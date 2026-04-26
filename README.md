@@ -65,6 +65,70 @@ A file called `config.json` will be created with a basic set of task categories/
 
 run `python backend.py` in the backend folder
 
+## Web Frontend (React + TypeScript)
+
+The project now includes a browser frontend in `frontend/` that connects to the HTTP API mode.
+
+### Frontend prerequisites
+
+- Node.js 20+
+- Backend configured in HTTP mode (`APP_MODE` 5 or 6)
+
+### Run frontend in development
+
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+### Run backend in HTTP mode
+
+Set `APP_MODE` in `config.json` to one of:
+- `5` (JSON file + HTTP)
+- `6` (Obsidian + HTTP)
+
+Then start backend:
+
+```bash
+make run
+```
+
+Default backend HTTP target is `http://127.0.0.1:8080`.
+
+Open `http://localhost:5173` and configure:
+- **Backend URL** (default `/api`, proxied by Vite)
+- **Bearer token** (from `HTTP_TOKEN` in your `config.json`)
+
+By default, Vite proxies `/api/*` to `http://127.0.0.1:8080/*` using `GET` passthrough.
+This keeps requests same-origin in development so the browser does not need CORS preflight handling.
+If a cross-origin absolute URL is entered in the frontend, the client automatically routes through `/api` and sends the selected target to the Vite proxy.
+This allows testing arbitrary remote HTTP backends (for example `http://82.165.173.73:8081`) without changing backend code.
+To point to another backend host in development, set:
+
+```bash
+ATM_BACKEND_TARGET=http://your-backend-host:8080 npm run dev
+```
+
+The frontend provides:
+- Task list and task details
+- Heuristic, algorithm and filter selection
+- Task actions (`/set`, `/new`, `/work`, `/schedule`, `/snooze`, `/done`)
+- Agenda, stats and events dashboards
+- Notification polling (`/notifications`)
+
+### Build frontend
+
+```bash
+cd frontend
+npm run build
+```
+
+### Frontend caveats
+
+- In HTTP mode, `/export` is currently not implemented in the backend wrapper and is intentionally not exposed as a file download action.
+- Backend command responses can be JSON or plain text; the frontend handles both.
+
 ## Usage (Win64 Binaries)
 
 unzip the archive and double click the executable, a console window will open and apply the settings contained at config.json
