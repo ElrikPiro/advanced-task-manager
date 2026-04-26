@@ -1,7 +1,7 @@
 import { useCallback, useMemo, useState } from "react";
 import { TaskManagerApi } from "./api/commands";
 import { BadgeList } from "./components/BadgeList";
-import { CommandForms } from "./components/CommandForms";
+import { CommandForms, type CommandFormActions } from "./components/CommandForms";
 import { KeyValueGrid } from "./components/KeyValueGrid";
 import { NotificationsPanel } from "./components/NotificationsPanel";
 import { TaskTable } from "./components/TaskTable";
@@ -14,6 +14,7 @@ import type {
   FilterEntry,
   NamedDescriptionEntry,
   NotificationItem,
+  TaskEntry,
   TaskInformation,
   TaskListContent,
   WorkloadStats,
@@ -23,7 +24,7 @@ import { formatMillisecondsAsDuration, formatTimestamp } from "./utils/time";
 const DEFAULT_BASE_URL = "/api";
 const DEFAULT_POLL_INTERVAL_MS = 20_000;
 
-type View = "tasks" | "agenda" | "stats" | "events";
+type View = "tasks" | "agenda" | "stats" | "events" | "selectedTask";
 
 function isTaskListContent(data: unknown): data is TaskListContent {
   if (typeof data !== "object" || data === null) {
@@ -117,6 +118,21 @@ function parseProjectArgs(input: string): string[] {
     .trim()
     .split(/\s+/)
     .filter((value) => value.length > 0);
+}
+
+function extractTaskHash(description: string): string | null {
+  const exactHashMatch = description.match(/\[([a-zA-Z0-9]{5})\]\s*$/);
+  if (exactHashMatch?.[1]) {
+    return exactHashMatch[1];
+  }
+
+  const fallbackMatches = Array.from(description.matchAll(/\[([^\]]+)\]/g));
+  if (fallbackMatches.length === 0) {
+    return null;
+  }
+
+  const lastMatch = fallbackMatches[fallbackMatches.length - 1]?.[1]?.trim();
+  return lastMatch || null;
 }
 
 function getConnectionHint(baseUrl: string): string {
@@ -315,6 +331,50 @@ export function App(): JSX.Element {
     [refreshList, setInfo, withBusy],
   );
 
+  const selectTaskByHashFromAgenda = useCallback(
+    async (task: TaskEntry) => {
+      if (!api) {
+        return;
+      }
+
+      const hash = extractTaskHash(task.description);
+      if (!hash) {
+        setError(`Task hash not found in description: ${task.description}`);
+        return;
+      }
+
+      await withBusy(async () => {
+        const searchResponse = await api.search(hash);
+
+        if (isTaskInformation(searchResponse.data)) {
+          setTaskInfo(searchResponse.data);
+          setView("selectedTask");
+          setInfo(`Selected task by hash [${hash}]`);
+          return;
+        }
+
+        if (isTaskListContent(searchResponse.data) && searchResponse.data.tasks.length === 1) {
+          const infoResponse = await api.info();
+          if (isTaskInformation(infoResponse.data)) {
+            setTaskInfo(infoResponse.data);
+            setView("selectedTask");
+            setInfo(`Selected task by hash [${hash}]`);
+            return;
+          }
+        }
+
+        if (isTaskListContent(searchResponse.data)) {
+          setTaskList(searchResponse.data);
+          setInfo(`Search for hash [${hash}] returned ${searchResponse.data.tasks.length} tasks`);
+          return;
+        }
+
+        setInfo(searchResponse.text ?? `Search for hash [${hash}] did not return a selectable task`);
+      });
+    },
+    [api, setError, setInfo, withBusy],
+  );
+
   const loadTaskInfo = useCallback(async () => {
     if (!api) {
       return;
@@ -341,6 +401,169 @@ export function App(): JSX.Element {
     await refreshList();
     await fetchNotifications();
   }, [api, fetchNotifications, refreshList, setError]);
+
+  const markSelectedTaskDone = useCallback(async () => {
+    if (!api) {
+      return;
+    }
+
+    await withBusy(async () => {
+      await api.done();
+      setTaskInfo(null);
+      await refreshList();
+      setView("tasks");
+      setInfo("Selected task marked as done");
+    });
+  }, [api, refreshList, setInfo, withBusy]);
+
+  const commandActions = useMemo<CommandFormActions>(() => ({
+    setParam: async (param, value) => {
+      if (!api) {
+        return;
+      }
+
+      await withBusy(async () => {
+        const response = await api.set(param, value);
+        if (isTaskInformation(response.data)) {
+          setTaskInfo(response.data);
+        }
+        await refreshList();
+        setInfo("Task field updated");
+      });
+    },
+    createTask: async (description, context, totalCost) => {
+      if (!api) {
+        return;
+      }
+
+      await withBusy(async () => {
+        const response = await api.create(description, context, totalCost);
+        if (isTaskInformation(response.data)) {
+          setTaskInfo(response.data);
+        }
+        await refreshList();
+        setInfo("Task created");
+      });
+    },
+    work: async (amount) => {
+      if (!api) {
+        return;
+      }
+
+      await withBusy(async () => {
+        const response = await api.work(amount);
+        if (isTaskInformation(response.data)) {
+          setTaskInfo(response.data);
+        }
+        await refreshList();
+        setInfo("Work logged");
+      });
+    },
+    schedule: async (expectedWorkPerDay) => {
+      if (!api) {
+        return;
+      }
+
+      await withBusy(async () => {
+        const response = await api.schedule(expectedWorkPerDay);
+        if (isTaskInformation(response.data)) {
+          setTaskInfo(response.data);
+        }
+        await refreshList();
+        setInfo("Task scheduled");
+      });
+    },
+    snooze: async (amount) => {
+      if (!api) {
+        return;
+      }
+
+      await withBusy(async () => {
+        const response = await api.snooze(amount);
+        if (isTaskInformation(response.data)) {
+          setTaskInfo(response.data);
+        }
+        await refreshList();
+        setInfo("Task snoozed");
+      });
+    },
+    search: async (term) => {
+      if (!api) {
+        return;
+      }
+
+      await withBusy(async () => {
+        const response = await api.search(...parseProjectArgs(term));
+        if (isTaskListContent(response.data)) {
+          setTaskList(response.data);
+        }
+        if (isTaskInformation(response.data)) {
+          setTaskInfo(response.data);
+        }
+        setInfo("Search completed");
+      });
+    },
+    project: async (args) => {
+      if (!api) {
+        return;
+      }
+
+      await withBusy(async () => {
+        const response = await api.project(parseProjectArgs(args));
+        setInfo(response.text ?? "Project command executed");
+        await refreshList();
+      });
+    },
+    raiseEvent: async (eventName) => {
+      if (!api) {
+        return;
+      }
+
+      await withBusy(async () => {
+        const response = await api.raise(eventName);
+        setInfo(response.text ?? "Event raised");
+        await refreshList();
+      });
+    },
+  }), [api, refreshList, setInfo, withBusy]);
+
+  const renderTaskInformationSection = (title: string): JSX.Element => (
+    <section className="panel">
+      <h2>{title}</h2>
+      {taskInfo ? (
+        <>
+          <KeyValueGrid
+            entries={[
+              { label: "Description", value: taskInfo.task.description },
+              { label: "Context", value: taskInfo.task.context },
+              { label: "Start", value: taskInfo.task.start },
+              { label: "Due", value: taskInfo.task.due },
+              { label: "Severity", value: taskInfo.task.severity.toFixed(2) },
+              { label: "Status", value: taskInfo.task.status || "-" },
+              { label: "Total Cost", value: `${taskInfo.task.total_cost.toFixed(2)}p` },
+              { label: "Effort Invested", value: `${taskInfo.task.effort_invested.toFixed(2)}p` },
+            ]}
+          />
+          {taskInfo.extended ? (
+            <>
+              <h3>Heuristics</h3>
+              <ul className="heuristic-list">
+                {taskInfo.extended.heuristics.map((heuristic) => (
+                  <li key={heuristic.name}>
+                    <strong>{heuristic.name}</strong>: {heuristic.value.toFixed(3)} - {heuristic.comment}
+                  </li>
+                ))}
+              </ul>
+              <h3>Metadata</h3>
+              <pre>{taskInfo.extended.metadata}</pre>
+            </>
+          ) : null}
+        </>
+      ) : (
+        <p className="empty">No task selected</p>
+      )}
+    </section>
+  );
 
   return (
     <div className="app-shell">
@@ -424,6 +647,14 @@ export function App(): JSX.Element {
           <button type="button" className="secondary" onClick={() => setView("tasks")}>
             Tasks View
           </button>
+          <button
+            type="button"
+            className="secondary"
+            onClick={() => setView("selectedTask")}
+            disabled={!taskInfo}
+          >
+            Selected Task
+          </button>
         </div>
       </section>
 
@@ -462,155 +693,9 @@ export function App(): JSX.Element {
               )}
             </section>
 
-            <section className="panel">
-              <h2>Task Information</h2>
-              {taskInfo ? (
-                <>
-                  <KeyValueGrid
-                    entries={[
-                      { label: "Description", value: taskInfo.task.description },
-                      { label: "Context", value: taskInfo.task.context },
-                      { label: "Start", value: taskInfo.task.start },
-                      { label: "Due", value: taskInfo.task.due },
-                      { label: "Severity", value: taskInfo.task.severity.toFixed(2) },
-                      { label: "Status", value: taskInfo.task.status || "-" },
-                      { label: "Total Cost", value: `${taskInfo.task.total_cost.toFixed(2)}p` },
-                      { label: "Effort Invested", value: `${taskInfo.task.effort_invested.toFixed(2)}p` },
-                    ]}
-                  />
-                  {taskInfo.extended ? (
-                    <>
-                      <h3>Heuristics</h3>
-                      <ul className="heuristic-list">
-                        {taskInfo.extended.heuristics.map((heuristic) => (
-                          <li key={heuristic.name}>
-                            <strong>{heuristic.name}</strong>: {heuristic.value.toFixed(3)} - {heuristic.comment}
-                          </li>
-                        ))}
-                      </ul>
-                      <h3>Metadata</h3>
-                      <pre>{taskInfo.extended.metadata}</pre>
-                    </>
-                  ) : null}
-                </>
-              ) : (
-                <p className="empty">No task selected</p>
-              )}
-            </section>
+            {renderTaskInformationSection("Task Information")}
 
-            <CommandForms
-              busy={isBusy || !api}
-              actions={{
-                setParam: async (param, value) => {
-                  if (!api) {
-                    return;
-                  }
-
-                  await withBusy(async () => {
-                    const response = await api.set(param, value);
-                    if (isTaskInformation(response.data)) {
-                      setTaskInfo(response.data);
-                    }
-                    await refreshList();
-                    setInfo("Task field updated");
-                  });
-                },
-                createTask: async (description, context, totalCost) => {
-                  if (!api) {
-                    return;
-                  }
-
-                  await withBusy(async () => {
-                    const response = await api.create(description, context, totalCost);
-                    if (isTaskInformation(response.data)) {
-                      setTaskInfo(response.data);
-                    }
-                    await refreshList();
-                    setInfo("Task created");
-                  });
-                },
-                work: async (amount) => {
-                  if (!api) {
-                    return;
-                  }
-
-                  await withBusy(async () => {
-                    const response = await api.work(amount);
-                    if (isTaskInformation(response.data)) {
-                      setTaskInfo(response.data);
-                    }
-                    await refreshList();
-                    setInfo("Work logged");
-                  });
-                },
-                schedule: async (expectedWorkPerDay) => {
-                  if (!api) {
-                    return;
-                  }
-
-                  await withBusy(async () => {
-                    const response = await api.schedule(expectedWorkPerDay);
-                    if (isTaskInformation(response.data)) {
-                      setTaskInfo(response.data);
-                    }
-                    await refreshList();
-                    setInfo("Task scheduled");
-                  });
-                },
-                snooze: async (amount) => {
-                  if (!api) {
-                    return;
-                  }
-
-                  await withBusy(async () => {
-                    const response = await api.snooze(amount);
-                    if (isTaskInformation(response.data)) {
-                      setTaskInfo(response.data);
-                    }
-                    await refreshList();
-                    setInfo("Task snoozed");
-                  });
-                },
-                search: async (term) => {
-                  if (!api) {
-                    return;
-                  }
-
-                  await withBusy(async () => {
-                    const response = await api.search(...parseProjectArgs(term));
-                    if (isTaskListContent(response.data)) {
-                      setTaskList(response.data);
-                    }
-                    if (isTaskInformation(response.data)) {
-                      setTaskInfo(response.data);
-                    }
-                    setInfo("Search completed");
-                  });
-                },
-                project: async (args) => {
-                  if (!api) {
-                    return;
-                  }
-
-                  await withBusy(async () => {
-                    const response = await api.project(parseProjectArgs(args));
-                    setInfo(response.text ?? "Project command executed");
-                    await refreshList();
-                  });
-                },
-                raiseEvent: async (eventName) => {
-                  if (!api) {
-                    return;
-                  }
-
-                  await withBusy(async () => {
-                    const response = await api.raise(eventName);
-                    setInfo(response.text ?? "Event raised");
-                    await refreshList();
-                  });
-                },
-              }}
-            />
+            <CommandForms busy={isBusy || !api} actions={commandActions} />
 
             <section className="panel">
               <h2>Strategies</h2>
@@ -683,8 +768,20 @@ export function App(): JSX.Element {
               {agenda ? (
                 <>
                   <p className="caption">Date: {agenda.date.str_representation}</p>
-                  <TaskTable title="Active urgent tasks" tasks={agenda.active_urgent_tasks} />
-                  <TaskTable title="Planned urgent tasks" tasks={agenda.planned_urgent_tasks} />
+                  <TaskTable
+                    title="Active urgent tasks"
+                    tasks={agenda.active_urgent_tasks}
+                    onSelect={(task) => {
+                      void selectTaskByHashFromAgenda(task);
+                    }}
+                  />
+                  <TaskTable
+                    title="Planned urgent tasks"
+                    tasks={agenda.planned_urgent_tasks}
+                    onSelect={(task) => {
+                      void selectTaskByHashFromAgenda(task);
+                    }}
+                  />
                 </>
               ) : (
                 <p className="empty">No agenda loaded</p>
@@ -699,7 +796,13 @@ export function App(): JSX.Element {
                 Object.entries(agenda.planned_tasks_by_date).map(([startDate, entries]) => (
                   <div key={startDate} className="agenda-group">
                     <h3>{startDate}</h3>
-                    <TaskTable title={`Tasks at ${startDate}`} tasks={entries} />
+                    <TaskTable
+                      title={`Tasks at ${startDate}`}
+                      tasks={entries}
+                      onSelect={(task) => {
+                        void selectTaskByHashFromAgenda(task);
+                      }}
+                    />
                   </div>
                 ))
               )}
@@ -757,6 +860,36 @@ export function App(): JSX.Element {
                 </ul>
               )}
             </section>
+          </>
+        ) : null}
+
+        {view === "selectedTask" ? (
+          <>
+            {renderTaskInformationSection("Selected Task")}
+
+            <section className="panel">
+              <h2>Selected Task Actions</h2>
+              <div className="button-row">
+                <button type="button" onClick={() => void loadTaskInfo()} disabled={isBusy || !api}>
+                  Refresh Selected Task
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void markSelectedTaskDone()}
+                  disabled={isBusy || !api || !taskInfo}
+                >
+                  Mark as Done
+                </button>
+                <button type="button" className="secondary" onClick={() => setView("agenda")}>
+                  Back to Agenda
+                </button>
+                <button type="button" className="secondary" onClick={() => setView("tasks")}>
+                  Back to Tasks
+                </button>
+              </div>
+            </section>
+
+            <CommandForms busy={isBusy || !api} actions={commandActions} />
           </>
         ) : null}
 

@@ -165,6 +165,12 @@ td {
   gap: 0.55rem;
 }
 
+.button-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.55rem;
+}
+
 .layout-grid {
   display: grid;
   grid-template-columns: repeat(12, minmax(0, 1fr));
