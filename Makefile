@@ -1,4 +1,4 @@
-.PHONY: test .venv
+.PHONY: test .venv run run-frontend
 
 RUN_IN_VENV = . .venv/bin/activate &&
 
@@ -11,3 +11,6 @@ test: .venv
 
 run: .venv
 	$(RUN_IN_VENV) python3 backend/backend.py
+
+run-frontend:
+	npm --prefix frontend run dev
