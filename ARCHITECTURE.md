@@ -12,6 +12,7 @@ graph TB
         A[Telegram Bot]
         B[Command Line Shell]
         C[HTTP REST API]
+        M[React Web Frontend]
     end
 
     subgraph "Core Services"
@@ -35,6 +36,7 @@ graph TB
     A --> D
     B --> D
     C --> D
+    M --> C
     D --> E
     D --> F
     D --> G
@@ -59,6 +61,7 @@ graph TB
 ## Technology Stack
 
 - **Language**: Python 3.11
+- **Frontend**: React + TypeScript + Vite
 - **Dependencies**:
   - `python-telegram-bot` - Telegram bot integration
   - `dependency-injector` - Dependency injection container
@@ -69,6 +72,14 @@ graph TB
 
 ```
 advanced-task-manager/
+├── frontend/
+│   ├── src/
+│   │   ├── api/                # Typed HTTP client and command wrappers
+│   │   ├── components/         # Reusable UI components
+│   │   ├── hooks/              # Local storage and polling hooks
+│   │   ├── types/              # API response type definitions
+│   │   └── utils/              # Formatting and helper utilities
+│   └── package.json
 ├── backend/
 │   ├── backend.py              # Main entry point
 │   ├── src/
@@ -149,6 +160,19 @@ The application uses several heuristics to prioritize tasks:
 ### TelegramReportingService
 
 The main service that handles user interactions through the configured interface. It processes commands, manages task lists, and coordinates between different components.
+
+### HttpUserCommService
+
+`HttpUserCommService` exposes command-style REST endpoints where each URL path maps to a command (`/list`, `/stats`, `/agenda`, etc.) and optional query argument string (`args`).
+The current frontend integration keeps backend behavior unchanged and uses only `GET` requests.
+
+### React Frontend
+
+The `frontend/` application consumes the HTTP API with a typed client layer:
+- Handles bearer authentication and backend timeout/error mapping.
+- Supports mixed backend payloads (JSON and plain text fallback).
+- Uses a Vite `/api` development proxy to avoid backend CORS changes.
+- Provides task operations and dashboards for agenda, stats, and event analysis.
 
 ### TaskListManager
 

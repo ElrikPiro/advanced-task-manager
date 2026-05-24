@@ -16,3 +16,6 @@ config.json
 .coverage
 backend/tests/private/*
 .venv/
+frontend/node_modules/
+frontend/dist/
+.kilo/
