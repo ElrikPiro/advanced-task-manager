@@ -2,7 +2,7 @@
 
 ## Overview
 
-A Python-based task management application with multiple interfaces (Telegram bot, command line, and HTTP REST API) that helps users manage, schedule, and track tasks efficiently.
+A Python-based task management application with multiple interfaces (Telegram bot, command line, and REST API) that helps users manage, schedule, and track tasks efficiently.
 
 ### Architecture Overview
 
@@ -11,7 +11,7 @@ graph TB
     subgraph "User Interfaces"
         A[Telegram Bot]
         B[Command Line Shell]
-        C[HTTP REST API]
+        C[REST API]
         M[React Web Frontend]
     end
 
@@ -52,7 +52,7 @@ graph TB
 | Feature | Description |
 |---------|-------------|
 | **Multiple Storage Modes** | JSON file storage or Markdown vault (Obsidian/Logseq compatible) |
-| **Multiple Interfaces** | Telegram bot, command-line shell, or HTTP REST API |
+| **Multiple Interfaces** | Telegram bot, command-line shell, or REST API |
 | **Task Scheduling** | Heuristic-based task prioritization with automatic splitting |
 | **Categories/Contexts** | Organize tasks by context (indoor, outdoor, workstation, etc.) |
 | **Statistics Tracking** | Track work done and productivity metrics |
@@ -142,8 +142,8 @@ Each task contains:
 | JSON file (cmd) | JSON file | Command line | 2 |
 | JSON file (telegram) | JSON file | Telegram bot | 3 |
 | Obsidian (telegram) | Markdown vault | Telegram bot | 4 |
-| JSON file (HTTP) | JSON file | REST API | 5 |
-| Obsidian (HTTP) | Markdown vault | REST API | 6 |
+| JSON file (API) | JSON file | REST API | 5 |
+| Obsidian (API) | Markdown vault | REST API | 6 |
 
 ## Heuristics for Task Prioritization
 
@@ -168,7 +168,7 @@ The current frontend integration keeps backend behavior unchanged and uses only 
 
 ### React Frontend
 
-The `frontend/` application consumes the HTTP API with a typed client layer:
+The `frontend/` application consumes the API with a typed client layer:
 - Handles bearer authentication and backend timeout/error mapping.
 - Supports mixed backend payloads (JSON and plain text fallback).
 - Uses a Vite `/api` development proxy to avoid backend CORS changes.
@@ -189,3 +189,7 @@ Tracks work done on tasks, calculates productivity metrics, and provides statist
 ### Dependency Injection
 
 The application uses `dependency-injector` to manage component lifecycle and dependencies. See `backend/src/containers/TelegramReportingServiceContainer.py` for the full container configuration.
+
+## Transport scope for extension integration
+
+HTTPS support for the extension integration is pending the future SDD-002. This architecture document does not declare HTTP transport support or claim that the future HTTPS integration is implemented. Existing class and configuration names are code identifiers. Coexistence of destructive notification consumers is also reserved for SDD-002.

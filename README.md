@@ -18,15 +18,15 @@ The first time the application is running it will ask you a few questions about 
 - **Markdown vault** : The application will scan a given directory and subdirectories for markdown files and query for tasks in them.
 - **cmd** : Means that the application will interact with the user by using a command console.
 - **telegram** : Means that the application will interact with the user by using a telegram bot. (Bot credentials should be provided)
-- **HTTP** : Means that the application will interact with the user via an HTTP REST API interface. (HTTP server configuration should be provided)
+- **API** : Means that the application will interact with the user via a REST API interface. Server configuration should be provided; transport support for the extension integration is pending SDD-002.
 
 Available combinations:
 1. **Obsidian (cmd)** - Markdown vault with command line interface
 2. **JSON file (cmd)** - JSON storage with command line interface
 3. **JSON file (telegram)** - JSON storage with Telegram bot interface
 4. **Obsidian (telegram)** - Markdown vault with Telegram bot interface
-5. **JSON file (HTTP)** - JSON storage with HTTP REST API interface
-6. **Obsidian (HTTP)** - Markdown vault with HTTP REST API interface
+5. **JSON file (API)** - JSON storage with REST API interface
+6. **Obsidian (API)** - Markdown vault with REST API interface
 
 Note: by now Markdown vault mode will only show tasks that have the following strings that start with '- [ ]' and contain '[track:: (category)]', '[start:: (date in YYYY-MM-DD format)]' and '[due:: (date in YYYY-MM-DD format)]'. It is projected to add some configurability on these matters to ease up it's use.
 
@@ -40,15 +40,15 @@ If a telegram mode is selected, it will ask for a telegram bot token, if you don
 
 It will also ask you for a telegram chat Id, you can get it by following this tutorial: https://www.wikihow.com/Know-Chat-ID-on-Telegram-on-Android
 
-#### HTTP credentials
+#### API credentials
 
-If an HTTP mode is selected, you will need to provide:
-- **HTTP server URL** - The IP address or hostname for the HTTP server to bind to (default: 0.0.0.0)
-- **HTTP server port** - The port number for the HTTP server (default: 8080)
-- **HTTP authentication token** - A secure token that clients must provide in the Authorization header
-- **HTTP chat ID** - A user identifier for the HTTP session (default: 1)
+If an API mode is selected, you will need to provide:
+- **Server bind address** - The IP address or hostname for the server to bind to (default: 0.0.0.0)
+- **Server port** - The port number for the server (default: 8080)
+- **Authentication token** - A secure token that clients must provide in the Authorization header
+- **Session chat ID** - A user identifier for the API session (default: 1)
 
-The HTTP API requires HTTPS connections and Bearer token authentication. All requests must include `Authorization: Bearer <your-token>` in the header.
+The API uses Bearer token authentication. All requests must include `Authorization: Bearer <your-token>` in the header. HTTPS support for the extension integration is pending the future SDD-002; this guide does not declare HTTP transport support or claim that the future HTTPS integration is implemented.
 
 #### Markdown vault directory
 
@@ -67,12 +67,12 @@ run `python backend.py` in the backend folder
 
 ## Web Frontend (React + TypeScript)
 
-The project now includes a browser frontend in `frontend/` that connects to the HTTP API mode.
+The project now includes a browser frontend in `frontend/` that connects to the API mode.
 
 ### Frontend prerequisites
 
 - Node.js 20+
-- Backend configured in HTTP mode (`APP_MODE` 5 or 6)
+- Backend configured in API mode (`APP_MODE` 5 or 6)
 
 ### Run frontend in development
 
@@ -82,11 +82,11 @@ npm install
 npm run dev
 ```
 
-### Run backend in HTTP mode
+### Run backend in API mode
 
 Set `APP_MODE` in `config.json` to one of:
-- `5` (JSON file + HTTP)
-- `6` (Obsidian + HTTP)
+- `5` (JSON file + API)
+- `6` (Obsidian + API)
 
 Then start backend:
 
@@ -94,21 +94,17 @@ Then start backend:
 make run
 ```
 
-Default backend HTTP target is `http://127.0.0.1:8080`.
+Configure the backend endpoint for your installation. Transport support for the extension integration will be defined in the future SDD-002.
 
 Open `http://localhost:5173` and configure:
 - **Backend URL** (default `/api`, proxied by Vite)
 - **Bearer token** (from `HTTP_TOKEN` in your `config.json`)
 
-By default, Vite proxies `/api/*` to `http://127.0.0.1:8080/*` using `GET` passthrough.
+In development, Vite proxies `/api/*` to the configured backend target using `GET` passthrough.
 This keeps requests same-origin in development so the browser does not need CORS preflight handling.
 If a cross-origin absolute URL is entered in the frontend, the client automatically routes through `/api` and sends the selected target to the Vite proxy.
-This allows testing arbitrary remote HTTP backends (for example `http://82.34.78.15:8081`) without changing backend code.
-To point to another backend host in development, set:
-
-```bash
-ATM_BACKEND_TARGET=http://your-backend-host:8080 npm run dev
-```
+HTTPS support for the extension integration remains pending SDD-002; no remote transport support is declared here.
+Use `ATM_BACKEND_TARGET` to select a configured backend endpoint in development.
 
 The frontend provides:
 - Task list and task details
@@ -126,7 +122,7 @@ npm run build
 
 ### Frontend caveats
 
-- In HTTP mode, `/export` is currently not implemented in the backend wrapper and is intentionally not exposed as a file download action.
+- In API mode, `/export` is currently not implemented in the backend wrapper and is intentionally not exposed as a file download action.
 - Backend command responses can be JSON or plain text; the frontend handles both.
 
 ## Usage (Win64 Binaries)
@@ -209,7 +205,7 @@ config.json
 }
 ```
 
-##### HTTP Mode JSON example
+##### API mode JSON example
 config.json
 ```json
 {
