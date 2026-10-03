@@ -192,4 +192,4 @@ The application uses `dependency-injector` to manage component lifecycle and dep
 
 ## Transport scope for extension integration
 
-HTTPS support for the extension integration is pending the future SDD-002. This architecture document does not declare HTTP transport support or claim that the future HTTPS integration is implemented. Existing class and configuration names are code identifiers. Coexistence of destructive notification consumers is also reserved for SDD-002.
+HTTPS support for the extension integration is pending implementation. Automatic coordination between destructive notification consumers is also pending. Until it is available, clients sharing a backend must ensure that only one consumer drains the notification queue.

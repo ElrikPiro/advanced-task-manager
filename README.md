@@ -18,7 +18,7 @@ The first time the application is running it will ask you a few questions about 
 - **Markdown vault** : The application will scan a given directory and subdirectories for markdown files and query for tasks in them.
 - **cmd** : Means that the application will interact with the user by using a command console.
 - **telegram** : Means that the application will interact with the user by using a telegram bot. (Bot credentials should be provided)
-- **API** : Means that the application will interact with the user via a REST API interface. Server configuration should be provided; transport support for the extension integration is pending SDD-002.
+- **API** : Means that the application will interact with the user via a REST API interface. Server configuration should be provided.
 
 Available combinations:
 1. **Obsidian (cmd)** - Markdown vault with command line interface
@@ -48,7 +48,7 @@ If an API mode is selected, you will need to provide:
 - **Authentication token** - A secure token that clients must provide in the Authorization header
 - **Session chat ID** - A user identifier for the API session (default: 1)
 
-The API uses Bearer token authentication. All requests must include `Authorization: Bearer <your-token>` in the header. HTTPS support for the extension integration is pending the future SDD-002; this guide does not declare HTTP transport support or claim that the future HTTPS integration is implemented.
+The API uses Bearer token authentication. All requests must include `Authorization: Bearer <your-token>` in the header. HTTPS support for the extension integration is pending implementation.
 
 #### Markdown vault directory
 
@@ -94,7 +94,7 @@ Then start backend:
 make run
 ```
 
-Configure the backend endpoint for your installation. Transport support for the extension integration will be defined in the future SDD-002.
+Configure the backend endpoint for your installation.
 
 Open `http://localhost:5173` and configure:
 - **Backend URL** (default `/api`, proxied by Vite)
@@ -103,7 +103,6 @@ Open `http://localhost:5173` and configure:
 In development, Vite proxies `/api/*` to the configured backend target using `GET` passthrough.
 This keeps requests same-origin in development so the browser does not need CORS preflight handling.
 If a cross-origin absolute URL is entered in the frontend, the client automatically routes through `/api` and sends the selected target to the Vite proxy.
-HTTPS support for the extension integration remains pending SDD-002; no remote transport support is declared here.
 Use `ATM_BACKEND_TARGET` to select a configured backend endpoint in development.
 
 The frontend provides:
