@@ -3,6 +3,7 @@ import unittest
 from typing import List
 from unittest.mock import MagicMock
 
+from src.AtomicFileStore import AtomicWriteError
 from src.TelegramTaskListManager import TelegramTaskListManager
 from src.algorithms.EdfAlgorithm import EdfAlgorithm
 from src.algorithms.ShortestJobAlgorithm import ShortestJobAlgorithm
@@ -55,7 +56,8 @@ class MemoryTaskProvider:
         if self.save_error is not None:
             raise self.save_error
         if self.fail_on_save_number == len(self.saved):
-            raise OSError("injected persistence failure")
+            cause = OSError("injected persistence failure")
+            raise AtomicWriteError("memory/tasks.json", "file_fsync", "none", False, cause)
         for index, current in enumerate(self.tasks):
             if current.getTaskUID() == task.getTaskUID():
                 self.tasks[index] = copy.deepcopy(task)
@@ -83,6 +85,11 @@ class MemoryTaskJsonProvider:
 
     def saveJson(self, data: dict) -> None:
         self.data = copy.deepcopy(data)
+
+    def updateJson(self, updater) -> dict:
+        updated = updater(copy.deepcopy(self.data))
+        self.data = copy.deepcopy(updated)
+        return copy.deepcopy(self.data)
 
     def discover(self) -> dict:
         return self.getJson()

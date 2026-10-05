@@ -36,6 +36,10 @@ Task IDs are opaque strings stored with each task: JSON records use `id`, and Ma
 
 The backend does not provide persistent, non-destructive notification history. HTTPS is not enforced by the backend; do not send the Bearer token over an untrusted plain-HTTP connection.
 
+### File save behavior
+
+Task data, project files, and work statistics are saved one file at a time through a temporary file in the same directory, followed by an atomic replacement. Readers see the complete previous file or the complete replacement. If a write fails before replacement, that file is known to be unchanged; if durability fails after replacement, the saved state may be uncertain. Operations that touch several files stop at the first failure and report the confirmed changes for review. They do not roll back earlier files or retry automatically. External editors can still change a file between the backend's comparison and replacement.
+
 Note: by now Markdown vault mode will only show tasks that have the following strings that start with '- [ ]' and contain '[track:: (category)]', '[start:: (date in YYYY-MM-DD format)]' and '[due:: (date in YYYY-MM-DD format)]'. It is projected to add some configurability on these matters to ease up it's use.
 
 #### Data files directory

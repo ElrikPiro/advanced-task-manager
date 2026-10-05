@@ -20,6 +20,15 @@ class TestObsidianVaultTaskJsonProvider(unittest.TestCase):
         )
         self.provider = ObsidianVaultTaskJsonProvider(self.mock_file_broker, self.policies)
 
+        def update_vault_lines(registry, path, updater):
+            current = list(self.mock_file_broker.getVaultFileLines(registry, path))
+            updated = updater(current)
+            self.mock_file_broker.writeVaultFileLines(registry, path, list(updated))
+            self.mock_file_broker.getVaultFileLines.return_value = list(updated)
+            return list(updated)
+
+        self.mock_file_broker.updateVaultFileLines.side_effect = update_vault_lines
+
     def test_empty_vault_returns_empty_task_and_project_lists(self):
         self.mock_file_broker.getVaultFiles.return_value = []
         result = self.provider.getJson()
@@ -72,6 +81,7 @@ class TestObsidianVaultTaskJsonProvider(unittest.TestCase):
         self.assertEqual(result["tasks"][0]["track"], "work")
         self.assertIn("Define next action", "".join(contents["project.md"]))
         self.assertIn(f"[id::{fallback_task_id('Define next action', 'project.md', 4)}]", contents["project.md"][4])
+        self.mock_file_broker.updateVaultFileLines.assert_called_once()
         self.mock_file_broker.writeVaultFileLines.assert_called_once()
 
     def test_discover_rejects_a_generated_identifier_already_in_the_vault(self):
@@ -87,6 +97,7 @@ class TestObsidianVaultTaskJsonProvider(unittest.TestCase):
         with self.assertRaises(AmbiguousTaskIdentityError):
             self.provider.discover()
 
+        self.mock_file_broker.updateVaultFileLines.assert_called_once()
         self.mock_file_broker.writeVaultFileLines.assert_not_called()
 
     def test_process_task_with_metadata(self):

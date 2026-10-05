@@ -2,9 +2,11 @@
 
 import copy
 import datetime
+import json
 import math
-from typing import Any, Mapping
+from typing import Any, Literal, Mapping
 
+from src.AtomicFileStore import AtomicWriteError
 from src.Interfaces.ITaskModel import ITaskModel
 from src.Interfaces.ITaskProvider import ITaskProvider
 from src.TelegramTaskListManager import TelegramTaskListManager
@@ -47,6 +49,17 @@ class TaskApplicationService:
         "calm",
         "raised",
         "waited",
+    }
+    _PROVIDER_FIELDS_BY_EDIT_FIELD = {
+        "description": "description",
+        "context": "context",
+        "start": "start",
+        "due": "due",
+        "severity": "severity",
+        "total_cost": "totalCost",
+        "calm": "calm",
+        "raised": "raised",
+        "waited": "waited",
     }
 
     def __init__(
@@ -174,6 +187,7 @@ class TaskApplicationService:
         candidate = copy.deepcopy(task)
         try:
             self._apply_changes(candidate, prepared)
+            self._mark_requested_task_fields(candidate, prepared)
             self._assert_task_identity(candidate, resolved_id)
             self._save_task(candidate, expected_id=resolved_id)
         except DomainError:
@@ -361,11 +375,27 @@ class TaskApplicationService:
         except DomainError:
             raise
         except Exception as error:
-            raise OperationFailedError("The task could not be saved", effects_state="unknown") from error
+            raise OperationFailedError(
+                "The task could not be saved",
+                effects_state="unknown",
+                details={"resource": "task", "failed_id": task_id},
+            ) from error
         try:
             self._statistics_service.doWork(now.datetime_representation.date(), duration, task)
         except Exception as error:
-            raise OperationFailedError("Task work was saved but statistics failed", effects_state="partial") from error
+            write_state = getattr(error, "effects_state", None)
+            details = self._persistence_error_details(error, "statistics")
+            details["saved_count"] = "1"
+            details["saved_ids"] = json.dumps([task_id], ensure_ascii=False)
+            details["failed_resource"] = "statistics"
+            operation_state: Literal["partial", "unknown"] = (
+                "partial" if write_state == "none" else "unknown"
+            )
+            raise OperationFailedError(
+                "Task work was saved but statistics could not be confirmed",
+                effects_state=operation_state,
+                details=details,
+            ) from error
         return OperationResult("record-work", target, value=task, affected_ids=(target.id or "",))
 
     def _snooze_task(self, target: OperationTarget, parameters: Mapping[str, Any]) -> OperationResult:
@@ -427,16 +457,24 @@ class TaskApplicationService:
                 self._assert_task_identity(task, expected_id)
                 self._save_task(task, expected_id=expected_id)
             except DomainError as error:
-                if saved_ids:
-                    error.details.setdefault("saved_count", str(len(saved_ids)))
-                    error.effects_state = "partial"
+                self._attach_sequential_effects(error, saved_ids, expected_id)
                 raise
             except Exception as error:
-                effects = "partial" if saved_ids else "unknown"
+                error_details = self._persistence_error_details(error, "task")
+                error_details["failed_id"] = expected_id
+                state = getattr(error, "effects_state", None)
+                effects: Literal["none", "partial", "unknown"] = (
+                    "none" if state == "none" else "unknown"
+                )
+                if saved_ids and effects == "none":
+                    effects = "partial"
+                self._attach_saved_ids(error_details, saved_ids)
+                if effects == "unknown":
+                    error_details["uncertain_id"] = expected_id
                 raise OperationFailedError(
                     "The operation could not save every affected task",
                     effects_state=effects,
-                    details={"saved_count": str(len(saved_ids))},
+                    details=error_details,
                 ) from error
             saved_ids.append(expected_id)
         return OperationResult(operation_type, target, value=value, affected_ids=tuple(saved_ids))
@@ -446,15 +484,106 @@ class TaskApplicationService:
         self._assert_task_identity(task, expected_id)
         try:
             self._task_provider.saveTask(task)
+        except AtomicWriteError as error:
+            details = self._persistence_error_details(error, "task")
+            details["failed_id"] = expected_id
+            if error.effects_state == "unknown":
+                details["uncertain_id"] = expected_id
+            raise OperationFailedError(
+                "The task could not be saved",
+                effects_state=error.effects_state,
+                details=details,
+            ) from error
         except InvalidTaskIdentityError as error:
-            raise InvalidResourceDataError("Task data declares an invalid identifier") from error
+            raise InvalidResourceDataError(
+                "Task data declares an invalid identifier",
+                effects_state=self._identity_write_effects_state(error),
+                details=self._identity_write_details(error, expected_id),
+            ) from error
         except AmbiguousTaskIdentityError as error:
-            raise AmbiguousResourceError("More than one task matches the requested identifier") from error
+            raise AmbiguousResourceError(
+                "More than one task matches the requested identifier",
+                effects_state=self._identity_write_effects_state(error),
+                details=self._identity_write_details(error, expected_id),
+            ) from error
         except MissingTaskIdentityError as error:
-            raise ResourceNotFoundError("The task no longer matches its resolved identifier") from error
+            raise ResourceNotFoundError(
+                "The task no longer matches its resolved identifier",
+                effects_state=self._identity_write_effects_state(error),
+                details=self._identity_write_details(error, expected_id),
+            ) from error
         except DomainError:
             raise
-        self._assert_task_identity(task, expected_id)
+        except Exception as error:
+            write_state = getattr(error, "effects_state", None)
+            effects: Literal["none", "unknown"] = (
+                "none" if write_state == "none" else "unknown"
+            )
+            details = self._persistence_error_details(error, "task")
+            details["failed_id"] = expected_id
+            if effects == "unknown":
+                details["uncertain_id"] = expected_id
+            raise OperationFailedError(
+                "The task could not be saved",
+                effects_state=effects,
+                details=details,
+            ) from error
+        try:
+            self._assert_task_identity(task, expected_id)
+        except DomainError as error:
+            raise OperationFailedError(
+                "The task was saved but its identity could not be confirmed",
+                effects_state="unknown",
+                details={"resource": "task", "failed_id": expected_id, "uncertain_id": expected_id},
+            ) from error
+
+    @staticmethod
+    def _persistence_error_details(error: Exception, resource: str) -> dict[str, str]:
+        """Expose safe write-outcome metadata without leaking local file paths."""
+        details = {"resource": resource}
+        phase = getattr(error, "phase", None)
+        if isinstance(phase, str):
+            details["write_phase"] = phase
+        if isinstance(error, AtomicWriteError):
+            replaced = error.replaced
+            details["write_replaced"] = (
+                "true" if replaced is True else "false" if replaced is False else "unknown"
+            )
+        return details
+
+    @staticmethod
+    def _identity_write_effects_state(error: Exception) -> Literal["none", "unknown"]:
+        """Treat identity failures as no-write unless a provider marks a post-commit uncertainty."""
+        return "unknown" if getattr(error, "effects_state", None) == "unknown" else "none"
+
+    @classmethod
+    def _identity_write_details(cls, error: Exception, task_id: str) -> dict[str, str]:
+        details = {"resource": "task", "failed_id": task_id}
+        if cls._identity_write_effects_state(error) == "unknown":
+            details["uncertain_id"] = task_id
+        return details
+
+    @staticmethod
+    def _attach_saved_ids(details: dict[str, str], saved_ids: list[str]) -> None:
+        details["saved_count"] = str(len(saved_ids))
+        details["saved_ids"] = json.dumps(saved_ids, ensure_ascii=False)
+
+    @classmethod
+    def _attach_sequential_effects(
+        cls,
+        error: DomainError,
+        saved_ids: list[str],
+        failed_id: str,
+    ) -> None:
+        """Keep confirmed writes visible while preserving uncertain last-write outcomes."""
+        cls._attach_saved_ids(error.details, saved_ids)
+        error.details.setdefault("failed_id", failed_id)
+        if error.effects_state == "unknown":
+            error.details.setdefault("uncertain_id", failed_id)
+        elif saved_ids:
+            error.effects_state = "partial"
+        elif error.effects_state is None:
+            error.effects_state = "none"
 
     @staticmethod
     def _raise_task_identity_error(error: Exception) -> None:
@@ -540,8 +669,12 @@ class TaskApplicationService:
         amount = self._as_time_amount(delta, "effort_delta")
         candidate = copy.deepcopy(original)
         self._apply_changes(candidate, prepared)
+        requested_provider_fields = self._mark_requested_task_fields(candidate, prepared)
         candidate.setInvestedEffort(candidate.getInvestedEffort() + amount)
         candidate.setTotalCost(candidate.getTotalCost() - amount)
+        if amount.as_pomodoros() != 0:
+            requested_provider_fields.update(("investedEffort", "totalCost"))
+            setattr(candidate, "_task_provider_forced_fields", requested_provider_fields)
         self._assert_task_identity(candidate, resolved_id)
         try:
             self._save_task(candidate, expected_id=resolved_id)
@@ -572,6 +705,24 @@ class TaskApplicationService:
                 task.setEventRaised(value)
             elif field == "waited":
                 task.setEventWaited(value)
+
+    @classmethod
+    def _mark_requested_task_fields(
+        cls,
+        task: ITaskModel,
+        changes: Mapping[str, Any],
+    ) -> set[str]:
+        """Keep explicit edits authoritative even when equal to their read baseline."""
+        requested = {
+            cls._PROVIDER_FIELDS_BY_EDIT_FIELD[field]
+            for field in changes
+            if field in cls._PROVIDER_FIELDS_BY_EDIT_FIELD
+        }
+        previous: Any = getattr(task, "_task_provider_forced_fields", set())
+        if isinstance(previous, (set, frozenset)):
+            requested.update(previous)
+        setattr(task, "_task_provider_forced_fields", requested)
+        return requested
 
     def _validate_context(self, context: Any) -> None:
         if not isinstance(context, str) or not any(

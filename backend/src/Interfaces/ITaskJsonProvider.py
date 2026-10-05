@@ -1,6 +1,7 @@
 # class interface
 
 from abc import ABC, abstractmethod
+from typing import Callable
 from ..Utils import TaskJsonType
 
 VALID_PROJECT_STATUS = [
@@ -34,3 +35,15 @@ class ITaskJsonProvider(ABC):
     @abstractmethod
     def saveJson(self, json: TaskJsonType) -> None:
         pass
+
+    def updateJson(self, updater: Callable[[TaskJsonType], TaskJsonType]) -> TaskJsonType:
+        """Atomically update the current document and return its committed value.
+
+        Providers that cannot safely mutate their backing store leave this
+        operation unsupported instead of emulating it with a stale snapshot.
+        """
+        raise NotImplementedError("This task JSON provider does not support atomic updates")
+
+    def parseTaskFile(self, relative_path: str, lines: list[str]) -> list[dict[str, str]]:
+        """Parse task rows from supplied content without reading or writing files."""
+        raise NotImplementedError("This task JSON provider cannot parse standalone Markdown files")

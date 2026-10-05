@@ -1,5 +1,6 @@
 from abc import ABC, abstractmethod
 from enum import Enum
+from typing import Any, Callable
 from ..Utils import FileContentJson, FileContentString, StatisticsFileContentJson
 
 
@@ -36,6 +37,20 @@ class IFileBroker(ABC):
         pass
 
     @abstractmethod
+    def updateFileContent(self, fileRegistry: FileRegistry, updater: Callable[[str], str]) -> str:
+        """Update latest text and return saved text; updater must be side-effect free."""
+        pass
+
+    @abstractmethod
+    def updateFileContentJson(
+        self,
+        fileRegistry: FileRegistry,
+        updater: Callable[[dict[str, Any]], dict[str, Any]],
+    ) -> dict[str, Any]:
+        """Update latest JSON and return saved data; updater must be side-effect free."""
+        pass
+
+    @abstractmethod
     def initializeFileContent(self, fileRegistry: FileRegistry) -> None:
         """Create a registered file with its default content if it is absent.
 
@@ -58,6 +73,26 @@ class IFileBroker(ABC):
 
     @abstractmethod
     def writeVaultFileLines(self, vaultRegistry: VaultRegistry, relativePath: str, lines: list[str]) -> None:
+        pass
+
+    @abstractmethod
+    def updateVaultFileLines(
+        self,
+        vaultRegistry: VaultRegistry,
+        relativePath: str,
+        updater: Callable[[list[str]], list[str]],
+    ) -> list[str]:
+        """Update latest lines and return saved lines; updater must be side-effect free."""
+        pass
+
+    @abstractmethod
+    def createVaultFileLinesIfAbsent(
+        self,
+        vaultRegistry: VaultRegistry,
+        relativePath: str,
+        lines: list[str],
+    ) -> bool:
+        """Create a vault file without replacing an existing note."""
         pass
 
     @abstractmethod

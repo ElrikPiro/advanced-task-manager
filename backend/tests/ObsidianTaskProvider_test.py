@@ -9,6 +9,9 @@ from src.taskproviders.ObsidianTaskProvider import ObsidianTaskProvider
 from src.Interfaces.ITaskJsonProvider import ITaskJsonProvider
 from src.Interfaces.IFileBroker import IFileBroker
 from src.taskmodels.ObsidianTaskModel import ObsidianTaskModel
+from src.taskjsonproviders.ObsidianVaultTaskJsonProvider import ObsidianVaultTaskJsonProvider
+from src.Utils import TaskDiscoveryPolicies
+from src.Interfaces.IFileBroker import FileRegistry
 
 
 class TestObsidianTaskProvider(unittest.TestCase):
@@ -16,6 +19,31 @@ class TestObsidianTaskProvider(unittest.TestCase):
     def setUp(self):
         self.mockTaskJsonProvider = MagicMock(spec=ITaskJsonProvider)
         self.mockFileBroker = MagicMock(spec=IFileBroker)
+        policies = TaskDiscoveryPolicies(
+            context_missing_policy="1",
+            date_missing_policy="1",
+            default_context="inbox",
+            categories_prefixes=["work", "inbox"],
+        )
+        parser = ObsidianVaultTaskJsonProvider(self.mockFileBroker, policies)
+        self.mockTaskJsonProvider.parseTaskFile.side_effect = parser.parseTaskFile
+
+        def update_vault_lines(registry, path, updater):
+            current = list(self.mockFileBroker.getVaultFileLines(registry, path))
+            updated = updater(current)
+            self.mockFileBroker.writeVaultFileLines(registry, path, list(updated))
+            self.mockFileBroker.getVaultFileLines.return_value = list(updated)
+            return list(updated)
+
+        def update_file_content(registry, updater):
+            current = self.mockFileBroker.readFileContent(registry)
+            updated = updater(current)
+            self.mockFileBroker.writeFileContent(registry, updated)
+            self.mockFileBroker.readFileContent.return_value = updated
+            return updated
+
+        self.mockFileBroker.updateVaultFileLines.side_effect = update_vault_lines
+        self.mockFileBroker.updateFileContent.side_effect = update_file_content
         self.provider = ObsidianTaskProvider(self.mockTaskJsonProvider, self.mockFileBroker, True)
 
     def tearDown(self):
@@ -93,7 +121,7 @@ class TestObsidianTaskProvider(unittest.TestCase):
 
         self.provider.saveTask(task)
 
-        self.mockFileBroker.writeVaultFileLines.assert_called_once()
+        self.mockFileBroker.updateVaultFileLines.assert_called_once()
         args = self.mockFileBroker.writeVaultFileLines.call_args.args
         saved_lines = args[2]
         self.assertEqual(saved_lines[:3], original_lines[:3])
@@ -112,6 +140,7 @@ class TestObsidianTaskProvider(unittest.TestCase):
 
         self.provider.saveTask(task)
 
+        self.mockFileBroker.updateFileContent.assert_called_once_with(FileRegistry.OBSIDIAN_TASKS_MD, unittest.mock.ANY)
         saved_content = self.mockFileBroker.writeFileContent.call_args.args[1]
         self.assertTrue(saved_content.startswith(original))
         self.assertIn(f"[id:: {expected_id}]", saved_content)

@@ -12,6 +12,16 @@ class TestObsidianProjectManager(unittest.TestCase):
         self.mock_task_provider = MagicMock()
         self.mock_file_broker = MagicMock()
 
+        def update_vault_lines(registry, path, updater):
+            current = list(self.mock_file_broker.getVaultFileLines(registry, path))
+            updated = updater(current)
+            self.mock_file_broker.writeVaultFileLines(registry, path, list(updated))
+            self.mock_file_broker.getVaultFileLines.return_value = list(updated)
+            return list(updated)
+
+        self.mock_file_broker.updateVaultFileLines.side_effect = update_vault_lines
+        self.mock_file_broker.createVaultFileLinesIfAbsent.return_value = True
+
         # Create instance of ObsidianProjectManager with mocked dependencies
         self.project_manager = ObsidianProjectManager(
             self.mock_task_provider,
@@ -101,13 +111,16 @@ class TestObsidianProjectManager(unittest.TestCase):
             {"name": "Project 1", "status": "open", "path": "project1.md"}
         ]
         self.mock_task_provider.getTaskListAttribute.return_value = mock_projects
-        self.mock_file_broker.getVaultFileLines.return_value = ["Line 1\n", "Line 2\n", "Line 3\n"]
+        self.mock_file_broker.getVaultFileLines.return_value = [
+            "---\n", "project: open\n", "---\n", "Line 1\n", "Line 2\n", "Line 3\n"
+        ]
 
         # Test edit_project_line with valid inputs
-        result = self.project_manager._edit_project_line(["Project_1", "2", "Updated line 2"])
+        result = self.project_manager._edit_project_line(["Project_1", "5", "Updated line 2"])
 
         # Verify the line was updated correctly
-        expected_lines = ["Line 1\n", "Updated line 2\n", "Line 3\n"]
+        expected_lines = ["---\n", "project: open\n", "---\n", "Line 1\n", "Updated line 2\n", "Line 3\n"]
+        self.mock_file_broker.updateVaultFileLines.assert_called_once()
         self.mock_file_broker.writeVaultFileLines.assert_called_once_with(
             VaultRegistry.OBSIDIAN, "project1.md", expected_lines
         )
@@ -119,17 +132,20 @@ class TestObsidianProjectManager(unittest.TestCase):
             {"name": "Project 1", "status": "open", "path": "project1.md"}
         ]
         self.mock_task_provider.getTaskListAttribute.return_value = mock_projects
-        self.mock_file_broker.getVaultFileLines.return_value = ["Line 1\n", "Line 3\n"]
+        self.mock_file_broker.getVaultFileLines.return_value = [
+            "---\n", "project: open\n", "---\n", "Line 1\n", "Line 3\n"
+        ]
 
         # Test add_project_line with valid inputs
-        result = self.project_manager._add_project_line(["Project_1", "2", "New line 2"])
+        result = self.project_manager._add_project_line(["Project_1", "5", "New line 2"])
 
         # Verify the line was added correctly
-        expected_lines = ["Line 1\n", "New line 2\n", "Line 3\n"]
+        expected_lines = ["---\n", "project: open\n", "---\n", "Line 1\n", "New line 2\n", "Line 3\n"]
+        self.mock_file_broker.updateVaultFileLines.assert_called_once()
         self.mock_file_broker.writeVaultFileLines.assert_called_once_with(
             VaultRegistry.OBSIDIAN, "project1.md", expected_lines
         )
-        self.assertIn("Line added at position 2", result)
+        self.assertIn("Line added at position 5", result)
 
     def test_remove_project_line_success(self):
         # Setup mock data
@@ -137,17 +153,20 @@ class TestObsidianProjectManager(unittest.TestCase):
             {"name": "Project 1", "status": "open", "path": "project1.md"}
         ]
         self.mock_task_provider.getTaskListAttribute.return_value = mock_projects
-        self.mock_file_broker.getVaultFileLines.return_value = ["Line 1\n", "Line 2\n", "Line 3\n"]
+        self.mock_file_broker.getVaultFileLines.return_value = [
+            "---\n", "project: open\n", "---\n", "Line 1\n", "Line 2\n", "Line 3\n"
+        ]
 
         # Test remove_project_line with valid inputs
-        result = self.project_manager._remove_project_line(["Project_1", "2"])
+        result = self.project_manager._remove_project_line(["Project_1", "5"])
 
         # Verify the line was removed correctly
-        expected_lines = ["Line 1\n", "Line 3\n"]
+        expected_lines = ["---\n", "project: open\n", "---\n", "Line 1\n", "Line 3\n"]
+        self.mock_file_broker.updateVaultFileLines.assert_called_once()
         self.mock_file_broker.writeVaultFileLines.assert_called_once_with(
             VaultRegistry.OBSIDIAN, "project1.md", expected_lines
         )
-        self.assertIn("Line 2 removed", result)
+        self.assertIn("Line 5 removed", result)
 
     def test_update_project_status_existing_status(self):
         # Setup mock data - project with existing status field in frontmatter
@@ -170,14 +189,26 @@ class TestObsidianProjectManager(unittest.TestCase):
         expected_lines = [
             "---\n",
             "title: Project 1\n",
-            "project: hold\n",
+            "project: on-hold\n",
             "---\n",
             "# Project 1\n"
         ]
+        self.mock_file_broker.updateVaultFileLines.assert_called_once()
         self.mock_file_broker.writeVaultFileLines.assert_called_once_with(
             VaultRegistry.OBSIDIAN, "project1.md", expected_lines
         )
         self.assertEqual("Project Project 1 is now hold", result)
+
+    def test_add_line_does_not_recreate_a_missing_project_file(self):
+        self.mock_task_provider.getTaskListAttribute.return_value = [
+            {"name": "Project 1", "status": "open", "path": "project1.md"}
+        ]
+        self.mock_file_broker.getVaultFileLines.return_value = []
+
+        with self.assertRaisesRegex(FileNotFoundError, "missing or empty"):
+            self.project_manager._add_project_line(["Project_1", "1", "New line"])
+
+        self.mock_file_broker.writeVaultFileLines.assert_not_called()
 
     def test_open_project_new_project(self):
         # Setup mock data (empty list = no projects found)
@@ -187,13 +218,23 @@ class TestObsidianProjectManager(unittest.TestCase):
         result = self.project_manager._open_project(["New_Project"])
 
         # Verify a new project file was created
-        self.mock_file_broker.writeVaultFileLines.assert_called_once()
-        call_args = self.mock_file_broker.writeVaultFileLines.call_args[0]
+        self.mock_file_broker.createVaultFileLinesIfAbsent.assert_called_once()
+        call_args = self.mock_file_broker.createVaultFileLinesIfAbsent.call_args[0]
         self.assertEqual(call_args[0], VaultRegistry.OBSIDIAN)
         self.assertEqual(call_args[1], "New Project.md")
         # Check that content contains frontmatter with project status
         self.assertTrue(any("project: open" in line for line in call_args[2]))
         self.assertEqual("Created new project: New Project", result)
+
+    def test_open_project_does_not_overwrite_an_existing_unlisted_note(self):
+        self.mock_task_provider.getTaskListAttribute.return_value = []
+        self.mock_file_broker.createVaultFileLinesIfAbsent.return_value = False
+
+        with self.assertRaisesRegex(FileExistsError, "already exists"):
+            self.project_manager._open_project(["New_Project"])
+
+        self.mock_file_broker.createVaultFileLinesIfAbsent.assert_called_once()
+        self.mock_file_broker.writeVaultFileLines.assert_not_called()
 
     def test_open_project_existing(self):
         # Setup mock for _update_project_status

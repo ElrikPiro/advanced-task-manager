@@ -1,7 +1,7 @@
 # class interface
 
 from copy import deepcopy
-from typing import List
+from typing import Any, Callable, List, cast
 
 from src.Utils import TaskJsonType
 
@@ -10,6 +10,12 @@ from ..Interfaces.ITaskJsonProvider import ITaskJsonProvider
 from ..Interfaces.IFileBroker import IFileBroker, FileRegistry
 from ..taskmodels.TaskIdentity import fallback_task_id, validate_task_id
 from ..taskproviders.TaskIdentityErrors import AmbiguousTaskIdentityError
+
+
+class ConfirmedTaskJsonRefreshError(RuntimeError):
+    """A JSON task update was confirmed but its returned data was unusable."""
+
+    effects_state = "unknown"
 
 
 class TaskJsonProvider(ITaskJsonProvider):
@@ -30,12 +36,30 @@ class TaskJsonProvider(ITaskJsonProvider):
 
     def discover(self) -> TaskJsonType:
         """Persist the default next action for every uncovered open project."""
-        taskJson = self.getJson()
-        original = deepcopy(taskJson)
-        reconciled = self.__injectOpenProjectTasks(taskJson)
-        if reconciled != original:
-            self.saveJson(reconciled)
-        return reconciled
+        today = str(TimePoint.today().as_int())
+        identity_path = self.fileBroker.getFilePath(FileRegistry.STANDALONE_TASKS_JSON)
+
+        def reconcile(current: TaskJsonType) -> TaskJsonType:
+            return self.__injectOpenProjectTasks(current, today, identity_path)
+
+        return self.updateJson(reconcile)
+
+    def updateJson(self, updater: Callable[[TaskJsonType], TaskJsonType]) -> TaskJsonType:
+        """Apply a pure mutation to the latest file contents under the broker lock."""
+        def validated_update(current: dict[str, Any]) -> dict[str, Any]:
+            candidate = updater(cast(TaskJsonType, deepcopy(current)))
+            self.__validateDeclaredTaskIds(candidate)
+            return cast(dict[str, Any], candidate)
+
+        committed = self.fileBroker.updateFileContentJson(
+            FileRegistry.STANDALONE_TASKS_JSON,
+            validated_update,
+        )
+        try:
+            self.__validateDeclaredTaskIds(cast(TaskJsonType, committed))
+        except Exception as error:
+            raise ConfirmedTaskJsonRefreshError("Confirmed task JSON could not be validated") from error
+        return cast(TaskJsonType, deepcopy(committed))
 
     def saveJson(self, json: TaskJsonType) -> None:
         self.__validateDeclaredTaskIds(json)
@@ -49,7 +73,12 @@ class TaskJsonProvider(ITaskJsonProvider):
             if isinstance(task, dict) and "id" in task:
                 validate_task_id(task["id"])
 
-    def __injectOpenProjectTasks(self, taskJson: TaskJsonType) -> TaskJsonType:
+    def __injectOpenProjectTasks(
+        self,
+        taskJson: TaskJsonType,
+        today: str,
+        identity_path: str,
+    ) -> TaskJsonType:
         """
         Queries the json to find projects without any task assigned and adds a task to the task list with that project assigned.
 
@@ -77,8 +106,8 @@ class TaskJsonProvider(ITaskJsonProvider):
                     "description": "Define next action",
                     "project": project["name"],
                     "context": "alert",
-                    "start": str(TimePoint.today().as_int()),
-                    "due": str(TimePoint.today().as_int()),
+                    "start": today,
+                    "due": today,
                     "severity": "1",
                     "totalCost": "1",
                     "investedEffort": "0",
@@ -87,13 +116,13 @@ class TaskJsonProvider(ITaskJsonProvider):
                 }
                 task_id = fallback_task_id(
                     task["description"],
-                    self.fileBroker.getFilePath(FileRegistry.STANDALONE_TASKS_JSON),
+                    identity_path,
                     len(tasks),
                 )
                 existing_ids = {
                     validate_task_id(record["id"]) if "id" in record else fallback_task_id(
                         record["description"],
-                        self.fileBroker.getFilePath(FileRegistry.STANDALONE_TASKS_JSON),
+                        identity_path,
                         index,
                     )
                     for index, record in enumerate(tasks)

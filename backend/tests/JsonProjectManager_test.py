@@ -1,5 +1,6 @@
 import unittest
 from unittest.mock import MagicMock
+from copy import deepcopy
 
 from src.JsonProjectManager import JsonProjectManager
 from src.Interfaces.IProjectManager import ProjectCommands
@@ -31,11 +32,20 @@ class TestJsonProjectManager(unittest.TestCase):
         ]
 
         self.test_json = {
-            "projects": self.test_projects
+            "projects": self.test_projects,
+            "external_metadata": {"owner": "external editor"},
         }
 
         # Configure mock
         self.mock_provider.getJson.return_value = self.test_json
+
+        def update_json(updater):
+            updated = updater(deepcopy(self.mock_provider.getJson()))
+            self.mock_provider.saveJson(deepcopy(updated))
+            self.mock_provider.getJson.return_value = deepcopy(updated)
+            return deepcopy(updated)
+
+        self.mock_provider.updateJson.side_effect = update_json
 
     def test_process_command_valid(self):
         """Test processing a valid command."""
@@ -106,52 +116,52 @@ class TestJsonProjectManager(unittest.TestCase):
         self.assertEqual(result, "Description updated for Project_1 successfully")
 
         # Verify the project's description was updated in the JSON
-        self.assertEqual(self.test_projects[0]["description"], "Updated description")
-        self.mock_provider.saveJson.assert_called_once_with(self.test_json)
+        self.assertEqual(self.mock_provider.getJson.return_value["projects"][0]["description"], "Updated description")
+        self.assertEqual(self.mock_provider.getJson.return_value["external_metadata"], {"owner": "external editor"})
+        self.mock_provider.updateJson.assert_called_once()
 
     def test_edit_project_description_not_exist(self):
         """Test editing the description of a non-existent project."""
-        result = self.project_manager._edit_project_description(["NonExistent", "Updated", "description"])
-        self.assertEqual(result, "Project NonExistent not found")
+        with self.assertRaisesRegex(LookupError, "Project NonExistent not found"):
+            self.project_manager._edit_project_description(["NonExistent", "Updated", "description"])
         self.mock_provider.saveJson.assert_not_called()
 
     def test_edit_project_description_no_args(self):
         """Test editing project description with insufficient arguments."""
         result = self.project_manager._edit_project_description(["Project_1"])
         self.assertEqual(result, "Format: edit project_name new_content")
-        self.mock_provider.saveJson.assert_not_called()
+        self.mock_provider.updateJson.assert_not_called()
 
     def test_update_project_status(self):
         """Test updating the status of an existing project."""
         result = self.project_manager._update_project_status("Project 1", "closed")
         self.assertEqual(result, "Project {project_name} status updated to {new_status}".format(
             project_name="Project 1", new_status="closed"))
-        self.assertEqual(self.test_projects[0]["status"], "closed")
-        self.mock_provider.saveJson.assert_called_once_with(self.test_json)
+        self.assertEqual(self.mock_provider.getJson.return_value["projects"][0]["status"], "closed")
+        self.assertEqual(self.mock_provider.getJson.return_value["external_metadata"], {"owner": "external editor"})
+        self.mock_provider.updateJson.assert_called_once()
 
     def test_update_project_status_not_exist(self):
         """Test updating the status of a non-existent project."""
-        result = self.project_manager._update_project_status("NonExistent", "closed")
-        self.assertEqual(result, "Project NonExistent not found")
+        with self.assertRaisesRegex(LookupError, "Project NonExistent not found"):
+            self.project_manager._update_project_status("NonExistent", "closed")
         self.mock_provider.saveJson.assert_not_called()
 
     def test_open_project_exist(self):
         """Test opening an existing project."""
-        # Mock the _update_project_status method
-        self.project_manager._update_project_status = MagicMock(return_value="Project status updated")
         result = self.project_manager._open_project(["Project 2"])
-        self.assertEqual(result, "Project status updated")
-        self.project_manager._update_project_status.assert_called_once_with("Project 2", "open")
+        self.assertEqual(result, "Project Project 2 is now open")
+        self.assertEqual(self.mock_provider.getJson.return_value["projects"][1]["status"], "open")
 
     def test_open_project_new(self):
         """Test creating a new project."""
         result = self.project_manager._open_project(["New_Project", "This", "is", "new"])
-        self.assertEqual(result, "Created new project: New Project")
+        self.assertEqual(result, "Project New Project is now open")
 
         # Verify the new project was added to the JSON
         new_project = {"name": "New Project", "description": "This is new", "status": "open"}
-        self.assertIn(new_project, self.test_json["projects"])
-        self.mock_provider.saveJson.assert_called_once_with(self.test_json)
+        self.assertIn(new_project, self.mock_provider.getJson.return_value["projects"])
+        self.mock_provider.updateJson.assert_called_once()
 
     def test_open_project_no_args(self):
         """Test opening a project without providing a name."""

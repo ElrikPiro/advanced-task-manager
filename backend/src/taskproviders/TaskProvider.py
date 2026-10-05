@@ -6,11 +6,23 @@ from ..Interfaces.ITaskJsonProvider import ITaskJsonProvider
 from ..Interfaces.IFileBroker import IFileBroker, FileRegistry
 from ..taskmodels.TaskModel import TaskModel
 from ..taskmodels.TaskIdentity import fallback_task_id, validate_task_id
-from .TaskIdentityErrors import AmbiguousTaskIdentityError, MissingTaskIdentityError
-from typing import Callable, List
+from .TaskIdentityErrors import AmbiguousTaskIdentityError, InvalidTaskIdentityError, MissingTaskIdentityError
+from typing import Any, Callable, List, cast
 import json
 from copy import deepcopy
 from src.Utils import TaskJsonType
+
+
+class ConfirmedTaskRefreshError(RuntimeError):
+    """A persisted task could not be materialized from the confirmed document."""
+
+    effects_state = "unknown"
+
+
+class TaskPrepareError(ValueError):
+    """The latest task record could not be materialized before publication."""
+
+    effects_state = "none"
 
 
 class TaskProvider(ITaskProvider):
@@ -104,7 +116,7 @@ class TaskProvider(ITaskProvider):
         else:
             task_id = validate_task_id(task_id)
 
-        return TaskModel(
+        task = TaskModel(
             index=index,
             description=dict_task["description"],
             context=dict_task["context"],
@@ -121,6 +133,8 @@ class TaskProvider(ITaskProvider):
             task_id=task_id,
             identity_path=identity_path,
         )
+        setattr(task, "_task_provider_baseline", self.__getTaskSaveFields(task))
+        return task
 
     def __getIdentityPath(self) -> str:
         path = self.fileBroker.getFilePath(FileRegistry.STANDALONE_TASKS_JSON)
@@ -151,6 +165,25 @@ class TaskProvider(ITaskProvider):
         ]
         return matches
 
+    @staticmethod
+    def __getTaskSaveFields(task: ITaskModel) -> dict[str, str | None]:
+        get_raw_description = getattr(task, "getRawDescription", None)
+        description = get_raw_description() if callable(get_raw_description) else task.getDescription().split(" @ ")[0].strip()
+        return {
+            "description": description,
+            "context": task.getContext(),
+            "start": str(task.getStart().as_int()),
+            "due": str(task.getDue().as_int()),
+            "severity": str(task.getSeverity()),
+            "totalCost": str(task.getTotalCost().as_pomodoros()),
+            "investedEffort": str(task.getInvestedEffort().as_pomodoros()),
+            "status": task.getStatus(),
+            "calm": "True" if task.getCalm() else "False",
+            "project": task.getProject(),
+            "raised": task.getEventRaised(),
+            "waited": task.getEventWaited(),
+        }
+
     def getTaskListAttribute(self, string: str) -> list[dict[str, str]]:
         value = self.taskJsonProvider.getJson().get(string, [])
         if not isinstance(value, list):
@@ -167,66 +200,118 @@ class TaskProvider(ITaskProvider):
             task: The task to be saved.
         """
         task_id = validate_task_id(task.getTaskUID())
-        taskJson = deepcopy(self.taskJsonProvider.getJson())
-        task_records = self.__getTaskRecords(taskJson)
         identity_path = self.__getIdentityPath()
-        indexes = self.__resolveRecordIndexes(task_records, task_id, identity_path)
         pending_index = next(
             (index for index, reserved_id in self.__pendingNewTaskIds.items() if reserved_id == task_id),
             None,
         )
+        reserved_record = deepcopy(self.__pendingNewTasks[pending_index]) if pending_index is not None else None
 
-        if pending_index is not None and indexes:
-            raise AmbiguousTaskIdentityError("Task ID conflicts with a pending new task")
-        if len(indexes) > 1:
-            raise AmbiguousTaskIdentityError("Task ID resolves to multiple stored tasks")
-        if not indexes:
-            if pending_index is None or pending_index != len(task_records):
-                raise MissingTaskIdentityError("Task ID does not resolve to a stored task")
-            record = deepcopy(self.__pendingNewTasks[pending_index])
-            task_records.append(record)
-            index = pending_index
-        else:
-            index = indexes[0]
-            record = task_records[index]
-
-        get_raw_description = getattr(task, "getRawDescription", None)
-        description = get_raw_description() if callable(get_raw_description) else task.getDescription().split(" @ ")[0].strip()
-        updated_fields = {
-            "description": description,
-            "context": task.getContext(),
-            "start": str(task.getStart().as_int()),
-            "due": str(task.getDue().as_int()),
-            "severity": str(task.getSeverity()),
-            "totalCost": str(task.getTotalCost().as_pomodoros()),
-            "investedEffort": str(task.getInvestedEffort().as_pomodoros()),
-            "status": task.getStatus(),
-            "calm": "True" if task.getCalm() else "False",
-            "project": task.getProject(),
+        candidate_fields = self.__getTaskSaveFields(task)
+        baseline_fields = getattr(task, "_task_provider_baseline", None)
+        changed_fields = set(candidate_fields) if not isinstance(baseline_fields, dict) else {
+            key for key, value in candidate_fields.items() if baseline_fields.get(key) != value
         }
-        record.update(updated_fields)
-        record["id"] = task_id
+        forced_fields: Any = getattr(task, "_task_provider_forced_fields", set())
+        if isinstance(forced_fields, (set, frozenset, list, tuple)):
+            changed_fields.update(key for key in forced_fields if isinstance(key, str) and key in candidate_fields)
+        updated_fields = {
+            key: value
+            for key, value in candidate_fields.items()
+            if key in changed_fields and key not in ("raised", "waited")
+        }
 
-        raises = task.getEventRaised()
-        waits = task.getEventWaited()
-        if isinstance(raises, str):
-            record["raised"] = raises
-        else:
-            record.pop("raised", None)
-        if isinstance(waits, str):
-            record["waited"] = waits
-        else:
-            record.pop("waited", None)
-        taskJson["tasks"] = task_records
+        def prepare(current: TaskJsonType) -> TaskJsonType:
+            task_json = deepcopy(current)
+            task_records = self.__getTaskRecords(task_json)
+            indexes = self.__resolveRecordIndexes(task_records, task_id, identity_path)
 
+            if pending_index is not None and indexes:
+                raise AmbiguousTaskIdentityError("Task ID conflicts with a pending new task")
+            if len(indexes) > 1:
+                raise AmbiguousTaskIdentityError("Task ID resolves to multiple stored tasks")
+            if not indexes:
+                if pending_index is None or pending_index != len(task_records) or reserved_record is None:
+                    raise MissingTaskIdentityError("Task ID does not resolve to a stored task")
+                record = deepcopy(reserved_record)
+                task_records.append(record)
+                record_index = pending_index
+            else:
+                record = task_records[indexes[0]]
+                record_index = indexes[0]
+
+            record.update(cast(dict[str, str], updated_fields))
+            record["id"] = task_id
+            if "raised" in changed_fields:
+                if isinstance(candidate_fields["raised"], str):
+                    record["raised"] = candidate_fields["raised"]
+                else:
+                    record.pop("raised", None)
+            if "waited" in changed_fields:
+                if isinstance(candidate_fields["waited"], str):
+                    record["waited"] = candidate_fields["waited"]
+                else:
+                    record.pop("waited", None)
+            task_json["tasks"] = task_records
+            # Validate the complete model against the latest record before the
+            # atomic helper stages any bytes.
+            try:
+                self.createTaskFromDict(record, record_index, task_id, identity_path)
+            except InvalidTaskIdentityError:
+                raise
+            except Exception as error:
+                raise TaskPrepareError("Updated task data is invalid") from error
+            return task_json
+
+        committed = self.taskJsonProvider.updateJson(prepare)
         try:
-            self.taskJsonProvider.saveJson(taskJson)
-        except Exception:
-            self.discardPendingTaskReservations()
-            raise
-        self.dict_task_list = taskJson
-        self.__pendingNewTasks.pop(index, None)
-        self.__pendingNewTaskIds.pop(index, None)
+            committed_records = self.__getTaskRecords(committed)
+            committed_indexes = self.__resolveRecordIndexes(committed_records, task_id, identity_path)
+            if len(committed_indexes) != 1:
+                raise MissingTaskIdentityError("Task could not be uniquely resolved in its confirmed document")
+            refreshed = self.createTaskFromDict(
+                committed_records[committed_indexes[0]],
+                committed_indexes[0],
+                task_id,
+                identity_path,
+            )
+        except Exception as error:
+            raise ConfirmedTaskRefreshError("Saved task could not be refreshed from the confirmed document") from error
+        self.__copyTaskValues(refreshed, task)
+        self.dict_task_list = deepcopy(committed)
+        setattr(task, "_task_provider_forced_fields", set())
+        if pending_index is not None:
+            self.__pendingNewTasks.pop(pending_index, None)
+            self.__pendingNewTaskIds.pop(pending_index, None)
+
+    @staticmethod
+    def __copyTaskValues(source: ITaskModel, target: ITaskModel) -> None:
+        if isinstance(source, TaskModel) and isinstance(target, TaskModel):
+            for attribute in (
+                "_description", "_context", "_start", "_due", "_severity",
+                "_totalCost", "_investedEffort", "_status", "_calm", "_project",
+                "_index", "_task_id", "_identity_path", "_raised", "_waited",
+                "_task_provider_baseline",
+            ):
+                setattr(target, attribute, getattr(source, attribute))
+            return
+        get_raw_description = getattr(source, "getRawDescription", None)
+        target.setDescription(get_raw_description() if callable(get_raw_description) else source.getDescription())
+        target.setContext(source.getContext())
+        target.setStart(source.getStart())
+        target.setDue(source.getDue())
+        target.setSeverity(source.getSeverity())
+        target.setTotalCost(source.getTotalCost())
+        target.setInvestedEffort(source.getInvestedEffort())
+        target.setStatus(source.getStatus())
+        target.setCalm(source.getCalm())
+        target.setEventRaised(source.getEventRaised())
+        target.setEventWaited(source.getEventWaited())
+        if hasattr(target, "_project"):
+            setattr(target, "_project", source.getProject())
+        if hasattr(target, "_task_id"):
+            setattr(target, "_task_id", source.getTaskUID())
+        setattr(target, "_task_provider_baseline", TaskProvider.__getTaskSaveFields(target))
 
     def createDefaultTask(self, description: str) -> ITaskModel:
         """
@@ -265,12 +350,8 @@ class TaskProvider(ITaskProvider):
         pending_indexes = sorted(self.__pendingNewTasks)
         expected_indexes = list(range(len(task_records), len(task_records) + len(pending_indexes)))
         if pending_indexes != expected_indexes:
-            # An external write or an abandoned reservation invalidated the
-            # provisional positions; never leave a hole or overwrite a row.
-            self.discardPendingTaskReservations()
-            pending_indexes = []
-        else:
-            task_records.extend(self.__pendingNewTasks[index] for index in pending_indexes)
+            raise MissingTaskIdentityError("A prepared task location changed before it could be saved")
+        task_records.extend(self.__pendingNewTasks[index] for index in pending_indexes)
         task_index = len(task_records)
         identity_path = self.__getIdentityPath()
         task_id = fallback_task_id(description, identity_path, task_index)
@@ -284,8 +365,6 @@ class TaskProvider(ITaskProvider):
         default_task["id"] = task_id
         task = self.createTaskFromDict(default_task, task_index, task_id, identity_path)
         task_records.append(default_task)
-        taskJson["tasks"] = task_records
-        self.dict_task_list = taskJson
         self.__pendingNewTasks[task_index] = default_task
         self.__pendingNewTaskIds[task_index] = task_id
 
@@ -347,8 +426,8 @@ class TaskProvider(ITaskProvider):
         identity_path = self.__getIdentityPath()
         for index, record in enumerate(imported_records):
             self.__resolveRecordIdentity(record, index, identity_path)
-        self.taskJsonProvider.saveJson(imported_json)
-        self.dict_task_list = imported_json
+        committed = self.taskJsonProvider.updateJson(lambda _current: deepcopy(imported_json))
+        self.dict_task_list = deepcopy(committed)
 
     def importTasks(self, selectedFormat: str) -> None:
         supportedFormats: dict[str, Callable[[], None]] = {

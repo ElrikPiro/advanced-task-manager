@@ -1,5 +1,6 @@
 import unittest
 from unittest.mock import MagicMock, patch
+from copy import deepcopy
 
 from src.taskjsonproviders.TaskJsonProvider import TaskJsonProvider
 from src.Interfaces.IFileBroker import IFileBroker, FileRegistry
@@ -12,6 +13,15 @@ class TestTaskJsonProvider(unittest.TestCase):
         self.mock_file_broker = MagicMock(spec=IFileBroker)
         self.identity_path = "/configured/tasks.json"
         self.mock_file_broker.getFilePath.return_value = self.identity_path
+
+        def update_json(registry, updater):
+            current = deepcopy(self.mock_file_broker.readFileContentJson(registry))
+            updated = updater(current)
+            self.mock_file_broker.writeFileContentJson(registry, updated)
+            self.mock_file_broker.readFileContentJson.return_value = deepcopy(updated)
+            return deepcopy(updated)
+
+        self.mock_file_broker.updateFileContentJson.side_effect = update_json
         self.provider = TaskJsonProvider(self.mock_file_broker)
 
     def test_getJson_calls_file_broker(self):
@@ -78,6 +88,7 @@ class TestTaskJsonProvider(unittest.TestCase):
         self.assertEqual(tasks[0]["start"], "20230101")
         self.assertEqual(tasks[0]["due"], "20230101")
         self.assertEqual(tasks[0]["id"], fallback_task_id("Define next action", self.identity_path, 0))
+        self.mock_file_broker.updateFileContentJson.assert_called_once()
         self.mock_file_broker.writeFileContentJson.assert_called_once_with(FileRegistry.STANDALONE_TASKS_JSON, result)
 
     def test_discover_with_existing_tasks(self):
@@ -183,6 +194,7 @@ class TestTaskJsonProvider(unittest.TestCase):
         with self.assertRaisesRegex(AmbiguousTaskIdentityError, "conflicts with an existing task"):
             self.provider.discover()
 
+        self.mock_file_broker.updateFileContentJson.assert_called_once()
         self.mock_file_broker.writeFileContentJson.assert_not_called()
 
 

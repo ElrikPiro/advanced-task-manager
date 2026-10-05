@@ -1,9 +1,11 @@
 import json
+from copy import deepcopy
 from .Interfaces.IProjectManager import IProjectManager, ProjectCommands
 from .Interfaces.ITaskJsonProvider import VALID_PROJECT_STATUS, ITaskJsonProvider
 from .Utils import stripDoc
 
-from typing import List, Callable
+from typing import Any, List, Callable, cast
+from src.Utils import TaskJsonType
 
 
 class JsonProjectManager(IProjectManager):
@@ -129,17 +131,15 @@ class JsonProjectManager(IProjectManager):
             return "Format: edit project_name new_content"
 
         projName = messageArgs[0].replace("_", " ")
-        taskJson = self.__taskListProvider.getJson()
-        projectList = taskJson.get("projects", [])
-        projectListFiltered = [project for project in projectList if project["name"] == projName]
+        description = " ".join(messageArgs[1:])
 
-        if len(projectListFiltered) == 0:
-            return f"Project {messageArgs[0]} not found"
+        def update(current: TaskJsonType) -> TaskJsonType:
+            document = deepcopy(current)
+            project = self.__find_project(self.__get_projects(document), projName)
+            project["description"] = description
+            return document
 
-        project = projectListFiltered[0]
-        project["description"] = " ".join(messageArgs[1:])
-
-        self.__taskListProvider.saveJson(taskJson)
+        self.__taskListProvider.updateJson(update)
         return f"Description updated for {messageArgs[0]} successfully"
 
     def _update_project_status(self, project_name: str, new_status: str) -> str:
@@ -153,17 +153,13 @@ class JsonProjectManager(IProjectManager):
         Returns:
             str: Result message
         """
-        taskJson = self.__taskListProvider.getJson()
-        projectList = taskJson.get("projects", [])
-        projectListFiltered = [project for project in projectList if project["name"] == project_name]
+        def update(current: TaskJsonType) -> TaskJsonType:
+            document = deepcopy(current)
+            project = self.__find_project(self.__get_projects(document), project_name)
+            project["status"] = new_status
+            return document
 
-        if len(projectListFiltered) == 0:
-            return f"Project {project_name} not found"
-
-        project = projectListFiltered[0]
-        project["status"] = new_status
-
-        self.__taskListProvider.saveJson(taskJson)
+        self.__taskListProvider.updateJson(update)
         return f"Project {project_name} status updated to {new_status}"
 
     def _open_project(self, messageArgs: List[str]) -> str:
@@ -178,24 +174,44 @@ class JsonProjectManager(IProjectManager):
 
         project_name = messageArgs[0].replace("_", " ")
         project_description = " ".join(messageArgs[1:] if len(messageArgs) > 1 else [])
-        projectList = self.__taskListProvider.getJson().get("projects", [])
-        projectListFiltered = [project for project in projectList if project["name"] == project_name]
 
-        if len(projectListFiltered) == 0:
-            # Project doesn't exist, create a new one
-            projectList.append({
-                "name": project_name,
-                "description": project_description,
-                "status": "open"
-            })
+        def update(current: TaskJsonType) -> TaskJsonType:
+            document = deepcopy(current)
+            projects = self.__get_projects(document)
+            matches = [project for project in projects if project.get("name") == project_name]
+            if len(matches) > 1:
+                raise ValueError(f"More than one project is named {project_name}")
+            if matches:
+                matches[0]["status"] = "open"
+            else:
+                projects.append({
+                    "name": project_name,
+                    "description": project_description,
+                    "status": "open"
+                })
+                cast(dict[str, Any], document)["projects"] = projects
+            return document
 
-            taskJson = self.__taskListProvider.getJson()
-            taskJson["projects"] = projectList
-            self.__taskListProvider.saveJson(taskJson)
-            return f"Created new project: {project_name}"
-        else:
-            # Project exists, use the helper function to update its status to 'open'
-            return self._update_project_status(messageArgs[0], "open")
+        self.__taskListProvider.updateJson(update)
+        return f"Project {project_name} is now open"
+
+    @staticmethod
+    def __get_projects(document: TaskJsonType) -> list[dict[str, object]]:
+        projects = document.get("projects", [])
+        if not isinstance(projects, list):
+            raise TypeError("Task data attribute 'projects' must be a list")
+        if any(not isinstance(project, dict) for project in projects):
+            raise TypeError("Every project record must be an object")
+        return cast(list[dict[str, object]], projects)
+
+    @staticmethod
+    def __find_project(projects: list[dict[str, object]], name: str) -> dict[str, object]:
+        matches = [project for project in projects if project.get("name") == name]
+        if not matches:
+            raise LookupError(f"Project {name} not found")
+        if len(matches) > 1:
+            raise ValueError(f"More than one project is named {name}")
+        return matches[0]
 
     def _close_project(self, messageArgs: List[str]) -> str:
         """

@@ -1,4 +1,5 @@
 from typing import Callable, List
+import re
 
 from .Utils import stripDoc
 from .Interfaces.IProjectManager import IProjectManager, ProjectCommands
@@ -152,16 +153,18 @@ class ObsidianProjectManager(IProjectManager):
             return f"Invalid line number: {messageArgs[1]}"
 
         projectPath = projectList[0]["path"]
-        lines = self.__fileBroker.getVaultFileLines(VaultRegistry.OBSIDIAN, projectPath)
-
-        if lineNumber < 1 or lineNumber > len(lines):
-            return f"Line number {lineNumber} out of range. File has {len(lines)} lines."
-
-        # Join the remaining arguments as the new line content
         newContent = " ".join(messageArgs[2:])
-        lines[lineNumber - 1] = newContent + "\n"
 
-        self.__fileBroker.writeVaultFileLines(VaultRegistry.OBSIDIAN, projectPath, lines)
+        def update(lines: list[str]) -> list[str]:
+            self.__validate_project_file(lines, fileName)
+            if lineNumber < 1 or lineNumber > len(lines):
+                raise ValueError(f"Line number {lineNumber} out of range. File has {len(lines)} lines.")
+            updated = list(lines)
+            ending = "\r\n" if updated[lineNumber - 1].endswith("\r\n") else "\n"
+            updated[lineNumber - 1] = newContent + ending if updated[lineNumber - 1].endswith(("\n", "\r")) else newContent
+            return updated
+
+        self.__fileBroker.updateVaultFileLines(VaultRegistry.OBSIDIAN, projectPath, update)
         return f"Line {lineNumber} in {messageArgs[0]} updated successfully"
 
     def _add_project_line(self, messageArgs: List[str]) -> str:
@@ -187,16 +190,18 @@ class ObsidianProjectManager(IProjectManager):
             return f"Invalid line number: {messageArgs[1]}"
 
         projectPath = projectList[0]["path"]
-        lines = self.__fileBroker.getVaultFileLines(VaultRegistry.OBSIDIAN, projectPath)
-
-        if lineNumber < 1 or lineNumber > len(lines) + 1:
-            return f"Line number {lineNumber} out of range. File has {len(lines)} lines."
-
-        # Join the remaining arguments as the new line content
         newContent = " ".join(messageArgs[2:])
-        lines.insert(lineNumber - 1, newContent + "\n")
 
-        self.__fileBroker.writeVaultFileLines(VaultRegistry.OBSIDIAN, projectPath, lines)
+        def update(lines: list[str]) -> list[str]:
+            self.__validate_project_file(lines, fileName)
+            if lineNumber < 1 or lineNumber > len(lines) + 1:
+                raise ValueError(f"Line number {lineNumber} out of range. File has {len(lines)} lines.")
+            updated = list(lines)
+            ending = "\r\n" if updated and updated[-1].endswith("\r\n") else "\n"
+            updated.insert(lineNumber - 1, newContent + ending)
+            return updated
+
+        self.__fileBroker.updateVaultFileLines(VaultRegistry.OBSIDIAN, projectPath, update)
         return f"Line added at position {lineNumber} in {messageArgs[0]} successfully"
 
     def _remove_project_line(self, messageArgs: List[str]) -> str:
@@ -222,14 +227,16 @@ class ObsidianProjectManager(IProjectManager):
             return f"Invalid line number: {messageArgs[1]}"
 
         projectPath = projectList[0]["path"]
-        lines = self.__fileBroker.getVaultFileLines(VaultRegistry.OBSIDIAN, projectPath)
 
-        if lineNumber < 1 or lineNumber > len(lines):
-            return f"Line number {lineNumber} out of range. File has {len(lines)} lines."
+        def update(lines: list[str]) -> list[str]:
+            self.__validate_project_file(lines, fileName)
+            if lineNumber < 1 or lineNumber > len(lines):
+                raise ValueError(f"Line number {lineNumber} out of range. File has {len(lines)} lines.")
+            updated = list(lines)
+            updated.pop(lineNumber - 1)
+            return updated
 
-        lines.pop(lineNumber - 1)
-
-        self.__fileBroker.writeVaultFileLines(VaultRegistry.OBSIDIAN, projectPath, lines)
+        self.__fileBroker.updateVaultFileLines(VaultRegistry.OBSIDIAN, projectPath, update)
         return f"Line {lineNumber} removed from {messageArgs[0]} successfully"
 
     def _update_project_status(self, project_name: str, new_status: str) -> str:
@@ -253,36 +260,40 @@ class ObsidianProjectManager(IProjectManager):
         # Project exists, update its status
         project = existing_project[0]
         project_path = project["path"]
+        stored_status = "on-hold" if new_status == "hold" else new_status
 
-        lines = self.__fileBroker.getVaultFileLines(VaultRegistry.OBSIDIAN, project_path)
+        def update(lines: list[str]) -> list[str]:
+            updated = list(lines)
+            status_line = self.__validate_project_file(updated, project_name)
+            source = updated[status_line]
+            match = re.match(r"^(\s*project\s*:\s*)(.*?)(\r?\n)?$", source)
+            if match is None:
+                raise ValueError(f"Project {project_name} status line is invalid")
+            updated[status_line] = f"{match.group(1)}{stored_status}{match.group(3) or ''}"
+            return updated
 
-        # Find the project status line in the frontmatter and update it
-        frontmatter_found = False
-        status_updated = False
-        for i, line in enumerate(lines):
-            if line.strip() == "---":
-                if not frontmatter_found:
-                    frontmatter_found = True
-                else:
-                    # We've reached the end of frontmatter without finding the project status
-                    # Insert the status line before the closing ---
-                    lines.insert(i, f"project: {new_status}\n")
-                    status_updated = True
-                    break
-            elif "project:" in line and frontmatter_found:
-                lines[i] = f"project: {new_status}\n"
-                status_updated = True
-                break
-
-        if not status_updated and frontmatter_found:
-            # Find the second --- and insert before it
-            for i, line in enumerate(lines):
-                if line.strip() == "---" and i > 0:
-                    lines.insert(i, f"project: {new_status}\n")
-                    break
-
-        self.__fileBroker.writeVaultFileLines(VaultRegistry.OBSIDIAN, project_path, lines)
+        self.__fileBroker.updateVaultFileLines(VaultRegistry.OBSIDIAN, project_path, update)
         return f"Project {project_name} is now {new_status}"
+
+    @staticmethod
+    def __validate_project_file(lines: list[str], project_name: str) -> int:
+        if not lines:
+            raise FileNotFoundError(f"Project {project_name} is missing or empty")
+        if lines[0].strip() != "---":
+            raise FileNotFoundError(f"Project {project_name} no longer has project frontmatter")
+        closing = next((index for index in range(1, len(lines)) if lines[index].strip() == "---"), None)
+        if closing is None:
+            raise ValueError(f"Project {project_name} frontmatter is incomplete")
+        status_line = next(
+            (index for index in range(1, closing) if re.match(r"^\s*project\s*:", lines[index])),
+            None,
+        )
+        if status_line is None:
+            raise FileNotFoundError(f"Project {project_name} no longer has a project status")
+        status_match = re.match(r"^\s*project\s*:\s*(.*?)\s*(?:\r?\n)?$", lines[status_line])
+        if status_match is None or status_match.group(1) not in VALID_PROJECT_STATUS:
+            raise FileNotFoundError(f"Project {project_name} no longer has a valid project status")
+        return status_line
 
     def _open_project(self, messageArgs: List[str]) -> str:
         """
@@ -312,7 +323,13 @@ class ObsidianProjectManager(IProjectManager):
                 "## Tasks\n",
                 "\n"
             ]
-            self.__fileBroker.writeVaultFileLines(VaultRegistry.OBSIDIAN, project_path, content)
+            created = self.__fileBroker.createVaultFileLinesIfAbsent(
+                VaultRegistry.OBSIDIAN,
+                project_path,
+                content,
+            )
+            if not created:
+                raise FileExistsError(f"A vault file already exists at {project_path}")
 
             return f"Created new project: {project_name}"
         else:

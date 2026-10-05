@@ -1,8 +1,9 @@
 import unittest
 from unittest.mock import MagicMock
 import json
+from copy import deepcopy
 
-from src.taskproviders.TaskProvider import TaskProvider
+from src.taskproviders.TaskProvider import TaskProvider, TaskPrepareError
 from src.Interfaces.ITaskJsonProvider import ITaskJsonProvider
 from src.Interfaces.IFileBroker import IFileBroker, FileRegistry
 from src.taskmodels.TaskIdentity import fallback_task_id
@@ -61,6 +62,15 @@ class TestTaskProvider(unittest.TestCase):
 
         # Configure mock behavior
         self.mock_task_json_provider.getJson.return_value = self.sample_tasks
+
+        def update_json(updater):
+            current = deepcopy(self.mock_task_json_provider.getJson())
+            updated = updater(current)
+            self.mock_task_json_provider.saveJson(deepcopy(updated))
+            self.mock_task_json_provider.getJson.return_value = deepcopy(updated)
+            return deepcopy(updated)
+
+        self.mock_task_json_provider.updateJson.side_effect = update_json
 
         # Create the task provider with threading disabled
         self.task_provider = TaskProvider(
@@ -161,12 +171,45 @@ class TestTaskProvider(unittest.TestCase):
         # Save the modified task
         self.task_provider.saveTask(task)
 
-        # Verify saveJson was called
-        self.mock_task_json_provider.saveJson.assert_called_once()
+        self.mock_task_json_provider.updateJson.assert_called_once()
 
         # Check task was updated in the dictionary
         saved_task = next(t for t in self.task_provider.dict_task_list["tasks"] if t["description"] == "Updated Task 1")
         self.assertIsNotNone(saved_task)
+
+    def test_save_reasserts_explicit_unchanged_field_and_keeps_external_unrequested_edit(self):
+        task = self.task_provider.getTaskList()[0]
+        task._task_provider_forced_fields = {"description"}
+        latest = deepcopy(self.sample_tasks)
+        latest["tasks"][0]["id"] = task.getTaskUID()
+        latest["tasks"][0]["description"] = "External title"
+        latest["tasks"][0]["context"] = "external-context"
+        self.mock_task_json_provider.getJson.return_value = latest
+
+        self.task_provider.saveTask(task)
+
+        saved = self.mock_task_json_provider.saveJson.call_args.args[0]["tasks"][0]
+        self.assertEqual(saved["description"], "Task 1")
+        self.assertEqual(saved["context"], "external-context")
+        self.assertEqual(task.getRawDescription(), "Task 1")
+        self.assertEqual(task.getContext(), "external-context")
+        self.assertEqual(task._task_provider_forced_fields, set())
+
+    def test_invalid_latest_model_record_fails_before_write_and_cache_publication(self):
+        task = self.task_provider.getTaskList()[0]
+        task.setDescription("Edited description")
+        cache_before = deepcopy(self.task_provider.dict_task_list)
+        latest = deepcopy(self.sample_tasks)
+        latest["tasks"][0]["id"] = task.getTaskUID()
+        latest["tasks"][0]["severity"] = "invalid"
+        self.mock_task_json_provider.getJson.return_value = latest
+
+        with self.assertRaises(TaskPrepareError) as raised:
+            self.task_provider.saveTask(task)
+
+        self.assertEqual(raised.exception.effects_state, "none")
+        self.mock_task_json_provider.saveJson.assert_not_called()
+        self.assertEqual(self.task_provider.dict_task_list, cache_before)
 
     def test_save_task_after_completed_record_preserves_full_json_and_unknown_fields(self):
         completed = self.sample_tasks["tasks"].pop(1)
@@ -198,14 +241,8 @@ class TestTaskProvider(unittest.TestCase):
         self.assertEqual(task.getStatus(), " ")
         self.assertFalse(task.getCalm())
 
-        # Ensure task was added to the task list
-        self.assertIn(
-            {"description": "New Task", "context": "inbox", "status": " ", "calm": "False"},
-            [
-                {k: t[k] for k in ["description", "context", "status", "calm"]}
-                for t in self.task_provider.dict_task_list["tasks"]
-            ]
-        )
+        # A candidate remains private until its write is confirmed.
+        self.assertEqual(len(self.task_provider.dict_task_list["tasks"]), 3)
 
     def test_create_default_task_then_save_appends_to_full_document(self):
         task = self.task_provider.createDefaultTask("New Task")
@@ -250,12 +287,13 @@ class TestTaskProvider(unittest.TestCase):
         )
         self.assertEqual([record["id"] for record in storage["tasks"][3:]], expected_ids)
 
-    def test_failed_save_releases_new_task_reservation_without_position_gap(self):
+    def test_failed_save_keeps_candidate_until_caller_discards_reservation(self):
         task = self.task_provider.createDefaultTask("Failed part")
         self.mock_task_json_provider.saveJson.side_effect = OSError("disk full")
         with self.assertRaisesRegex(OSError, "disk full"):
             self.task_provider.saveTask(task)
 
+        self.task_provider.discardPendingTaskReservations()
         self.mock_task_json_provider.saveJson.side_effect = None
         next_task = self.task_provider.createDefaultTask("Next part")
         self.assertEqual(next_task.getTaskUID(), fallback_task_id("Next part", self.identity_path, 3))
@@ -298,6 +336,7 @@ class TestTaskProvider(unittest.TestCase):
 
         with self.assertRaisesRegex(AmbiguousTaskIdentityError, "multiple stored tasks"):
             self.task_provider.saveTask(task)
+        self.mock_task_json_provider.updateJson.assert_called_once()
         self.mock_task_json_provider.saveJson.assert_not_called()
 
     def test_invalid_declared_ids_are_rejected_without_rewriting_data(self):
@@ -373,6 +412,7 @@ class TestTaskProvider(unittest.TestCase):
         self.task_provider.importTasks("json")
 
         # Check if the imported data was saved
+        self.mock_task_json_provider.updateJson.assert_called_once()
         self.mock_task_json_provider.saveJson.assert_called_once_with(test_import_data)
         self.mock_file_broker.readFileContentJson.assert_called_once_with(FileRegistry.LAST_RECEIVED_FILE)
 

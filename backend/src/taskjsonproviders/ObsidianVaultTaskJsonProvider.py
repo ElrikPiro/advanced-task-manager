@@ -1,4 +1,5 @@
 import re
+import math
 
 from src.Utils import ProjectJsonListType, TaskDiscoveryPolicies, TaskJsonListType, TaskJsonType
 from ..wrappers.TimeManagement import TimePoint
@@ -34,18 +35,33 @@ class ObsidianVaultTaskJsonProvider(ITaskJsonProvider):
             "projects": project_list
         }
 
+    def parseTaskFile(self, relative_path: str, lines: list[str]) -> list[dict[str, str]]:
+        """Parse one supplied Markdown snapshot without performing file I/O."""
+        task_list: TaskJsonListType = []
+        file_header = self.__getFileHeader(lines)
+        for line_number, line in self.__getFileTaskLines(lines, file_header):
+            task = self.__getTaskDictFromLine(line, relative_path, line_number, file_header)
+            if task["valid"] == "True":
+                self.__update_or_append_task(task, task_list)
+        return task_list
+
     def discover(self) -> TaskJsonType:
         """Persist a default next action in each uncovered open project."""
-        known_task_ids = {
-            self._task_id(task)
-            for task in self.getJson().get("tasks", [])
-        }
         vaultFiles = [
             file for file in self.__fileBroker.getVaultFiles(VaultRegistry.OBSIDIAN)
             if file[0].lower().endswith(".md")
         ]
-        for file in vaultFiles:
-            relative_path = file[0]
+        known_task_ids: set[str] = set()
+        for initial_path, _ in vaultFiles:
+            known_task_ids.update(
+                self.__task_ids_from_lines(
+                    self.__fileBroker.getVaultFileLines(VaultRegistry.OBSIDIAN, initial_path),
+                    initial_path,
+                )
+            )
+
+        for vault_file in vaultFiles:
+            relative_path = vault_file[0]
             lines = self.__fileBroker.getVaultFileLines(VaultRegistry.OBSIDIAN, relative_path)
             header = self.__getFileHeader(lines)
             if header.get("project") != "open":
@@ -59,24 +75,69 @@ class ObsidianVaultTaskJsonProvider(ITaskJsonProvider):
 
             fallback_context = self.__getFallbackPolicy()
             task_text = "Define next action"
-            task_id = fallback_task_id(task_text, relative_path.replace("\\", "/"), len(lines))
-            task_line = f"- [ ] {task_text} [track::{fallback_context}] [id::{task_id}]\n"
-            candidate = self.__getTaskDictFromLine(task_line, relative_path, len(lines), header)
-            if candidate["valid"] != "True":
-                continue
-            task_id = validate_task_id(candidate["id"])
-            if task_id in known_task_ids:
-                raise AmbiguousTaskIdentityError("The prepared Markdown task identifier is already in use")
+            normalized_path = relative_path.replace("\\", "/")
 
-            if lines and not lines[-1].endswith(("\n", "\r")):
-                lines[-1] += "\n"
-            lines.append(task_line)
-            self.__fileBroker.writeVaultFileLines(VaultRegistry.OBSIDIAN, relative_path, lines)
-            known_task_ids.add(task_id)
+            def prepare(current_lines: list[str]) -> list[str]:
+                updated = list(current_lines)
+                current_header = self.__getFileHeader(updated)
+                if current_header.get("project") != "open":
+                    return updated
+                if any(self.__is_open_task_line(line) for line in updated):
+                    return updated
+
+                line_number = len(updated)
+                task_id = fallback_task_id(task_text, normalized_path, line_number)
+                other_ids: set[str] = set()
+                for other_file, _ in self.__fileBroker.getVaultFiles(VaultRegistry.OBSIDIAN):
+                    if other_file.replace("\\", "/") == normalized_path or not other_file.lower().endswith(".md"):
+                        continue
+                    other_ids.update(self.__task_ids_from_lines(
+                        self.__fileBroker.getVaultFileLines(VaultRegistry.OBSIDIAN, other_file),
+                        other_file,
+                    ))
+                local_ids = self.__task_ids_from_lines(updated, relative_path)
+                if task_id in other_ids or task_id in local_ids or task_id in known_task_ids:
+                    raise AmbiguousTaskIdentityError("The prepared Markdown task identifier is already in use")
+
+                task_line = f"- [ ] {task_text} [track::{fallback_context}] [id::{task_id}]\n"
+                candidate = self.__getTaskDictFromLine(task_line, relative_path, line_number, current_header)
+                if candidate["valid"] != "True":
+                    return updated
+                if updated and not updated[-1].endswith(("\n", "\r")):
+                    updated[-1] += "\n"
+                updated.append(task_line)
+                return updated
+
+            committed_lines = self.__fileBroker.updateVaultFileLines(
+                VaultRegistry.OBSIDIAN,
+                relative_path,
+                prepare,
+            )
+            known_task_ids.update(self.__task_ids_from_lines(committed_lines, relative_path))
 
         # Always parse again so the returned view reflects the persisted
         # Markdown and receives the physical line number used by the model.
         return self.getJson()
+
+    def __task_ids_from_lines(self, lines: list[str], relative_path: str) -> set[str]:
+        identities: set[str] = set()
+        normalized_path = relative_path.replace("\\", "/")
+        for line_number, line in enumerate(lines):
+            match = self._TASK_LINE.match(line)
+            if match is None:
+                continue
+            body = match.group(2)
+            metadata = list(self._TASK_METADATA.finditer(body))
+            text = body[:metadata[0].start()].strip() if metadata else body.strip()
+            declared_ids = [
+                validate_task_id(item.group(2).strip())
+                for item in metadata
+                if item.group(1).strip() == "id"
+            ]
+            if len(set(declared_ids)) > 1:
+                raise InvalidTaskIdentityError("A Markdown task declares conflicting identifiers")
+            identities.add(declared_ids[0] if declared_ids else fallback_task_id(text, normalized_path, line_number))
+        return identities
 
     @staticmethod
     def _task_id(task: dict[str, str]) -> str:
@@ -206,8 +267,14 @@ class ObsidianVaultTaskJsonProvider(ITaskJsonProvider):
             taskDict["starts"] = self.__apply_date_policy(taskDict["starts"])
             taskDict["due"] = self.__apply_date_policy(taskDict["due"])
             taskDict["track"] = self.__apply_track_policy(taskDict.get("track"))
-            taskDict["severity"] = str(float(taskDict["severity"]))
-            taskDict["total_cost"] = str(float(taskDict["remaining_cost"]) - float(taskDict["invested"]))
+            severity = float(taskDict["severity"])
+            remaining_cost = float(taskDict["remaining_cost"])
+            invested = float(taskDict["invested"])
+            total_cost = remaining_cost - invested
+            if not all(math.isfinite(value) for value in (severity, remaining_cost, invested, total_cost)):
+                raise ValueError("Task numeric metadata must be finite")
+            taskDict["severity"] = str(severity)
+            taskDict["total_cost"] = str(total_cost)
             taskDict["effort_invested"] = taskDict["invested"]
             taskDict["valid"] = "True"
         except ValueError as error:

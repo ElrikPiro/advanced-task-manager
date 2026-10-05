@@ -2,6 +2,7 @@ import unittest
 import os
 import json
 import tempfile
+import threading
 from unittest.mock import patch, mock_open
 from src.FileBroker import FileBroker
 from src.Interfaces.IFileBroker import FileRegistry, VaultRegistry
@@ -26,7 +27,7 @@ class TestFileBroker(unittest.TestCase):
             )
             self.assertEqual(readcontent, "data")
             filePath = os.path.join(self.jsonPath, "tasks.json")
-            mock_file.assert_called_once_with(filePath, "r", errors="ignore")
+            mock_file.assert_called_once_with(filePath, "r", encoding="utf-8", newline="")
 
     def test_readFileContent_WhenFileIsNotFound_ThenReturnDefaultWithoutCreating(self):
         with patch("builtins.open", side_effect=FileNotFoundError) as mock_file:
@@ -41,7 +42,7 @@ class TestFileBroker(unittest.TestCase):
             )
             self.assertEqual(readcontent, {"key": "value"})
             filePath = os.path.join(self.jsonPath, "tasks.json")
-            mock_file.assert_called_once_with(filePath, "r", errors="ignore")
+            mock_file.assert_called_once_with(filePath, "r", encoding="utf-8", newline="")
 
     def test_readFileContentJson_WhenFileIsNotFound_ThenReturnDefaultWithoutCreating(self):
         with patch("builtins.open", side_effect=FileNotFoundError) as mock_file:
@@ -138,6 +139,83 @@ class TestFileBroker(unittest.TestCase):
             with open(path, "rb") as file:
                 self.assertEqual(file.read(), before)
 
+    def test_invalidUtf8CannotBeSilentlyRewrittenByTextUpdate(self):
+        with tempfile.TemporaryDirectory() as directory:
+            broker = FileBroker(directory, directory, os.path.join(directory, "vault"))
+            path = os.path.join(directory, "tasks.json")
+            invalid_content = b'{"tasks": [\xff]}'
+            with open(path, "wb") as file:
+                file.write(invalid_content)
+
+            with self.assertRaises(UnicodeDecodeError):
+                broker.updateFileContent(FileRegistry.STANDALONE_TASKS_JSON, lambda current: current + " ")
+
+            with open(path, "rb") as file:
+                self.assertEqual(file.read(), invalid_content)
+
+    def test_updateFileContentJsonReturnsTheSavedFullDocument(self):
+        with tempfile.TemporaryDirectory() as directory:
+            broker = FileBroker(directory, directory, os.path.join(directory, "vault"))
+            path = os.path.join(directory, "tasks.json")
+            with open(path, "w", encoding="utf-8") as file:
+                file.write('{"tasks": [], "metadata": {"keep": true}}')
+
+            saved = broker.updateFileContentJson(
+                FileRegistry.STANDALONE_TASKS_JSON,
+                lambda document: document.update({"updated": True}) or document,
+            )
+
+            self.assertEqual(saved["metadata"], {"keep": True})
+            self.assertTrue(saved["updated"])
+            self.assertEqual(broker.readFileContentJson(FileRegistry.STANDALONE_TASKS_JSON), saved)
+
+    def test_rawTextWriteToJsonRegistryRejectsInvalidJsonWithoutReplacingTarget(self):
+        with tempfile.TemporaryDirectory() as directory:
+            broker = FileBroker(directory, directory, os.path.join(directory, "vault"))
+            path = os.path.join(directory, "tasks.json")
+            valid_content = '{"tasks": [], "metadata": "keep"}'
+            with open(path, "w", encoding="utf-8") as file:
+                file.write(valid_content)
+
+            with self.assertRaises(json.JSONDecodeError):
+                broker.writeFileContent(FileRegistry.STANDALONE_TASKS_JSON, "not json")
+
+            with open(path, encoding="utf-8") as file:
+                self.assertEqual(file.read(), valid_content)
+
+    def test_jsonUpdateRejectsNonStandardNumericConstantsInSource(self):
+        with tempfile.TemporaryDirectory() as directory:
+            broker = FileBroker(directory, directory, os.path.join(directory, "vault"))
+            path = os.path.join(directory, "tasks.json")
+            for constant in ("NaN", "Infinity", "-Infinity"):
+                invalid_source = f'{{"tasks": [], "value": {constant}}}'
+                with open(path, "w", encoding="utf-8") as file:
+                    file.write(invalid_source)
+
+                with self.assertRaisesRegex(ValueError, "non-finite JSON number"):
+                    broker.updateFileContentJson(FileRegistry.STANDALONE_TASKS_JSON, lambda document: document)
+
+                with open(path, encoding="utf-8") as file:
+                    self.assertEqual(file.read(), invalid_source)
+
+    def test_jsonUpdateRejectsNonFiniteResultWithoutReplacingTarget(self):
+        with tempfile.TemporaryDirectory() as directory:
+            broker = FileBroker(directory, directory, os.path.join(directory, "vault"))
+            path = os.path.join(directory, "tasks.json")
+            original = '{"tasks": []}'
+            with open(path, "w", encoding="utf-8") as file:
+                file.write(original)
+
+            def add_non_finite(document):
+                document["value"] = float("inf")
+                return document
+
+            with self.assertRaisesRegex(ValueError, "Out of range float values"):
+                broker.updateFileContentJson(FileRegistry.STANDALONE_TASKS_JSON, add_non_finite)
+
+            with open(path, encoding="utf-8") as file:
+                self.assertEqual(file.read(), original)
+
     @patch("os.walk")
     @patch("os.path.getmtime")
     def test_getVaultFiles_WhenFilesExist_ThenReturnFilePathsAndModificationTimes(self, mock_getmtime, mock_walk):
@@ -164,19 +242,64 @@ class TestFileBroker(unittest.TestCase):
         files = self.fileBroker.getVaultFiles(VaultRegistry.OBSIDIAN)
         self.assertEqual(files, [])
 
+    @patch("os.walk")
+    @patch("os.path.getmtime")
+    def test_getVaultFiles_skipsFilesRemovedAfterDirectoryEnumeration(self, mock_getmtime, mock_walk):
+        mock_walk.return_value = [(self.vaultPath, (), ("present.md", "removed.md"))]
+        mock_getmtime.side_effect = [1000.0, FileNotFoundError]
+
+        files = self.fileBroker.getVaultFiles(VaultRegistry.OBSIDIAN)
+
+        self.assertEqual(files, [("present.md", 1000.0)])
+
+    def test_getVaultFiles_ignoresTemporaryFilesWhileAWriteIsStaged(self):
+        with tempfile.TemporaryDirectory() as directory:
+            vault = os.path.join(directory, "vault")
+            os.makedirs(vault)
+            broker = FileBroker(directory, directory, vault)
+            path = os.path.join(vault, "note.md")
+            replacement_started = threading.Event()
+            allow_replace = threading.Event()
+            original_replace = os.replace
+            errors = []
+
+            def blocked_replace(source, destination):
+                replacement_started.set()
+                if not allow_replace.wait(5):
+                    raise TimeoutError("test did not release replacement")
+                original_replace(source, destination)
+
+            def write_note():
+                try:
+                    broker.writeVaultFileLines(VaultRegistry.OBSIDIAN, "note.md", ["complete\n"])
+                except Exception as error:
+                    errors.append(error)
+
+            with patch("src.AtomicFileStore.os.replace", side_effect=blocked_replace):
+                writer = threading.Thread(target=write_note)
+                writer.start()
+                self.assertTrue(replacement_started.wait(5))
+                self.assertEqual(broker.getVaultFiles(VaultRegistry.OBSIDIAN), [])
+                allow_replace.set()
+                writer.join(5)
+
+            self.assertFalse(writer.is_alive())
+            self.assertEqual(errors, [])
+            self.assertEqual([path for path, _ in broker.getVaultFiles(VaultRegistry.OBSIDIAN)], ["note.md"])
+
     @patch("builtins.open", new_callable=mock_open, read_data="line1\nline2\nline3\n")
     def test_getVaultFileLines_WhenFileExists_ThenReturnFileLines(self, mock_file):
         lines = self.fileBroker.getVaultFileLines(VaultRegistry.OBSIDIAN, "testfile.md")
         self.assertEqual(lines, ["line1\n", "line2\n", "line3\n"])
         filePath = os.path.join(self.vaultPath, "testfile.md")
-        mock_file.assert_called_once_with(filePath, "r", errors="ignore")
+        mock_file.assert_called_once_with(filePath, "r", encoding="utf-8", newline="")
 
     @patch("builtins.open", side_effect=FileNotFoundError)
     def test_getVaultFileLines_WhenFileDoesNotExist_ThenRaiseFileNotFoundError(self, mock_file):
         with self.assertRaises(FileNotFoundError):
             self.fileBroker.getVaultFileLines(VaultRegistry.OBSIDIAN, "nonexistentfile.md")
         filePath = os.path.join(self.vaultPath, "nonexistentfile.md")
-        mock_file.assert_called_once_with(filePath, "r", errors="ignore")
+        mock_file.assert_called_once_with(filePath, "r", encoding="utf-8", newline="")
 
 
 if __name__ == "__main__":

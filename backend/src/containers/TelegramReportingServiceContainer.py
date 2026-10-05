@@ -247,6 +247,10 @@ class TelegramReportingServiceContainer():
 
         # Data providers
         self.container.fileBroker = providers.Singleton(FileBroker, jsonPath, appdata, vaultPath)
+        cleanup_directories = [str(jsonPath)]
+        if obsidianMode:
+            cleanup_directories.extend([os.path.join(str(appdata), "obsidian"), str(vaultPath)])
+        self.container.fileBroker().cleanupAtomicTemps(cleanup_directories)
 
         # User communication services
         botId: IAgent = BotAgent(id="TaskManagerBot", name="Task Manager Bot", description="Bot for managing tasks")

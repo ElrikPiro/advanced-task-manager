@@ -1,9 +1,11 @@
 import unittest
 from unittest.mock import Mock, patch
 import datetime
+from copy import deepcopy
 
-from src.StatisticsService import StatisticsService
+from src.StatisticsService import StatisticsService, StatisticsUpdateError
 from src.Interfaces.IFileBroker import FileRegistry
+from src.Utils import WorkLogEntry
 from src.wrappers.TimeManagement import TimeAmount
 
 
@@ -15,6 +17,16 @@ class TestStatisticsService(unittest.TestCase):
         self.mock_remaining_effort_heuristic = Mock()
         self.mock_main_heuristic = Mock()
         self.mock_task = Mock()
+
+        self.stats_document = {}
+
+        def update_statistics(registry, updater):
+            updated = updater(deepcopy(self.stats_document))
+            self.mock_file_broker.writeFileContentJson(registry, updated)
+            self.stats_document = deepcopy(updated)
+            return deepcopy(updated)
+
+        self.mock_file_broker.updateFileContentJson.side_effect = update_statistics
 
         # Configure mock task
         self.mock_task.getDescription.return_value = "Test Task"
@@ -42,16 +54,19 @@ class TestStatisticsService(unittest.TestCase):
 
         # Assert
         self.assertEqual(self.service.workDone[test_date.isoformat()], work_units.as_pomodoros())
+        self.mock_file_broker.updateFileContentJson.assert_called_once()
         self.mock_file_broker.writeFileContentJson.assert_called_once_with(
-            FileRegistry.STATISTICS_JSON, self.service.workDone
+            FileRegistry.STATISTICS_JSON,
+            self.stats_document,
         )
+        self.assertIsInstance(self.service.workDone["log"][0], WorkLogEntry)
 
     def test_do_work_accumulates_work(self):
         # Arrange
         test_date = datetime.date(2023, 1, 1)
         initial_work = TimeAmount("1.6p")
         additional_work = TimeAmount("2.0p")
-        self.service.workDone = {test_date.isoformat(): initial_work.as_pomodoros()}
+        self.stats_document = {test_date.isoformat(): initial_work.as_pomodoros()}
 
         # Act
         with patch('src.wrappers.TimeManagement.TimePoint.now') as mock_now:
@@ -74,7 +89,54 @@ class TestStatisticsService(unittest.TestCase):
         result = self.service.getWorkDoneLog()
 
         # Assert
-        self.assertEqual(result, log_entries)
+        self.assertEqual(result, [WorkLogEntry(**entry) for entry in log_entries])
+
+    def test_do_work_preserves_unknown_statistics_and_log_fields(self):
+        test_date = datetime.date(2023, 1, 1)
+        self.stats_document = {
+            test_date.isoformat(): 1,
+            "future_metric": {"keep": True},
+            "log": [{
+                "timestamp": 1672531100000,
+                "work_units": 0.5,
+                "task": "Earlier task",
+                "source": "external",
+            }],
+        }
+
+        with patch("src.wrappers.TimeManagement.TimePoint.now") as mock_now:
+            mock_now.return_value.as_int.return_value = 1672531200000
+            mock_now.return_value.__str__.return_value = "2023-01-01"
+            self.service.doWork(test_date, TimeAmount("2p"), self.mock_task)
+
+        self.assertEqual(self.stats_document["future_metric"], {"keep": True})
+        self.assertEqual(self.stats_document["log"][0]["source"], "external")
+        self.assertEqual(self.service.workDone[test_date.isoformat()], 3.0)
+        self.assertIsInstance(self.service.workDone["log"][0], WorkLogEntry)
+
+    def test_do_work_does_not_publish_cache_when_callback_rejects_invalid_latest_document(self):
+        self.stats_document = {"log": "invalid"}
+        published_before = deepcopy(self.service.workDone)
+
+        with patch("src.wrappers.TimeManagement.TimePoint.now") as mock_now:
+            mock_now.return_value.as_int.return_value = 1672531200000
+            with self.assertRaises(StatisticsUpdateError):
+                self.service.doWork(datetime.date(2023, 1, 1), TimeAmount("2p"), self.mock_task)
+
+        self.assertEqual(self.service.workDone, published_before)
+        self.mock_file_broker.writeFileContentJson.assert_not_called()
+
+    def test_initialize_propagates_invalid_statistics_instead_of_using_empty_cache(self):
+        self.mock_file_broker.readStatisticsFileContentJson.side_effect = ValueError("invalid statistics")
+
+        with self.assertRaisesRegex(ValueError, "invalid statistics"):
+            self.service.initialize()
+
+    def test_initialize_propagates_invalid_statistics_instead_of_using_empty_cache(self):
+        self.mock_file_broker.readStatisticsFileContentJson.side_effect = ValueError("invalid statistics")
+
+        with self.assertRaisesRegex(ValueError, "invalid statistics"):
+            self.service.initialize()
 
     def test_getEventStatistics_empty_task_list(self):
         # Arrange

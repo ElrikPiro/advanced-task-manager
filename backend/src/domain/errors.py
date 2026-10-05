@@ -1,5 +1,10 @@
 """Typed domain errors; adapters decide how to present them."""
 
+from typing import Literal
+
+
+EffectsState = Literal["none", "complete", "partial", "unknown"]
+
 
 class DomainError(Exception):
     """Base class for expected errors raised by application services."""
@@ -11,7 +16,7 @@ class DomainError(Exception):
         message: str,
         *,
         details: dict[str, str] | None = None,
-        effects_state: str | None = None,
+        effects_state: EffectsState | None = None,
     ):
         super().__init__(message)
         self.message = message
@@ -70,7 +75,7 @@ class OperationFailedError(DomainError):
         self,
         message: str,
         *,
-        effects_state: str = "unknown",
+        effects_state: Literal["none", "partial", "unknown"] = "unknown",
         details: dict[str, str] | None = None,
     ):
         super().__init__(message, details=details, effects_state=effects_state)
