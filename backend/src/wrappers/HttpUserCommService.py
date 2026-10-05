@@ -1,11 +1,17 @@
 """HTTP listener that adapts requests to the resource API and channel interface."""
 
 import asyncio
+import logging
+import ssl
 import threading
 import uuid
 from typing import Any, Dict, List, Optional
 
 from aiohttp import web
+from aiohttp.abc import AbstractAccessLogger
+from aiohttp.web_request import BaseRequest
+from aiohttp.web_response import StreamResponse
+from aiohttp.web_protocol import RequestHandler
 
 from src.api.HttpApiV1 import HttpApiV1
 from src.domain.TaskApplicationService import TaskApplicationService
@@ -18,6 +24,67 @@ from src.wrappers.TimeManagement import TimePoint
 from src.wrappers.interfaces.IUserCommService import IUserCommService
 
 
+class _SafeAiohttpServerLogger:
+    """Keep aiohttp parser and handler diagnostics free of request data."""
+
+    def __init__(self) -> None:
+        self._logger = logging.getLogger("aiohttp.server.http_api")
+
+    def exception(self, *_args: object, **_kwargs: object) -> None:
+        self._logger.error("HTTP request processing failed")
+
+    def debug(self, *_args: object, **_kwargs: object) -> None:
+        self._logger.debug("HTTP request diagnostic")
+
+    def warning(self, *_args: object, **_kwargs: object) -> None:
+        self._logger.warning("HTTP listener warning")
+
+
+class _SafeAiohttpAccessLogger(AbstractAccessLogger):
+    """Log response status and duration without request targets or headers."""
+
+    def log(
+        self,
+        request: BaseRequest,
+        response: StreamResponse,
+        time: float,
+    ) -> None:
+        del request
+        self.logger.info(
+            "HTTP request completed status=%d elapsed=%.3f",
+            response.status,
+            time,
+        )
+
+
+class _SafeAiohttpRequestHandler(RequestHandler):
+    """Replace aiohttp's attacker-controlled parse-error body with a constant."""
+
+    def handle_error(
+        self,
+        request: BaseRequest,
+        status: int = 500,
+        exc: BaseException | None = None,
+        message: str | None = None,
+    ) -> StreamResponse:
+        safe_message = None if status == 500 else "Invalid HTTP request"
+        response = super().handle_error(request, status, exc, safe_message)
+        response.headers["Cache-Control"] = "no-store"
+        response.headers["X-Request-ID"] = uuid.uuid4().hex
+        return response
+
+
+class _SafeAiohttpServer(web.Server):
+    """Create request handlers that sanitize parser failures before routing."""
+
+    def __call__(self) -> RequestHandler:
+        return _SafeAiohttpRequestHandler(
+            self,
+            loop=self._loop,
+            **self._kwargs,
+        )
+
+
 class HttpUserCommService(IUserCommService):
     """Run the HTTP v1 API while retaining the internal message-channel shape."""
 
@@ -28,16 +95,16 @@ class HttpUserCommService(IUserCommService):
         token: str,
         chat_id: int,
         agent: IAgent,
-        ssl_cert_path: Optional[str] = None,
-        ssl_key_path: Optional[str] = None,
+        tls_cert_chain_path: Optional[str] = None,
+        tls_private_key_path: Optional[str] = None,
         application_service: TaskApplicationService | None = None,
         api_prefix: str = "/api/v1",
     ) -> None:
         self.url = url
         self.port = port
         self.token = token
-        self.ssl_cert_path = ssl_cert_path
-        self.ssl_key_path = ssl_key_path
+        self.tls_cert_chain_path = tls_cert_chain_path
+        self.tls_private_key_path = tls_private_key_path
         self.chat_id = chat_id
         self.agent = agent
         self.application_service = application_service
@@ -55,22 +122,70 @@ class HttpUserCommService(IUserCommService):
     async def initialize(self) -> None:
         if self.api is None:
             raise ValueError("The HTTP API requires an application service")
-        self.server = web.Server(self.__handle_request__)
-        self.runner = web.ServerRunner(self.server)
-        await self.runner.setup()
+        ssl_context = self._create_ssl_context()
+        server = _SafeAiohttpServer(
+            self.__handle_request__,
+            debug=False,
+            logger=_SafeAiohttpServerLogger(),
+            access_log=logging.getLogger("aiohttp.access.http_api"),
+            access_log_class=_SafeAiohttpAccessLogger,
+            access_log_format="",
+        )
+        runner = web.ServerRunner(server)
+        try:
+            await runner.setup()
+            site = web.TCPSite(
+                runner,
+                self.url,
+                self.port,
+                ssl_context=ssl_context,
+            )
+            await site.start()
+        except Exception:
+            try:
+                await runner.cleanup()
+            except Exception:
+                pass
+            raise RuntimeError("HTTPS listener could not be started") from None
 
-        # Keep the existing optional listener TLS configuration unchanged.
-        ssl_context = None
-        if self.ssl_cert_path and self.ssl_key_path:
-            import ssl
+        self.server = server
+        self.runner = runner
+        self.site = site
+        print("HTTPS User Communication Service started")
 
-            ssl_context = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH)
-            ssl_context.load_cert_chain(self.ssl_cert_path, self.ssl_key_path)
+    def _create_ssl_context(self) -> ssl.SSLContext:
+        cert_chain_path = self.tls_cert_chain_path
+        private_key_path = self.tls_private_key_path
+        if not isinstance(cert_chain_path, str) or not isinstance(private_key_path, str):
+            raise RuntimeError(
+                "TLS certificate chain and private key paths are required"
+            )
+        if not cert_chain_path.strip() or not private_key_path.strip():
+            raise RuntimeError(
+                "TLS certificate chain and private key paths are required"
+            )
 
-        self.site = web.TCPSite(self.runner, self.url, self.port, ssl_context=ssl_context)
-        await self.site.start()
-        protocol = "HTTPS" if ssl_context else "HTTP"
-        print(f"{protocol} User Communication Service started at {self.url}:{self.port}")
+        try:
+            context = self._new_tls_context()
+            context.load_cert_chain(
+                certfile=cert_chain_path,
+                keyfile=private_key_path,
+                # Supplying a callback prevents OpenSSL from prompting on
+                # stdin for an encrypted key. Keys that need a passphrase
+                # therefore fail closed during initialization.
+                password=lambda: "",
+            )
+        except Exception:
+            raise RuntimeError(
+                "TLS certificate chain and private key could not be loaded"
+            ) from None
+        return context
+
+    @staticmethod
+    def _new_tls_context() -> ssl.SSLContext:
+        context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+        context.minimum_version = ssl.TLSVersion.TLSv1_2
+        return context
 
     async def shutdown(self) -> None:
         site = getattr(self, "site", None)
@@ -144,7 +259,7 @@ class HttpUserCommService(IUserCommService):
             )
             return response
 
-        if self.ssl_cert_path and self.ssl_key_path and not request.secure:
+        if not request.secure:
             from src.api.ProblemDetails import problem_response
 
             request_id = str(uuid.uuid4())
@@ -155,5 +270,6 @@ class HttpUserCommService(IUserCommService):
                 request_id=request_id,
                 instance=self.api.prefix,
                 token=self.token,
+                effects_state="none",
             )
         return await self.api.handle_request(request)

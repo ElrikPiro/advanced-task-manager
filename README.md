@@ -36,7 +36,7 @@ Task-list queries default to page 1, five items per page, the `All active task f
 
 Older command-style GET paths that could change task data or shared view state are retired and return `404` with the `legacy-route-retired` problem code. The old volatile `/notifications` endpoint is also unavailable; persistent notification history is not part of the current API.
 
-The API accepts a configured Bearer token, but the backend does not enforce HTTPS. Validation for this version used a local loopback test server; HTTPS behavior has not been verified and HTTPS enforcement remains unimplemented. Do not expose the token over an untrusted network.
+The API requires HTTPS and a configured Bearer token. It will not start an authenticated HTTP listener if its TLS certificate chain or private key is missing or cannot be loaded. See [HTTPS certificates and client trust](#https-certificates-and-client-trust) before enabling API mode.
 
 Task IDs are opaque strings stored with each task: JSON records use `id`, and Markdown task lines can declare `[id:: value]`. When an older task has no ID, the backend derives a compatibility ID from its description and current storage location. JSON uses the configured task-file path and the task's zero-based position in the full array; Markdown uses the file path and line number. Reading does not write a derived ID. The first real task update stores it, and later edits or moves keep that value. Resolution includes completed tasks. A lookup for an ID with no matching task reports absence, while duplicate IDs report ambiguity and block writes to that ID. MD5 fallback IDs can collide, so the backend does not guarantee mathematical uniqueness.
 
@@ -69,9 +69,21 @@ If an API mode is selected, you will need to provide:
 - **Server port** - The port number for the server (default: 8080)
 - **API prefix** - The resource API base path (`HTTP_API_PREFIX`, default: `/api/v1`; for example, `/manager/api/v1`)
 - **Authentication token** - A secure token that clients must provide in the Authorization header
+- **`HTTP_TLS_CERT_CHAIN_PATH`** - Required path to a PEM certificate chain containing the server certificate and any intermediate certificates
+- **`HTTP_TLS_PRIVATE_KEY_PATH`** - Required path to the matching PEM private key
 - **Chat ID** - The identifier used by the configured API interface (default: 1)
 
-The resource API accepts a Bearer token in the `Authorization` header. Each response includes a generated `X-Request-ID`; problem responses repeat it as `requestId` and report the request's effects when known. HTTPS enforcement is not implemented in this backend version.
+The resource API accepts a Bearer token in the `Authorization` header. Each response includes a generated `X-Request-ID`; problem responses repeat it as `requestId` and report the request's effects when known.
+
+#### HTTPS certificates and client trust
+
+API mode requires both TLS paths in `config.json`. Supply a PEM chain with the server certificate first and its intermediate certificates after it, plus the matching, unencrypted PEM private key. Startup does not prompt for a passphrase. The listener validates and loads both before opening its socket. Missing, unreadable, invalid, or mismatched material prevents startup; the service never falls back to HTTP. The listener uses Python's `ssl` server profile with TLS 1.2 as the minimum and TLS 1.3 when supported by the installed Python/OpenSSL runtime. Cipher selection follows that runtime's defaults rather than a separately maintained cipher list; see the [Python `ssl` documentation](https://docs.python.org/3.13/library/ssl.html).
+
+Keep the private key outside source control, backups or support bundles that are shared without protection, and application logs. Give it read access only to the service account (for example, owner-only permissions such as `0600`, or an equivalent restricted group ACL). The certificate chain may be readable by the service account. The service operator obtains and renews certificate material separately, verifies that the key matches the chain, and restarts the service in a controlled window after updating both files. There is no automatic certificate enrollment, hot reload, or HTTP fallback.
+
+For a private CA, distribute the CA certificate and its SHA-256 fingerprint through a separately authenticated channel and verify the fingerprint before installing it in the effective browser or system trust store. In Firefox, use its certificate manager and Authorities list; Chromium uses its certificate manager or the effective system store, depending on platform. A self-signed server certificate must be explicitly trusted by the client. The certificate must be current and include a Subject Alternative Name (SAN) matching the exact DNS name or IP address used by the client; trust does not bypass hostname or validity checks. Remove a trust anchor from the effective store, restart affected client connections, and verify that the endpoint is rejected. Another independently trusted chain can still validate the same server certificate.
+
+Clients rely on their native certificate verifier's revocation policy; the listener does not implement its own OCSP or CRL checks. Availability and handling of revocation data can vary, so the service does not promise a uniform result when it is absent. Browser trust and access have not been tested as part of this repository's backend checks. The API does not enable CORS for external web pages; use an authenticated extension or another client that can make an HTTPS request.
 
 #### Markdown vault directory
 

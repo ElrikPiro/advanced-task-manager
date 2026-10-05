@@ -124,8 +124,12 @@ class TelegramReportingService(IReportingService):
                 asyncio.run(self._listenForEvents())
                 errCount = 0
             except Exception as e:
-                self._lastError = f"Error: {repr(e)}"
-                self._logger.error(self._lastError)
+                if getattr(self.bot, "api", None) is not None:
+                    self._lastError = "HTTP service failed; diagnostic details are suppressed."
+                    self._logger.error(self._lastError)
+                else:
+                    self._lastError = f"Error: {repr(e)}"
+                    self._logger.error(self._lastError)
                 sleepSync(self.ERROR_TIMEOUT)
                 errCount += 1
                 if errCount > self.MAX_ERRORS:
@@ -143,7 +147,12 @@ class TelegramReportingService(IReportingService):
                 try:
                     await self.bot.shutdown()
                 except Exception as e:
-                    self._logger.critical(f"Fatal error: {repr(e)} shutting down.")
+                    if getattr(self.bot, "api", None) is not None:
+                        self._logger.critical(
+                            "HTTP service shutdown failed; diagnostic details are suppressed."
+                        )
+                    else:
+                        self._logger.critical(f"Fatal error: {repr(e)} shutting down.")
                     self.run = False
                 finally:
                     raise

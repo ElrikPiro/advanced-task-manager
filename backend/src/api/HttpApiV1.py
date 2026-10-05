@@ -106,7 +106,11 @@ class HttpApiV1:
         self.application_service = application_service
         self.token = token
         self.prefix, self._prefix_segments = normalize_api_prefix(prefix)
-        self.resources = ApiResources(application_service, prefix=self.prefix)
+        self.resources = ApiResources(
+            application_service,
+            prefix=self.prefix,
+            token=token,
+        )
 
     def create_app(self) -> web.Application:
         """Create an aiohttp app for production or isolated TestClient use."""
@@ -913,7 +917,7 @@ class HttpApiV1:
                 saved_count = int(saved_count_value)
             except ValueError:
                 saved_count = -1
-            if 0 <= saved_count <= 1_000_000:
+            if saved_count >= 0:
                 evidence["savedCount"] = saved_count
 
         resource = details.get("failed_resource") or details.get("resource")

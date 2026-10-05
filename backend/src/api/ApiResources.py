@@ -12,6 +12,7 @@ from urllib.parse import quote, urlencode, urlsplit
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from src.MutationCoordinator import OperationFailure, OperationReceipt
+from src.api.ProblemDetails import safe_detail
 from src.Utils import (
     ActiveFilterEntry,
     EventStatistics,
@@ -45,6 +46,7 @@ class ApiResources:
         self,
         application_service: TaskApplicationService,
         prefix: str = "/api/v1",
+        token: str = "",
     ) -> None:
         if not isinstance(prefix, str) or not prefix.strip():
             raise ValueError("API prefix must be a non-empty path")
@@ -52,6 +54,7 @@ class ApiResources:
         if parsed_prefix.scheme or parsed_prefix.netloc or parsed_prefix.query or parsed_prefix.fragment:
             raise ValueError("API prefix must be a path without query or fragment")
         self.application_service = application_service
+        self._diagnostic_token = token
         self.prefix = "/" + "/".join(part for part in prefix.split("/") if part)
         if self.prefix == "/":
             raise ValueError("API prefix must include a version path")
@@ -896,7 +899,7 @@ class ApiResources:
         ):
             value = failure.details.get(source)
             if isinstance(value, str) and value:
-                details[destination] = value
+                details[destination] = safe_detail(value, self._diagnostic_token)
 
         saved_count = failure.details.get("saved_count")
         if isinstance(saved_count, int) and not isinstance(saved_count, bool) and saved_count >= 0:
@@ -905,22 +908,26 @@ class ApiResources:
             details["savedCount"] = int(saved_count)
 
         saved_ids_value = failure.details.get("saved_ids")
-        saved_ids: list[str] = []
+        raw_saved_ids: list[str] = []
         if isinstance(saved_ids_value, str):
             try:
                 parsed_saved_ids = json.loads(saved_ids_value)
             except (TypeError, ValueError):
                 parsed_saved_ids = None
             if isinstance(parsed_saved_ids, list):
-                saved_ids = [
+                raw_saved_ids = [
                     value for value in parsed_saved_ids
                     if isinstance(value, str) and value
                 ]
         elif isinstance(saved_ids_value, list):
-            saved_ids = [
+            raw_saved_ids = [
                 value for value in saved_ids_value
                 if isinstance(value, str) and value
             ]
+        saved_ids = [
+            safe_detail(value, self._diagnostic_token)
+            for value in raw_saved_ids
+        ]
         if saved_ids:
             details["savedIds"] = saved_ids
 
@@ -942,17 +949,24 @@ class ApiResources:
         if isinstance(write_replaced, str) and write_replaced in {"true", "false", "unknown"}:
             details["writeReplaced"] = write_replaced
 
-        review_ids = list(saved_ids)
+        review_ids = [
+            value for value in raw_saved_ids
+            if safe_detail(value, self._diagnostic_token) == value
+        ]
         for field in ("failed_id", "uncertain_id"):
             value = failure.details.get(field)
-            if isinstance(value, str) and value not in review_ids:
-                review_ids.append(value)
+            if isinstance(value, str):
+                safe_id = safe_detail(value, self._diagnostic_token)
+                if safe_id and safe_id == value and value not in review_ids:
+                    review_ids.append(value)
         resource_links = [
             self._link(self._resource_href(target.kind, identifier))
             for identifier in review_ids
         ]
         return {
-            "code": failure.code or "operation-failed",
+            "code": safe_detail(
+                failure.code or "operation-failed", self._diagnostic_token
+            ),
             "detail": "The operation failed; inspect the current resource state.",
             "effectsState": failure.effects_state,
             "details": details,

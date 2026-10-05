@@ -1,4 +1,5 @@
 import json
+import getpass
 import os
 import sys
 from dependency_injector import containers, providers
@@ -134,11 +135,17 @@ class TelegramReportingServiceContainer():
             httpPort = input("Please enter the HTTP server port (default: 8080): ") or "8080"
             defaultConfig["HTTP_PORT"] = httpPort
 
-            httpToken = input("Please enter the HTTP authentication token: ")
+            httpToken = getpass.getpass("Please enter the HTTP authentication token: ")
             defaultConfig["HTTP_TOKEN"] = httpToken
 
             httpApiPrefix = input("Please enter the HTTP API prefix (default: /api/v1): ") or "/api/v1"
             defaultConfig["HTTP_API_PREFIX"] = httpApiPrefix
+
+            tlsCertChainPath = input("Please enter the TLS certificate chain PEM path: ")
+            defaultConfig["HTTP_TLS_CERT_CHAIN_PATH"] = tlsCertChainPath
+
+            tlsPrivateKeyPath = input("Please enter the TLS private key PEM path: ")
+            defaultConfig["HTTP_TLS_PRIVATE_KEY_PATH"] = tlsPrivateKeyPath
 
             httpChatId = input("Please enter the HTTP chat ID (default: 1): ") or "1"
             defaultConfig["HTTP_CHAT_ID"] = httpChatId
@@ -171,7 +178,7 @@ class TelegramReportingServiceContainer():
                 contextCategories = [category["prefix"] for category in defaultConfig["categories"]]
                 # check if the default context is in the list of prefixes
                 while defaultContext not in contextCategories:
-                    print(f"Invalid context, please select one of the following: {contextCategories}")
+                    print("Invalid context; select a configured category")
                     defaultContext = input("Please enter the default context: ")
 
                 defaultConfig["DEFAULT_CONTEXT"] = defaultContext
@@ -192,8 +199,8 @@ class TelegramReportingServiceContainer():
             try:
                 pomodorosPerDay = TimeAmount(dedicationTime)
                 validPomodoros = TimeAmount(dedicationTime).as_pomodoros() > 0
-            except Exception as e:
-                print(f"Invalid pomodoro value: {e}")
+            except Exception:
+                print("Invalid duration value; try again")
                 validPomodoros = False
 
         defaultConfig["DEDICATION_TIME"] = f"{pomodorosPerDay.as_pomodoros()}p"
@@ -225,8 +232,8 @@ class TelegramReportingServiceContainer():
         # Configuration
         try:
             self.config.jsonConfig.from_json("config.json", required=True)
-        except Exception as e:
-            print(f"Error reading config.json: {e}")
+        except Exception:
+            print("Unable to read configuration")
             print("Creating a default configuration")
             self.createDefaultConfig()
             self.config.jsonConfig.from_json("config.json", required=True)
@@ -246,6 +253,20 @@ class TelegramReportingServiceContainer():
         httpPort = int(self.tryGetConfig("HTTP_PORT", httpMode, default="8080") or "8080")
         httpToken = self.tryGetConfig("HTTP_TOKEN", httpMode, default="NULL_HTTP_TOKEN")
         httpApiPrefix = self.tryGetConfig("HTTP_API_PREFIX", httpMode, default="/api/v1")
+        if httpMode:
+            tlsCertChainPath = self.tryGetConfig(
+                "HTTP_TLS_CERT_CHAIN_PATH", required=True
+            )
+            tlsPrivateKeyPath = self.tryGetConfig(
+                "HTTP_TLS_PRIVATE_KEY_PATH", required=True
+            )
+            if not tlsCertChainPath or not tlsCertChainPath.strip():
+                raise ValueError("TLS certificate chain path is required")
+            if not tlsPrivateKeyPath or not tlsPrivateKeyPath.strip():
+                raise ValueError("TLS private key path is required")
+        else:
+            tlsCertChainPath = None
+            tlsPrivateKeyPath = None
         httpChatId = int(self.tryGetConfig("HTTP_CHAT_ID", httpMode, default="1") or "1")
 
         appdata = self.tryGetConfig("APPDATA", obsidianMode, default="NULL_APPDATA")
@@ -429,6 +450,8 @@ class TelegramReportingServiceContainer():
                 httpToken,
                 httpChatId,
                 botId,
+                tls_cert_chain_path=tlsCertChainPath,
+                tls_private_key_path=tlsPrivateKeyPath,
                 application_service=self.container.taskApplicationService,
                 api_prefix=httpApiPrefix,
             )

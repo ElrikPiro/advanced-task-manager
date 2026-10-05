@@ -293,8 +293,8 @@ class ObsidianVaultTaskJsonProvider(ITaskJsonProvider):
             taskDict["total_cost"] = str(total_cost)
             taskDict["effort_invested"] = taskDict["invested"]
             taskDict["valid"] = "True"
-        except ValueError as error:
-            print(f"Error while processing task {taskDict['taskText']} in file {file} at line {lineNum}: {error}")
+        except ValueError:
+            print("Invalid task metadata was skipped; diagnostic details are suppressed.")
             taskDict["valid"] = "False"
 
         return taskDict

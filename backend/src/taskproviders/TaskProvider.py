@@ -77,8 +77,8 @@ class TaskProvider(ITaskProvider):
         while self.serviceRunning:
             try:
                 self.discoverTasks()
-            except Exception as error:
-                print(f"Task discovery failed: {error.__class__.__name__}: {error}")
+            except Exception:
+                print("Task discovery failed; diagnostic details are suppressed.")
             else:
                 for callback in self.onTaskListUpdatedCallbacks:
                     callback()

@@ -77,8 +77,8 @@ class ObsidianTaskProvider(ITaskProvider):
             previousTaskList = self.lastTaskList
             try:
                 newTaskList = self.discoverTasks()
-            except Exception as error:
-                print(f"Task discovery failed: {error.__class__.__name__}: {error}")
+            except Exception:
+                print("Task discovery failed; diagnostic details are suppressed.")
             else:
                 if not self.compare(previousTaskList, newTaskList):
                     for callback in self.onTaskListUpdatedCallbacks:
