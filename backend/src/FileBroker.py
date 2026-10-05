@@ -3,6 +3,7 @@ import os
 import typing
 from .Utils import FileContent, FileContentJson, StatisticsFileContentJson, WorkLogEntry
 from .Interfaces.IFileBroker import IFileBroker, FileRegistry, VaultRegistry
+from .taskmodels.TaskIdentity import InvalidTaskIdentityError
 
 
 class FileBroker(IFileBroker):
@@ -37,6 +38,9 @@ class FileBroker(IFileBroker):
             VaultRegistry.OBSIDIAN: vaultPath
         }
 
+    def getFilePath(self, fileRegistry: FileRegistry) -> str:
+        return str(self.filePaths[fileRegistry]["path"])
+
     def readFileContent(self, fileRegistry: FileRegistry) -> str:
         try:
             with open(str(self.filePaths[fileRegistry]["path"]), "r", errors="ignore") as file:
@@ -54,10 +58,19 @@ class FileBroker(IFileBroker):
     def readFileContentJson(self, fileRegistry: FileRegistry) -> FileContentJson:
         try:
             with open(str(self.filePaths[fileRegistry]["path"]), "r", errors="ignore") as file:
-                return dict(json.load(file))
+                return dict(json.load(file, object_pairs_hook=self.__rejectRepeatedIdKeys))
         except FileNotFoundError:
             retval: FileContentJson = json.loads(str(self.filePaths[fileRegistry]["default"]))
             return retval
+
+    @staticmethod
+    def __rejectRepeatedIdKeys(pairs: list[tuple[str, typing.Any]]) -> dict[str, typing.Any]:
+        result: dict[str, typing.Any] = {}
+        for key, value in pairs:
+            if key == "id" and key in result:
+                raise InvalidTaskIdentityError("A task object declares its ID more than once")
+            result[key] = value
+        return result
         
     def readStatisticsFileContentJson(self) -> StatisticsFileContentJson:
         try:

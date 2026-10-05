@@ -5,11 +5,12 @@ import json
 from contextlib import contextmanager
 from pathlib import Path
 from tempfile import TemporaryDirectory
-from typing import Iterator
+from typing import Any, Iterator
 from unittest import TestCase
 from unittest.mock import patch
 
 from src.FileBroker import FileBroker
+from src.HeuristicScheduling import HeuristicScheduling
 from src.Interfaces.IFileBroker import FileRegistry
 from src.StatisticsService import StatisticsService
 from src.TelegramTaskListManager import TelegramTaskListManager
@@ -18,7 +19,8 @@ from src.algorithms.EdfAlgorithm import EdfAlgorithm
 from src.algorithms.GtdAlgorithm import GtdAlgorithm
 from src.algorithms.ShortestJobAlgorithm import ShortestJobAlgorithm
 from src.domain.TaskApplicationService import TaskApplicationService
-from src.domain.models import AgendaQuery, TaskView
+from src.domain.errors import AmbiguousResourceError, InvalidResourceDataError, ResourceNotFoundError
+from src.domain.models import AgendaQuery, OperationTarget, TaskView
 from src.filters.ActiveTaskFilter import ActiveTaskFilter, InactiveTaskFilter
 from src.filters.ContextPrefixTaskFilter import ContextPrefixTaskFilter
 from src.filters.WorkloadAbleFilter import WorkloadAbleFilter
@@ -30,6 +32,7 @@ from src.heuristics.StartTimeHeuristic import StartTimeHeuristic
 from src.heuristics.WorkloadHeuristic import WorkloadHeuristic
 from src.taskjsonproviders.ObsidianVaultTaskJsonProvider import ObsidianVaultTaskJsonProvider
 from src.taskjsonproviders.TaskJsonProvider import TaskJsonProvider
+from src.taskmodels.TaskIdentity import fallback_task_id
 from src.taskproviders.ObsidianTaskProvider import ObsidianTaskProvider
 from src.taskproviders.TaskProvider import TaskProvider
 from src.wrappers.TimeManagement import TimeAmount, TimePoint
@@ -89,7 +92,7 @@ class ApplicationReadIntegrationTest(TestCase):
             task["unknownTaskField"] = unknown
         return task
 
-    def _create_query_stack(self, file_broker: FileBroker, task_provider):
+    def _create_query_stack(self, file_broker: FileBroker, task_provider, scheduling: Any | None = None):
         categories = [
             {"prefix": "alert", "description": "Alert"},
             {"prefix": "work", "description": "Work"},
@@ -164,7 +167,7 @@ class ApplicationReadIntegrationTest(TestCase):
         )
         application = TaskApplicationService(
             task_provider,
-            scheduling=None,
+            scheduling=scheduling,
             statistics_service=statistics,
             task_list_manager=channel_manager,
             categories=categories,
@@ -407,9 +410,8 @@ class ApplicationReadIntegrationTest(TestCase):
                 self.assertEqual(combined_page_three.tasks, [])
                 self.assertEqual(combined_page_three.total_tasks, 2)
                 self.assertEqual(combined_page_three.total_pages, 2)
-                # Q-011 search is an OR match over every non-completed task;
-                # the default active filter and GTD strategy must not hide a
-                # future task or a match in another category.
+                # Search is an OR match over non-completed tasks; default
+                # filters and strategies must not hide future or other-category matches.
                 self.assertEqual(
                     {task.description for task in search_with_defaults.tasks},
                     {"Plan a future task", "Prepare home office"},
@@ -420,8 +422,8 @@ class ApplicationReadIntegrationTest(TestCase):
                 self.assertEqual(no_active_filters.tasks, [])
                 self.assertEqual(no_active_filters.total_tasks, 0)
 
-                # Query IDs are currently provisional, but a response must still
-                # resolve to the same physical task when a completed task is before it.
+                # An ID returned by a query must resolve to the same task even
+                # when completed rows precede it in storage.
                 queried_open_task = work_tasks["Review release draft"]
                 resolved_task = application.read_task(queried_open_task.id)
                 self.assertEqual(resolved_task.getDescription(), queried_open_task.description)
@@ -564,4 +566,240 @@ class ApplicationReadIntegrationTest(TestCase):
                 ],
                 baseline_algorithms,
             )
+            task_provider.dispose()
+
+    def test_json_identity_is_lazy_stable_and_resolved_across_positions_and_completion(self) -> None:
+        with self._fixed_clock(), TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            data = root / "data"
+            data.mkdir()
+            vault = root / "vault"
+            vault.mkdir()
+            tasks_path = data / "tasks.json"
+            completed = self._base_task(
+                description="Completed archival task",
+                context="work:release",
+                start=(self.FIXED_NOW + TimeAmount("-30d")).as_int(),
+                due=(self.FIXED_NOW + TimeAmount("-1d")).as_int(),
+                status="x",
+                unknown={"keep": "completed"},
+            )
+            completed["id"] = "completed-task"
+            target = self._base_task(
+                description="Legacy JSON task",
+                context="work:writing",
+                start=(self.FIXED_NOW + TimeAmount("-1d")).as_int(),
+                due=(self.FIXED_NOW + TimeAmount("3650d")).as_int(),
+                unknown={"keep": "target"},
+            )
+            document = {
+                "unknownTopLevel": {"keep": "top-level"},
+                "tasks": [completed, target],
+            }
+            tasks_path.write_text(json.dumps(document, indent=2), encoding="utf-8")
+
+            file_broker = FileBroker(str(data), str(root / "appdata"), str(vault))
+            task_provider = TaskProvider(TaskJsonProvider(file_broker), file_broker, disableThreading=True)
+            application, _, _, _ = self._create_query_stack(file_broker, task_provider)
+            target_id = fallback_task_id("Legacy JSON task", str(tasks_path), 1)
+
+            before_reads = self._snapshot(data)
+            self.assertEqual(application.read_task(target_id).getDescription(), "Legacy JSON task")
+            self.assertEqual(application.read_task("completed-task").getStatus(), "x")
+            with self.assertRaises(ResourceNotFoundError):
+                application.read_task("no-such-task")
+            self.assertEqual(self._snapshot(data), before_reads)
+            self.assertNotIn("id", json.loads(tasks_path.read_text(encoding="utf-8"))["tasks"][1])
+
+            updated = application.edit_task(target_id, {"description": "Renamed JSON task"})
+            self.assertEqual(updated.getTaskUID(), target_id)
+            saved = json.loads(tasks_path.read_text(encoding="utf-8"))
+            self.assertEqual(saved["unknownTopLevel"], {"keep": "top-level"})
+            self.assertEqual(saved["tasks"][1]["id"], target_id)
+            self.assertEqual(saved["tasks"][1]["description"], "Renamed JSON task")
+            self.assertEqual(saved["tasks"][1]["unknownTaskField"], {"keep": "target"})
+            self.assertEqual(saved["tasks"][0]["unknownTaskField"], {"keep": "completed"})
+
+            # Moving a persisted row changes its physical position but not its ID.
+            saved["tasks"] = [saved["tasks"][1], saved["tasks"][0]]
+            tasks_path.write_text(json.dumps(saved, indent=2), encoding="utf-8")
+            before_repeated_read = self._snapshot(data)
+            self.assertEqual(application.read_task(target_id).getDescription(), "Renamed JSON task")
+            self.assertEqual(self._snapshot(data), before_repeated_read)
+            completed_result = application.execute_operation(
+                "complete-task",
+                OperationTarget("task", target_id),
+                {},
+            )
+            self.assertEqual(completed_result.affected_ids, (target_id,))
+            self.assertEqual(application.read_task(target_id).getStatus(), "x")
+            saved_after_completion = json.loads(tasks_path.read_text(encoding="utf-8"))
+            completed_target = next(task for task in saved_after_completion["tasks"] if task.get("id") == target_id)
+            self.assertEqual(completed_target["unknownTaskField"], {"keep": "target"})
+
+            # A copied identity makes every write to that identifier ambiguous.
+            saved_after_completion["tasks"][1]["id"] = target_id
+            tasks_path.write_text(json.dumps(saved_after_completion, indent=2), encoding="utf-8")
+            ambiguous_snapshot = self._snapshot(data)
+            with self.assertRaises(AmbiguousResourceError):
+                application.edit_task(target_id, {"description": "Must not be written"})
+            self.assertEqual(self._snapshot(data), ambiguous_snapshot)
+
+            saved_after_completion["tasks"][1]["id"] = "completed-task"
+            invalid_record = self._base_task(
+                description="Invalid declared ID",
+                context="work:ops",
+                start=self.FIXED_NOW.as_int(),
+                due=(self.FIXED_NOW + TimeAmount("1d")).as_int(),
+            )
+            invalid_record["id"] = 17
+            saved_after_completion["tasks"].append(invalid_record)
+            tasks_path.write_text(json.dumps(saved_after_completion, indent=2), encoding="utf-8")
+            invalid_snapshot = self._snapshot(data)
+            with self.assertRaises(InvalidResourceDataError):
+                application.read_task(target_id)
+            self.assertEqual(self._snapshot(data), invalid_snapshot)
+            task_provider.dispose()
+
+    def test_json_schedule_keeps_source_identity_and_assigns_distinct_part_ids(self) -> None:
+        with self._fixed_clock(), TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            data = root / "data"
+            data.mkdir()
+            vault = root / "vault"
+            vault.mkdir()
+            tasks_path = data / "tasks.json"
+            source = self._base_task(
+                description="Split this task",
+                context="work:writing",
+                start=(self.FIXED_NOW + TimeAmount("-1d")).as_int(),
+                due=(self.FIXED_NOW + TimeAmount("3650d")).as_int(),
+                unknown={"keep": "source"},
+            )
+            source["id"] = "source-id"
+            tasks_path.write_text(
+                json.dumps({"customDocumentData": {"keep": True}, "tasks": [source]}, indent=2),
+                encoding="utf-8",
+            )
+            file_broker = FileBroker(str(data), str(root / "appdata"), str(vault))
+            task_provider = TaskProvider(TaskJsonProvider(file_broker), file_broker, disableThreading=True)
+            application, _, _, _ = self._create_query_stack(
+                file_broker,
+                task_provider,
+                scheduling=HeuristicScheduling(TimeAmount("5p"), task_provider),
+            )
+
+            result = application.execute_operation(
+                "schedule-task",
+                OperationTarget("task", "source-id"),
+                {"effort_per_day": "11p"},
+            )
+
+            document = json.loads(tasks_path.read_text(encoding="utf-8"))
+            ids = [task["id"] for task in document["tasks"]]
+            self.assertEqual(result.affected_ids, tuple(ids))
+            self.assertGreater(len(ids), 1)
+            self.assertEqual(ids[0], "source-id")
+            self.assertEqual(len(ids), len(set(ids)))
+            self.assertEqual(document["customDocumentData"], {"keep": True})
+            self.assertEqual(document["tasks"][0]["unknownTaskField"], {"keep": "source"})
+            for task_id in ids:
+                self.assertEqual(application.read_task(task_id).getTaskUID(), task_id)
+            task_provider.dispose()
+
+    def test_markdown_identity_survives_edits_and_moves_and_rejects_ambiguous_or_invalid_data(self) -> None:
+        with self._fixed_clock(), TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            data = root / "data"
+            data.mkdir()
+            vault = root / "vault"
+            vault.mkdir()
+            start = str((self.FIXED_NOW + TimeAmount("-1d")).strip_time())
+            due = str((self.FIXED_NOW + TimeAmount("3650d")).strip_time())
+            source_path = vault / "Notes.md"
+            source_path.write_text(
+                "# Notes\n"
+                f"- [ ] Legacy markdown task [track::work] [starts::{start}] [due::{due}] "
+                "[severity::1] [remaining_cost::8] [invested::2] [calm::false] [custom::keep]\n"
+                f"- [x] Completed markdown task [track::work] [starts::{start}] [due::{due}] "
+                "[severity::1] [remaining_cost::2] [invested::2] [calm::false] [id:: completed-markdown]\n",
+                encoding="utf-8",
+            )
+            file_broker = FileBroker(str(data), str(root / "appdata"), str(vault))
+            policies = TaskDiscoveryPolicies(
+                context_missing_policy="0",
+                date_missing_policy="0",
+                default_context="work",
+                categories_prefixes=["work"],
+            )
+            markdown_json = ObsidianVaultTaskJsonProvider(file_broker, policies)
+            task_provider = ObsidianTaskProvider(markdown_json, file_broker, disableThreading=True)
+            application, _, _, _ = self._create_query_stack(
+                file_broker,
+                task_provider,
+                scheduling=HeuristicScheduling(TimeAmount("5p"), task_provider),
+            )
+            target = next(
+                task for task in task_provider.getTaskList(include_completed=True)
+                if task.getTaskText() == "Legacy markdown task"
+            )
+            target_id = fallback_task_id("Legacy markdown task", "Notes.md", target.getLine())
+            self.assertEqual(target.getTaskUID(), target_id)
+            self.assertEqual(application.read_task("completed-markdown").getStatus(), "x")
+            before_reads = self._snapshot(vault)
+            self.assertEqual(application.read_task(target_id).getTaskUID(), target_id)
+            self.assertEqual(self._snapshot(vault), before_reads)
+
+            application.edit_task(target_id, {"description": "Updated markdown task"})
+            updated_lines = source_path.read_text(encoding="utf-8")
+            self.assertIn(f"[id:: {target_id}]", updated_lines)
+            self.assertIn("[custom::keep]", updated_lines)
+            self.assertEqual(application.read_task(target_id).getTaskUID(), target_id)
+
+            source_lines = source_path.read_text(encoding="utf-8").splitlines(keepends=True)
+            moved_line = next(line for line in source_lines if f"[id:: {target_id}]" in line)
+            source_path.write_text("".join(line for line in source_lines if line != moved_line), encoding="utf-8")
+            moved_path = vault / "Moved.md"
+            moved_path.write_text("# Moved\n" + moved_line, encoding="utf-8")
+            before_move_read = self._snapshot(vault)
+            resolved_after_move = application.read_task(target_id)
+            self.assertEqual(resolved_after_move.getFile(), "Moved.md")
+            self.assertEqual(self._snapshot(vault), before_move_read)
+            application.edit_task(target_id, {"context": "work:edited"})
+            self.assertIn(f"[id:: {target_id}]", moved_path.read_text(encoding="utf-8"))
+            self.assertIn("[custom::keep]", moved_path.read_text(encoding="utf-8"))
+
+            split = application.execute_operation(
+                "schedule-task",
+                OperationTarget("task", target_id),
+                {"effort_per_day": "11p"},
+            )
+            split_ids = split.affected_ids
+            self.assertGreater(len(split_ids), 1)
+            self.assertEqual(split_ids[0], target_id)
+            self.assertEqual(len(split_ids), len(set(split_ids)))
+            all_ids = [task.getTaskUID() for task in task_provider.getTaskList(include_completed=True)]
+            self.assertEqual(len(all_ids), len(set(all_ids)))
+
+            duplicate_path = vault / "Duplicate.md"
+            moved_line = next(
+                line for line in moved_path.read_text(encoding="utf-8").splitlines(keepends=True)
+                if f"[id:: {target_id}]" in line
+            )
+            duplicate_path.write_text("# Duplicate\n" + moved_line, encoding="utf-8")
+            duplicate_snapshot = self._snapshot(vault)
+            with self.assertRaises(AmbiguousResourceError):
+                application.edit_task(target_id, {"description": "Must not be written"})
+            self.assertEqual(self._snapshot(vault), duplicate_snapshot)
+
+            invalid_path = vault / "Invalid.md"
+            invalid_path.write_text(
+                f"- [ ] Invalid identity [track::work] [starts::{start}] [due::{due}] "
+                "[severity::1] [remaining_cost::1] [invested::0] [calm::false] [id:: ]\n",
+                encoding="utf-8",
+            )
+            invalid_snapshot = self._snapshot(vault)
+            with self.assertRaises(InvalidResourceDataError):
+                application.read_task(target_id)
+            self.assertEqual(self._snapshot(vault), invalid_snapshot)
             task_provider.dispose()

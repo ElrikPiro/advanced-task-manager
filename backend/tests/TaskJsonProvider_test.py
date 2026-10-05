@@ -3,11 +3,15 @@ from unittest.mock import MagicMock, patch
 
 from src.taskjsonproviders.TaskJsonProvider import TaskJsonProvider
 from src.Interfaces.IFileBroker import IFileBroker, FileRegistry
+from src.taskmodels.TaskIdentity import fallback_task_id
+from src.taskproviders.TaskIdentityErrors import AmbiguousTaskIdentityError, InvalidTaskIdentityError
 
 
 class TestTaskJsonProvider(unittest.TestCase):
     def setUp(self):
         self.mock_file_broker = MagicMock(spec=IFileBroker)
+        self.identity_path = "/configured/tasks.json"
+        self.mock_file_broker.getFilePath.return_value = self.identity_path
         self.provider = TaskJsonProvider(self.mock_file_broker)
 
     def test_getJson_calls_file_broker(self):
@@ -73,6 +77,7 @@ class TestTaskJsonProvider(unittest.TestCase):
         self.assertEqual(tasks[0]["context"], "alert")
         self.assertEqual(tasks[0]["start"], "20230101")
         self.assertEqual(tasks[0]["due"], "20230101")
+        self.assertEqual(tasks[0]["id"], fallback_task_id("Define next action", self.identity_path, 0))
         self.mock_file_broker.writeFileContentJson.assert_called_once_with(FileRegistry.STANDALONE_TASKS_JSON, result)
 
     def test_discover_with_existing_tasks(self):
@@ -155,6 +160,30 @@ class TestTaskJsonProvider(unittest.TestCase):
 
         # Assert
         self.mock_file_broker.writeFileContentJson.assert_called_once_with(FileRegistry.STANDALONE_TASKS_JSON, mock_json)
+
+    def test_getJson_rejects_invalid_declared_ids(self):
+        self.mock_file_broker.readFileContentJson.return_value = {"tasks": [{"description": "Bad", "id": " \t"}]}
+
+        with self.assertRaises(InvalidTaskIdentityError):
+            self.provider.getJson()
+
+    def test_saveJson_rejects_invalid_declared_ids_before_writing(self):
+        with self.assertRaises(InvalidTaskIdentityError):
+            self.provider.saveJson({"tasks": [{"description": "Bad", "id": 42}]})
+
+        self.mock_file_broker.writeFileContentJson.assert_not_called()
+
+    def test_discover_does_not_create_a_task_with_a_conflicting_id(self):
+        conflicting_id = fallback_task_id("Define next action", self.identity_path, 1)
+        self.mock_file_broker.readFileContentJson.return_value = {
+            "tasks": [{"description": "Finished", "project": "Other", "status": "x", "id": conflicting_id}],
+            "projects": [{"name": "Project1", "status": "open"}],
+        }
+
+        with self.assertRaisesRegex(AmbiguousTaskIdentityError, "conflicts with an existing task"):
+            self.provider.discover()
+
+        self.mock_file_broker.writeFileContentJson.assert_not_called()
 
 
 if __name__ == "__main__":

@@ -6,10 +6,17 @@ class DomainError(Exception):
 
     code = "domain-error"
 
-    def __init__(self, message: str, *, details: dict[str, str] | None = None):
+    def __init__(
+        self,
+        message: str,
+        *,
+        details: dict[str, str] | None = None,
+        effects_state: str | None = None,
+    ):
         super().__init__(message)
         self.message = message
         self.details = details or {}
+        self.effects_state = effects_state
 
 
 class ValidationError(DomainError):
@@ -28,6 +35,12 @@ class ResourceReadError(DomainError):
     """The provider could not read the requested domain data."""
 
     code = "resource-read-failed"
+
+
+class InvalidResourceDataError(DomainError):
+    """Stored task data declares an invalid identity or shape."""
+
+    code = "invalid-resource-data"
 
 
 class DomainCalculationError(DomainError):
@@ -60,5 +73,5 @@ class OperationFailedError(DomainError):
         effects_state: str = "unknown",
         details: dict[str, str] | None = None,
     ):
-        super().__init__(message, details=details)
+        super().__init__(message, details=details, effects_state=effects_state)
         self.effects_state = effects_state

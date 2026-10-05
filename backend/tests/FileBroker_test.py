@@ -49,6 +49,26 @@ class TestFileBroker(unittest.TestCase):
         self.assertEqual(readcontent, {"tasks": []})
         self.assertEqual(mock_file.call_count, 1)
 
+    def test_getFilePath_returns_the_configured_path(self):
+        self.assertEqual(
+            self.fileBroker.getFilePath(FileRegistry.STANDALONE_TASKS_JSON),
+            os.path.join(self.jsonPath, "tasks.json"),
+        )
+
+    def test_repeated_id_key_is_rejected_without_changing_the_file(self):
+        with tempfile.TemporaryDirectory() as directory:
+            broker = FileBroker(directory, directory, os.path.join(directory, "vault"))
+            path = os.path.join(directory, "tasks.json")
+            invalid_content = '{"tasks": [{"description": "Bad", "id": "first", "id": "second"}]}'
+            with open(path, "w", encoding="utf-8") as file:
+                file.write(invalid_content)
+
+            with self.assertRaisesRegex(ValueError, "more than once"):
+                broker.readFileContentJson(FileRegistry.STANDALONE_TASKS_JSON)
+
+            with open(path, encoding="utf-8") as file:
+                self.assertEqual(file.read(), invalid_content)
+
     def test_readStatisticsFileContentJson_WhenFileIsMissing_ThenReturnSafeDefaultWithoutCreating(self):
         with patch("builtins.open", side_effect=FileNotFoundError):
             result = self.fileBroker.readStatisticsFileContentJson()

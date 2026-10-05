@@ -1,10 +1,10 @@
-import hashlib
 from ..Interfaces.ITaskModel import ITaskModel
+from .TaskIdentity import fallback_task_id, validate_task_id
 from .TaskModel import TaskModel
 
 
 class ObsidianTaskModel(TaskModel):
-    def __init__(self, description: str, context: str, start: int, due: int, severity: float, totalCost: float, investedEffort: float, status: str, file: str, line: int, calm: str, raised: str | None, waited: str | None):
+    def __init__(self, description: str, context: str, start: int, due: int, severity: float, totalCost: float, investedEffort: float, status: str, file: str, line: int, calm: str, raised: str | None, waited: str | None, task_id: str | None = None):
         self._description: str = description
         self._context: str = context
         self._start: int = int(start)
@@ -18,6 +18,7 @@ class ObsidianTaskModel(TaskModel):
         self._calm: bool = True if calm.upper().startswith("TRUE") else False
         self._raised = raised
         self._waited = waited
+        self._task_id = validate_task_id(task_id) if task_id is not None else fallback_task_id(self._description, self._file, self._line)
 
     # Overrided
     def getDescription(self) -> str:
@@ -41,8 +42,15 @@ class ObsidianTaskModel(TaskModel):
         return self.getEventRaised() == other.getEventRaised() and self.getEventWaited() == other.getEventWaited() and self.getDescription() == other.getDescription() and self.getContext() == other.getContext() and self.getStart() == other.getStart() and self.getDue() == other.getDue() and self.getSeverity() == other.getSeverity() and self.getTotalCost().as_pomodoros() == other.getTotalCost().as_pomodoros() and self.getInvestedEffort().as_pomodoros() == other.getInvestedEffort().as_pomodoros() and self.getStatus() == other.getStatus() and self.getFile() == other.getFile() and self.getLine() == other.getLine() and self.getCalm() == other.getCalm()  # type: ignore
 
     def getTaskUID(self) -> str:
-        hash_input = f"{self._description}{self._file}{self._line}"
-        return hashlib.md5(hash_input.encode()).hexdigest()
+        return self._task_id
+
+    def setTaskUID(self, task_id: str) -> None:
+        """Keep the identifier selected for this task across edits and moves."""
+        self._task_id = validate_task_id(task_id)
+
+    def getTaskText(self) -> str:
+        """Return the Markdown title without its rendered location suffix."""
+        return self._description
 
     # Class methods
     def getFile(self) -> str:

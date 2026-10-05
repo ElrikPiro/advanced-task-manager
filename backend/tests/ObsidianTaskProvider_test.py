@@ -2,11 +2,12 @@ import hashlib
 import json
 import unittest
 from unittest.mock import MagicMock
-from src.wrappers.TimeManagement import TimePoint, TimeAmount
+from src.taskmodels.TaskIdentity import fallback_task_id
+from src.taskproviders.TaskIdentityErrors import AmbiguousTaskIdentityError, MissingTaskIdentityError
+from src.wrappers.TimeManagement import TimePoint
 from src.taskproviders.ObsidianTaskProvider import ObsidianTaskProvider
 from src.Interfaces.ITaskJsonProvider import ITaskJsonProvider
-from src.Interfaces.IFileBroker import FileRegistry, IFileBroker, VaultRegistry
-from src.Interfaces.ITaskModel import ITaskModel
+from src.Interfaces.IFileBroker import IFileBroker
 from src.taskmodels.ObsidianTaskModel import ObsidianTaskModel
 
 
@@ -61,91 +62,109 @@ class TestObsidianTaskProvider(unittest.TestCase):
     def test_discard_pending_task_reservations_is_noop(self):
         self.assertIsNone(self.provider.discardPendingTaskReservations())
 
-    def test_saveTask_WhenTaskHasNoFiledata_CleanAndSave(self):
-        # Arrange
-        task = MagicMock(spec=ITaskModel)
-        task.getDescription.return_value = "mock task @ mockFile:1"
-        task.getContext.return_value = "mockContext"
-        task.getStart.return_value = TimePoint.today()
-        task.getDue.return_value = TimePoint.today()
-        task.getSeverity.return_value = 1.0
-        task.getTotalCost.return_value = TimeAmount("1p")
-        task.getInvestedEffort.return_value = TimeAmount("0p")
-        task.getStatus.return_value = " "
-        task.getCalm.return_value = True
-
-        self.mockFileBroker.readFileContent.return_value = "- [x]\n\n- [ ] dummy"
-
-        # Act
-        testClass = self.provider
-        testClass.saveTask(task)
-
-        # Assert
-        taskLine = testClass._getTaskLine(task)
-        self.mockFileBroker.writeFileContent.assert_called_once_with(
-            FileRegistry.OBSIDIAN_TASKS_MD,
-            "\n".join(["- [ ] dummy", taskLine])
+    def test_saveTask_persists_fallback_and_preserves_unknown_vault_content(self):
+        original_lines = [
+            "---\n",
+            "owner: planning\n",
+            "---\n",
+            "- [X] Original title [track:: work] [custom:: retain] [due:: 2026-10-06]\n",
+            "%% Keep this note %%\n",
+            "- [x] Completed task [track:: work]\n",
+        ]
+        self.mockFileBroker.getVaultFiles.return_value = [("tasks.md", 100.0)]
+        self.mockFileBroker.getVaultFileLines.return_value = list(original_lines)
+        task_id = fallback_task_id("Original title", "tasks.md", 3)
+        task = ObsidianTaskModel(
+            description="Original title",
+            context="work",
+            start=TimePoint.today().as_int(),
+            due=TimePoint.today().as_int(),
+            severity=2,
+            totalCost=1,
+            investedEffort=0,
+            status="x",
+            file="tasks.md",
+            line=3,
+            calm="true",
+            raised=None,
+            waited=None,
         )
-        pass
+        task.setDescription("Edited title")
 
-    def test_saveTask_WhenTaskHasFiledata_Overwrite(self):
-        # Arrange
-        task = MagicMock(spec=ObsidianTaskModel)
-        task.getDescription.return_value = "mock task @ mockFile:1"
-        task.getContext.return_value = "mockContext"
-        task.getStart.return_value = TimePoint.today()
-        task.getDue.return_value = TimePoint.today()
-        task.getSeverity.return_value = 1.0
-        task.getTotalCost.return_value = TimeAmount("1p")
-        task.getInvestedEffort.return_value = TimeAmount("0p")
-        task.getStatus.return_value = " "
-        task.getCalm.return_value = True
-        task.getFile.return_value = "mockFile"
-        task.getLine.return_value = 2
+        self.provider.saveTask(task)
 
-        self.mockFileBroker.getVaultFileLines.return_value = ["- [x]", "", "- [ ] dummy"]
+        self.mockFileBroker.writeVaultFileLines.assert_called_once()
+        args = self.mockFileBroker.writeVaultFileLines.call_args.args
+        saved_lines = args[2]
+        self.assertEqual(saved_lines[:3], original_lines[:3])
+        self.assertIn("[custom:: retain]", saved_lines[3])
+        self.assertIn(f"[id:: {task_id}]", saved_lines[3])
+        self.assertTrue(saved_lines[3].startswith("- [X] Edited title"))
+        self.assertEqual(saved_lines[4:], original_lines[4:])
+        self.assertEqual(task.getTaskUID(), task_id)
 
-        # Act
-        testClass = self.provider
-        testClass.saveTask(task)
+    def test_saveTask_new_task_appends_with_prepared_id_and_keeps_completed_content(self):
+        original = "# Personal tasks\n\n- [x] Keep completed [track:: work]\n"
+        self.mockFileBroker.readFileContent.return_value = original
+        self.mockFileBroker.getVaultFiles.return_value = []
+        task = self.provider.createDefaultTask("New task")
+        expected_id = fallback_task_id("New task", "ObsidianTaskProvider.md", 3)
 
-        # Assert
-        taskLine = testClass._getTaskLine(task)
-        self.mockFileBroker.writeVaultFileLines.assert_called_once_with(
-            VaultRegistry.OBSIDIAN,
-            "mockFile",
-            ["- [x]", "", taskLine]
-        )
+        self.provider.saveTask(task)
 
-        pass
+        saved_content = self.mockFileBroker.writeFileContent.call_args.args[1]
+        self.assertTrue(saved_content.startswith(original))
+        self.assertIn(f"[id:: {expected_id}]", saved_content)
+        self.assertEqual(task.getTaskUID(), expected_id)
+        self.assertEqual(task.getLine(), 3)
 
-    def test_saveTask_whenTryingToWriteToNonExistentLine_addsTaskToTheEnd(self):
-        # Arrange
-        task = MagicMock(spec=ObsidianTaskModel)
-        task.getDescription.return_value = "mock task @ mockFile:1"
-        task.getContext.return_value = "mockContext"
-        task.getStart.return_value = TimePoint.today()
-        task.getDue.return_value = TimePoint.today()
-        task.getSeverity.return_value = 1.0
-        task.getTotalCost.return_value = TimeAmount("1p")
-        task.getInvestedEffort.return_value = TimeAmount("0p")
-        task.getStatus.return_value = " "
-        task.getCalm.return_value = True
-        task.getFile.return_value = "mockFile"
-        task.getLine.return_value = 10  # Line number beyond file content length
+    def test_new_task_reservations_get_distinct_ids_before_writing(self):
+        self.mockFileBroker.readFileContent.return_value = "# Personal tasks\n\n"
+        self.mockFileBroker.getVaultFiles.return_value = []
+        first = self.provider.createDefaultTask("First task")
+        second = self.provider.createDefaultTask("Second task")
 
-        self.mockFileBroker.getVaultFileLines.return_value = ["- [x]", "", "- [ ] dummy"]  # Only 3 lines in file
+        self.assertNotEqual(first.getTaskUID(), second.getTaskUID())
+        self.assertNotEqual(first.getLine(), second.getLine())
 
-        # Act
-        testClass = self.provider
-        testClass.saveTask(task)
+    def test_saveTask_rejects_missing_identity_without_writing(self):
+        self.mockFileBroker.getVaultFiles.return_value = [("tasks.md", 100.0)]
+        self.mockFileBroker.getVaultFileLines.return_value = ["- [ ] Existing [track:: work] [id:: existing]\n"]
+        task = self._task_with_id("missing", file="tasks.md", line=0)
 
-        # Assert
-        taskLine = testClass._getTaskLine(task)
-        self.mockFileBroker.writeVaultFileLines.assert_called_once_with(
-            VaultRegistry.OBSIDIAN,
-            "mockFile",
-            ["- [x]", "", "- [ ] dummy", taskLine]  # Task added at the end
+        with self.assertRaises(MissingTaskIdentityError):
+            self.provider.saveTask(task)
+
+        self.mockFileBroker.writeVaultFileLines.assert_not_called()
+
+    def test_saveTask_rejects_duplicate_identity_before_writing(self):
+        self.mockFileBroker.getVaultFiles.return_value = [("a.md", 100.0), ("b.md", 100.0)]
+        self.mockFileBroker.getVaultFileLines.side_effect = lambda _, path: [
+            f"- [ ] {path} [track:: work] [id:: duplicated]\n"
+        ]
+        task = self._task_with_id("duplicated", file="a.md", line=0)
+
+        with self.assertRaises(AmbiguousTaskIdentityError):
+            self.provider.saveTask(task)
+
+        self.mockFileBroker.writeVaultFileLines.assert_not_called()
+
+    def _task_with_id(self, task_id: str, *, file: str, line: int) -> ObsidianTaskModel:
+        return ObsidianTaskModel(
+            description="Existing",
+            context="work",
+            start=TimePoint.today().as_int(),
+            due=TimePoint.today().as_int(),
+            severity=1,
+            totalCost=1,
+            investedEffort=0,
+            status=" ",
+            file=file,
+            line=line,
+            calm="false",
+            raised=None,
+            waited=None,
+            task_id=task_id,
         )
 
     def GetCurrentTaskJson(self) -> dict:
@@ -183,6 +202,7 @@ class TestObsidianTaskProvider(unittest.TestCase):
             task_uid = hashlib.md5(hash_input.encode()).hexdigest()[0:5]
 
             retval["tasks"].append({
+                "id": hashlib.md5(hash_input.encode()).hexdigest(),
                 "description": f"({task['track']}) {text} @ '{_file.split(slash).pop().split(dot)[0]}:{_line}' [{task_uid}]",
                 "context": task["track"],
                 "start": str(int(task["starts"])),

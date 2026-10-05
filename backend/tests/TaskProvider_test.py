@@ -5,6 +5,8 @@ import json
 from src.taskproviders.TaskProvider import TaskProvider
 from src.Interfaces.ITaskJsonProvider import ITaskJsonProvider
 from src.Interfaces.IFileBroker import IFileBroker, FileRegistry
+from src.taskmodels.TaskIdentity import fallback_task_id
+from src.taskproviders.TaskIdentityErrors import AmbiguousTaskIdentityError, InvalidTaskIdentityError
 
 
 class TestTaskProvider(unittest.TestCase):
@@ -12,6 +14,8 @@ class TestTaskProvider(unittest.TestCase):
         # Create mock dependencies
         self.mock_task_json_provider = MagicMock(spec=ITaskJsonProvider)
         self.mock_file_broker = MagicMock(spec=IFileBroker)
+        self.identity_path = "/configured/tasks.json"
+        self.mock_file_broker.getFilePath.return_value = self.identity_path
 
         # Sample task data for testing
         self.sample_tasks = {
@@ -82,14 +86,20 @@ class TestTaskProvider(unittest.TestCase):
         self.assertIn("Task 1 @ Project1", descriptions)
         self.assertIn("Task 3 @ Project1", descriptions)
         self.assertNotIn("Task 2 @ Project1", descriptions)  # Task 2 is completed
-        self.assertEqual([task.getTaskUID() for task in task_list], ["0", "2"])
+        self.assertEqual(
+            [task.getTaskUID() for task in task_list],
+            [fallback_task_id("Task 1", self.identity_path, 0), fallback_task_id("Task 3", self.identity_path, 2)],
+        )
 
     def test_get_task_list_can_include_completed_without_discovery(self):
         task_list = self.task_provider.getTaskList(include_completed=True)
 
         self.assertEqual(len(task_list), 3)
         self.assertEqual(task_list[1].getStatus(), "x")
-        self.assertEqual([task.getTaskUID() for task in task_list], ["0", "1", "2"])
+        self.assertEqual(
+            [task.getTaskUID() for task in task_list],
+            [fallback_task_id(f"Task {index + 1}", self.identity_path, index) for index in range(3)],
+        )
         self.mock_task_json_provider.discover.assert_not_called()
 
     def test_discover_tasks_uses_explicit_provider_hook(self):
@@ -120,6 +130,7 @@ class TestTaskProvider(unittest.TestCase):
         self.assertEqual(task_model.getSeverity(), 2.5)
         self.assertEqual(task_model.getProject(), "TestProject")
         self.assertTrue(task_model.getCalm())
+        self.assertEqual(task_model.getTaskUID(), fallback_task_id("Test Task", self.identity_path, 0))
 
     def test_get_task_list_attribute(self):
         # Test existing attribute
@@ -163,7 +174,7 @@ class TestTaskProvider(unittest.TestCase):
         self.sample_tasks["tasks"].insert(0, completed)
         self.sample_tasks["tasks"][1]["custom"] = {"owner": "test"}
         task = self.task_provider.getTaskList()[0]
-        self.assertEqual(task.getTaskUID(), "1")
+        self.assertEqual(task.getTaskUID(), fallback_task_id("Task 1", self.identity_path, 1))
         task.setDescription("Updated Task 1")
 
         self.task_provider.saveTask(task)
@@ -175,6 +186,7 @@ class TestTaskProvider(unittest.TestCase):
         self.assertEqual(saved_json["tasks"][1]["description"], "Updated Task 1")
         self.assertEqual(saved_json["tasks"][1]["custom"], {"owner": "test"})
         self.assertEqual(saved_json["tasks"][2]["description"], "Task 3")
+        self.assertEqual(saved_json["tasks"][1]["id"], task.getTaskUID())
 
     def test_create_default_task(self):
         # Create a default task
@@ -203,6 +215,7 @@ class TestTaskProvider(unittest.TestCase):
         self.assertEqual(len(saved_json["tasks"]), 4)
         self.assertEqual(saved_json["tasks"][:3], self.sample_tasks["tasks"])
         self.assertEqual(saved_json["tasks"][3]["description"], "New Task")
+        self.assertEqual(saved_json["tasks"][3]["id"], task.getTaskUID())
 
     def test_multiple_deferred_default_tasks_reserve_distinct_physical_positions(self):
         storage = json.loads(json.dumps(self.sample_tasks))
@@ -220,7 +233,8 @@ class TestTaskProvider(unittest.TestCase):
         storage["tasks"][2]["custom"] = "keep original"
 
         tasks = [self.task_provider.createDefaultTask(f"Part {index}") for index in range(3)]
-        self.assertEqual([task.getTaskUID() for task in tasks], ["3", "4", "5"])
+        expected_ids = [fallback_task_id(f"Part {index}", self.identity_path, index + 3) for index in range(3)]
+        self.assertEqual([task.getTaskUID() for task in tasks], expected_ids)
 
         for task in tasks:
             self.task_provider.saveTask(task)
@@ -234,6 +248,7 @@ class TestTaskProvider(unittest.TestCase):
             [record["description"] for record in storage["tasks"][3:]],
             ["Part 0", "Part 1", "Part 2"],
         )
+        self.assertEqual([record["id"] for record in storage["tasks"][3:]], expected_ids)
 
     def test_failed_save_releases_new_task_reservation_without_position_gap(self):
         task = self.task_provider.createDefaultTask("Failed part")
@@ -243,7 +258,87 @@ class TestTaskProvider(unittest.TestCase):
 
         self.mock_task_json_provider.saveJson.side_effect = None
         next_task = self.task_provider.createDefaultTask("Next part")
-        self.assertEqual(next_task.getTaskUID(), "3")
+        self.assertEqual(next_task.getTaskUID(), fallback_task_id("Next part", self.identity_path, 3))
+
+    def test_save_persists_identity_before_a_later_description_change(self):
+        task = self.task_provider.getTaskList()[0]
+        original_id = task.getTaskUID()
+        task.setDescription("Updated before first save")
+
+        self.task_provider.saveTask(task)
+        saved = self.mock_task_json_provider.saveJson.call_args.args[0]["tasks"][0]
+
+        self.assertEqual(saved["id"], original_id)
+        self.assertEqual(task.getTaskUID(), original_id)
+
+    def test_save_resolves_by_id_after_position_changes_and_preserves_completed_records(self):
+        source = json.loads(json.dumps(self.sample_tasks))
+        original_target = source["tasks"].pop(0)
+        captured_id = fallback_task_id(original_target["description"], self.identity_path, 0)
+        original_target["id"] = captured_id
+        source["tasks"].append(original_target)
+        self.mock_task_json_provider.getJson.return_value = source
+        task = self.task_provider.createTaskFromDict(original_target, 0, captured_id, self.identity_path)
+        task.setDescription("Moved and edited")
+
+        self.task_provider.saveTask(task)
+
+        saved = self.mock_task_json_provider.saveJson.call_args.args[0]
+        self.assertEqual(saved["tasks"][0]["status"], "x")
+        self.assertEqual(saved["tasks"][-1]["description"], "Moved and edited")
+        self.assertEqual(saved["tasks"][-1]["id"], captured_id)
+
+    def test_duplicate_task_ids_block_writes(self):
+        duplicate = json.loads(json.dumps(self.sample_tasks))
+        duplicate_id = fallback_task_id("Task 1", self.identity_path, 0)
+        duplicate["tasks"][0]["id"] = duplicate_id
+        duplicate["tasks"][2]["id"] = duplicate_id
+        self.mock_task_json_provider.getJson.return_value = duplicate
+        task = self.task_provider.createTaskFromDict(duplicate["tasks"][0], 0, duplicate_id, self.identity_path)
+
+        with self.assertRaisesRegex(AmbiguousTaskIdentityError, "multiple stored tasks"):
+            self.task_provider.saveTask(task)
+        self.mock_task_json_provider.saveJson.assert_not_called()
+
+    def test_invalid_declared_ids_are_rejected_without_rewriting_data(self):
+        self.mock_task_json_provider.getJson.return_value = {
+            "tasks": [{**self.sample_tasks["tasks"][0], "id": "  \t"}]
+        }
+
+        with self.assertRaisesRegex(InvalidTaskIdentityError, "non-empty string"):
+            self.task_provider.getTaskList()
+
+        self.mock_task_json_provider.saveJson.assert_not_called()
+
+    def test_pending_new_task_identity_collision_blocks_save(self):
+        task = self.task_provider.createDefaultTask("New task")
+        source = json.loads(json.dumps(self.sample_tasks))
+        collision = dict(source["tasks"][0])
+        collision["id"] = task.getTaskUID()
+        source["tasks"].append(collision)
+        self.mock_task_json_provider.getJson.return_value = source
+
+        with self.assertRaisesRegex(AmbiguousTaskIdentityError, "pending new task"):
+            self.task_provider.saveTask(task)
+
+        self.mock_task_json_provider.saveJson.assert_not_called()
+
+    def test_new_task_identity_collision_blocks_reservation(self):
+        source = json.loads(json.dumps(self.sample_tasks))
+        source["tasks"][0]["id"] = fallback_task_id("New task", self.identity_path, len(source["tasks"]))
+        self.mock_task_json_provider.getJson.return_value = source
+
+        with self.assertRaisesRegex(AmbiguousTaskIdentityError, "conflicts with an existing task"):
+            self.task_provider.createDefaultTask("New task")
+
+    def test_save_preserves_raw_description_with_project_delimiter_and_spaces(self):
+        task = self.task_provider.getTaskList()[0]
+        task.setDescription("  Research @ annotation  ")
+
+        self.task_provider.saveTask(task)
+
+        saved_json = self.mock_task_json_provider.saveJson.call_args.args[0]
+        self.assertEqual(saved_json["tasks"][0]["description"], "  Research @ annotation  ")
 
     def test_compare_tasks(self):
         # Create task lists for comparison

@@ -2,10 +2,11 @@ import datetime
 from math import ceil
 from ..wrappers.TimeManagement import TimePoint, TimeAmount
 from ..Interfaces.ITaskModel import ITaskModel
+from .TaskIdentity import fallback_task_id, validate_task_id
 
 
 class TaskModel(ITaskModel):
-    def __init__(self, description: str, context: str, start: int, due: int, severity: float, totalCost: float, investedEffort: float, status: str, calm: str, project: str, index: int, raised: str | None, waited: str | None):
+    def __init__(self, description: str, context: str, start: int, due: int, severity: float, totalCost: float, investedEffort: float, status: str, calm: str, project: str, index: int, raised: str | None, waited: str | None, task_id: str | None = None, identity_path: str | None = None):
         self._description: str = description
         self._context: str = context
         self._start: int = int(start)
@@ -17,6 +18,13 @@ class TaskModel(ITaskModel):
         self._calm: bool = True if calm.upper().startswith("TRUE") else False
         self._project: str = project
         self._index: int = index
+        if task_id is not None:
+            self._task_id = validate_task_id(task_id)
+        elif identity_path is not None:
+            self._task_id = fallback_task_id(description, identity_path, index)
+        else:
+            self._task_id = f"{index}"
+        self._identity_path: str | None = identity_path
         self._raised = raised
         self._waited = waited
 
@@ -40,6 +48,10 @@ class TaskModel(ITaskModel):
             str: The enriched task description.
         """
         return f"{self._description}{'' if self._project == '' else f' @ {self._project}'}"
+
+    def getRawDescription(self) -> str:
+        """Return the stored description without the display-only project suffix."""
+        return self._description
 
     def getContext(self) -> str:
         return self._context
@@ -115,7 +127,7 @@ class TaskModel(ITaskModel):
         return TimeAmount(f"{d}d")
     
     def getTaskUID(self) -> str:
-        return f"{self._index}"
+        return self._task_id
 
     def __eq__(self, other: ITaskModel):  # type: ignore
-        return self._index == other._index  # type: ignore
+        return self.getTaskUID() == other.getTaskUID()

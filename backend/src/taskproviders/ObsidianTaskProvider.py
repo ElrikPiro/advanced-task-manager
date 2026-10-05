@@ -1,5 +1,6 @@
 import datetime
 import json
+import re
 import threading
 
 from src.Utils import TaskJsonType
@@ -9,10 +10,17 @@ from ..Interfaces.ITaskProvider import ITaskProvider
 from ..Interfaces.ITaskModel import ITaskModel
 from ..Interfaces.ITaskJsonProvider import ITaskJsonProvider
 from ..taskmodels.ObsidianTaskModel import ObsidianTaskModel
+from ..taskmodels.TaskIdentity import fallback_task_id, validate_task_id
+from .TaskIdentityErrors import AmbiguousTaskIdentityError, InvalidTaskIdentityError, MissingTaskIdentityError
 from typing import Callable, List
 
 
 class ObsidianTaskProvider(ITaskProvider):
+    _TASK_LINE = re.compile(r"^(\s*-\s+\[)([ xX])(\])([ \t]*)(.*?)(\r?\n)?$")
+    _TASK_METADATA = re.compile(r"\[([^\]:]+)::\s*([^\]]*)\]")
+    _NEW_TASK_FILE = "ObsidianTaskProvider.md"
+    _METADATA_ORDER = ("track", "starts", "due", "severity", "remaining_cost", "invested", "calm", "raised", "waited", "id")
+
     def __init__(self, taskJsonProvider: ITaskJsonProvider, fileBroker: IFileBroker, disableThreading: bool = False):
         self.TaskJsonProvider = taskJsonProvider
         self.fileBroker = fileBroker
@@ -21,6 +29,7 @@ class ObsidianTaskProvider(ITaskProvider):
         self.lastTaskList: List[ITaskModel] = []
         self.onTaskListUpdatedCallbacks: list[Callable[[], None]] = []
         self.__discoveryLock = threading.Lock()
+        self.__pendingNewLines: dict[int, str] = {}
         self.__disableThreading = disableThreading
         if not self.__disableThreading:
             self.service = threading.Thread(target=self.__serviceThread)
@@ -50,7 +59,7 @@ class ObsidianTaskProvider(ITaskProvider):
         for task in taskListJson:
             if not include_completed and task["status"] == "x":
                 continue
-            obsidianTask = ObsidianTaskModel(task["taskText"], task["track"], int(task["starts"]), int(task["due"]), float(task["severity"]), float(task["total_cost"]), float(task["effort_invested"]), task["status"], task["file"], int(task["line"]), task["calm"], task.get("raised"), task.get("waited"))
+            obsidianTask = ObsidianTaskModel(task["taskText"], task["track"], int(task["starts"]), int(task["due"]), float(task["severity"]), float(task["total_cost"]), float(task["effort_invested"]), task["status"], task["file"], int(task["line"]), task["calm"], task.get("raised"), task.get("waited"), task.get("id"))
             taskList.append(obsidianTask)
         return taskList
 
@@ -74,12 +83,11 @@ class ObsidianTaskProvider(ITaskProvider):
         return value
 
     def discardPendingTaskReservations(self) -> None:
-        """Obsidian task creation writes only when saveTask is called."""
-        return None
+        """Release locations prepared for new tasks that were not saved."""
+        self.__pendingNewLines.clear()
 
-    def _getTaskLine(self, task: ITaskModel) -> str:
-        context = task.getContext()
-        description = task.getDescription().split("@")[0].replace(f"({context})", "").strip()
+    def _getTaskLine(self, task: ITaskModel, task_id: str | None = None) -> str:
+        description = self._getTaskText(task)
         start = str(task.getStart())
         due = str(task.getDue())
         severity = task.getSeverity()
@@ -87,49 +95,183 @@ class ObsidianTaskProvider(ITaskProvider):
         investedEffort = task.getInvestedEffort().as_pomodoros()
         status = task.getStatus()
         calm = "true" if task.getCalm() else "false"
-        
+
         raises = task.getEventRaised()
         raises_str = f", [raised:: {raises}]" if isinstance(raises, str) else ""
 
         waits = task.getEventWaited()
         waits_str = f", [waited:: {waits}]" if isinstance(waits, str) else ""
 
-        return f"- [{status}] {description} [track:: {context}], [starts:: {start}], [due:: {due}], [severity:: {severity}], [remaining_cost:: {totalCost + investedEffort}], [invested:: {investedEffort}], [calm:: {calm}]{raises_str}{waits_str}\n"
+        task_id = validate_task_id(task_id) if task_id is not None else self._get_task_uid(task)
+        return f"- [{status}] {description} [track:: {task.getContext()}], [starts:: {start}], [due:: {due}], [severity:: {severity}], [remaining_cost:: {totalCost + investedEffort}], [invested:: {investedEffort}], [calm:: {calm}]{raises_str}{waits_str}, [id:: {task_id}]\n"
+
+    @staticmethod
+    def _getTaskText(task: ITaskModel) -> str:
+        get_task_text = getattr(task, "getTaskText", None)
+        if callable(get_task_text):
+            value = get_task_text()
+            if isinstance(value, str):
+                return value
+        get_raw_description = getattr(task, "getRawDescription", None)
+        if callable(get_raw_description):
+            value = get_raw_description()
+            if isinstance(value, str):
+                return value
+        context = task.getContext()
+        return task.getDescription().split("@")[0].replace(f"({context})", "").strip()
+
+    def _get_task_uid(self, task: ITaskModel) -> str:
+        return validate_task_id(task.getTaskUID())
 
     def saveTask(self, task: ITaskModel) -> None:
-        taskLine = self._getTaskLine(task)
+        if isinstance(task, ObsidianTaskModel) and self.__pendingNewLines.get(task.getLine()) == task.getTaskUID():
+            self._save_reserved_new_task(task)
+            return
 
-        file = ""
-        lineNumber = -1
-        if not isinstance(task, ObsidianTaskModel) or task.getFile() == "" or task.getLine() == -1:
-            lines = self.fileBroker.readFileContent(FileRegistry.OBSIDIAN_TASKS_MD).split("\n")
-            newLines: list[str] = []
+        task_id = self._get_task_uid(task)
+        locations = self._scan_vault_task_identities()
+        matches = [location for location in locations if location["id"] == task_id]
+        if not matches:
+            raise MissingTaskIdentityError("No current Markdown task matches the requested identifier")
+        if len(matches) > 1:
+            raise AmbiguousTaskIdentityError("More than one current Markdown task matches the requested identifier")
 
-            numLines = 1
-            for line in lines:
-                if line.find("- [x]") == -1 and len(line) > 0:
-                    newLines.append(line)
-                    numLines += 1
-            newLines.append(taskLine)
+        location = matches[0]
+        file = str(location["file"])
+        line_number = int(location["line"])
+        file_lines = self.fileBroker.getVaultFileLines(VaultRegistry.OBSIDIAN, file)
+        if line_number >= len(file_lines):
+            raise MissingTaskIdentityError("The Markdown task moved while it was being saved")
+        file_lines[line_number] = self._merge_task_line(file_lines[line_number], task, task_id)
+        self.fileBroker.writeVaultFileLines(VaultRegistry.OBSIDIAN, file, file_lines)
+        if isinstance(task, ObsidianTaskModel):
+            task.setFile(file)
+            task.setLine(line_number)
+            task.setTaskUID(task_id)
 
-            # TODO: this constant must be changed to be get from a config value
-            if isinstance(task, ObsidianTaskModel):
-                task.setFile("ObsidianTaskProvider.md")
-                task.setLine(numLines - 1)
+    def _reserve_new_location(self, description: str) -> tuple[int, str]:
+        file_content = self.fileBroker.readFileContent(FileRegistry.OBSIDIAN_TASKS_MD)
+        lines = file_content.splitlines(keepends=True)
+        line_number = len(lines) + len(self.__pendingNewLines)
+        task_id = fallback_task_id(description, self._NEW_TASK_FILE, line_number)
+        existing_ids = {str(location["id"]) for location in self._scan_vault_task_identities()}
+        if task_id in existing_ids or task_id in self.__pendingNewLines.values():
+            raise AmbiguousTaskIdentityError("The prepared Markdown task identifier is already in use")
+        self.__pendingNewLines[line_number] = task_id
+        return line_number, task_id
 
-            self.fileBroker.writeFileContent(FileRegistry.OBSIDIAN_TASKS_MD, "\n".join(newLines))
-        else:
-            ObsidianTask: ObsidianTaskModel = task
-            file = ObsidianTask.getFile()
-            lineNumber = ObsidianTask.getLine()
-            fileLines = self.fileBroker.getVaultFileLines(VaultRegistry.OBSIDIAN, file)
-            if lineNumber >= len(fileLines):
-                lineNumber = len(fileLines)
-                fileLines.append(taskLine)
+    def _save_reserved_new_task(self, task: ObsidianTaskModel) -> None:
+        line_number = task.getLine()
+        file_content = self.fileBroker.readFileContent(FileRegistry.OBSIDIAN_TASKS_MD)
+        lines = file_content.splitlines(keepends=True)
+        if lines and not lines[-1].endswith(("\n", "\r")):
+            lines[-1] += "\n"
+        if line_number != len(lines):
+            raise MissingTaskIdentityError("The prepared Markdown task location is no longer available")
+        task_id = validate_task_id(self.__pendingNewLines[line_number])
+        current_matches = [
+            location
+            for location in self._scan_vault_task_identities()
+            if location["id"] == task_id
+        ]
+        if current_matches:
+            raise AmbiguousTaskIdentityError("The prepared Markdown task identifier is already in use")
+        task.setTaskUID(task_id)
+        lines.append(self._getTaskLine(task, task_id))
+        self.fileBroker.writeFileContent(FileRegistry.OBSIDIAN_TASKS_MD, "".join(lines))
+        self.__pendingNewLines.pop(line_number, None)
+
+    def _scan_vault_task_identities(self) -> list[dict[str, str | int]]:
+        locations: list[dict[str, str | int]] = []
+        for file, _ in self.fileBroker.getVaultFiles(VaultRegistry.OBSIDIAN):
+            if not file.lower().endswith(".md"):
+                continue
+            normalized_file = file.replace("\\", "/")
+            for line_number, line in enumerate(self.fileBroker.getVaultFileLines(VaultRegistry.OBSIDIAN, file)):
+                match = self._TASK_LINE.match(line)
+                if match is None:
+                    continue
+                body = match.group(5)
+                metadata = list(self._TASK_METADATA.finditer(body))
+                text = body[:metadata[0].start()].strip() if metadata else body.strip()
+                declared_ids = [
+                    validate_task_id(item.group(2).strip())
+                    for item in metadata
+                    if item.group(1).strip() == "id"
+                ]
+                if len(set(declared_ids)) > 1:
+                    raise InvalidTaskIdentityError("A Markdown task declares conflicting identifiers")
+                task_id = declared_ids[0] if declared_ids else fallback_task_id(text, normalized_file, line_number)
+                locations.append({"id": task_id, "file": normalized_file, "line": line_number})
+        return locations
+
+    def _merge_task_line(self, original_line: str, task: ITaskModel, task_id: str) -> str:
+        match = self._TASK_LINE.match(original_line)
+        if match is None:
+            raise MissingTaskIdentityError("The Markdown task line is no longer valid")
+        task_id = validate_task_id(task_id)
+        description = self._getTaskText(task)
+        newline = match.group(6) or ""
+        source_status = "x" if match.group(2).lower() == "x" else " "
+        wanted_status = "x" if task.getStatus().lower() == "x" else " "
+        status = match.group(2) if source_status == wanted_status else wanted_status
+        prefix = f"{match.group(1)}{status}{match.group(3)}{match.group(4)}"
+        body = match.group(5)
+        metadata = list(self._TASK_METADATA.finditer(body))
+        updates = {
+            "track": str(task.getContext()),
+            "starts": str(task.getStart()),
+            "start": str(task.getStart()),
+            "due": str(task.getDue()),
+            "severity": str(task.getSeverity()),
+            "remaining_cost": str(task.getTotalCost().as_pomodoros() + task.getInvestedEffort().as_pomodoros()),
+            "invested": str(task.getInvestedEffort().as_pomodoros()),
+            "calm": "true" if task.getCalm() else "false",
+            "id": task_id,
+        }
+        if isinstance(task.getEventRaised(), str):
+            updates["raised"] = str(task.getEventRaised())
+        if isinstance(task.getEventWaited(), str):
+            updates["waited"] = str(task.getEventWaited())
+
+        replaced_keys: set[str] = set()
+        suffix_start = metadata[0].start() if metadata else len(body)
+        title_and_separator = body[:suffix_start]
+        separator_match = re.search(r"[ \t]*$", title_and_separator)
+        separator = separator_match.group(0) if separator_match else ""
+        suffix = body[suffix_start:]
+        rewritten_parts: list[str] = []
+        cursor = 0
+        for item in self._TASK_METADATA.finditer(suffix):
+            rewritten_parts.append(suffix[cursor:item.start()])
+            key = item.group(1).strip()
+            if key in updates:
+                rewritten_parts.append(f"[{item.group(1)}:: {updates[key]}]")
+                replaced_keys.add(key)
+            elif key in ("raised", "waited"):
+                replaced_keys.add(key)
             else:
-                lineOfInterest = fileLines[lineNumber]
-                fileLines[lineNumber] = lineOfInterest.split("- [")[0] + taskLine
-            self.fileBroker.writeVaultFileLines(VaultRegistry.OBSIDIAN, file, fileLines)
+                rewritten_parts.append(item.group(0))
+            cursor = item.end()
+        rewritten_parts.append(suffix[cursor:])
+        suffix = "".join(rewritten_parts)
+
+        missing = [
+            f"[{key}:: {updates[key]}]"
+            for key in self._METADATA_ORDER
+            if key in updates and key not in replaced_keys
+        ]
+        if not isinstance(task.getEventRaised(), str) and "raised" not in replaced_keys:
+            missing = [value for value in missing if not value.startswith("[raised::")]
+        if not isinstance(task.getEventWaited(), str) and "waited" not in replaced_keys:
+            missing = [value for value in missing if not value.startswith("[waited::")]
+        updated_body = description + separator + suffix
+        if missing:
+            if suffix:
+                updated_body += " " + " ".join(missing)
+            else:
+                updated_body += (" " if updated_body else "") + " ".join(missing)
+        return prefix + updated_body + newline
 
     def createDefaultTask(self, description: str) -> ObsidianTaskModel:
         starts = int(datetime.datetime.now().timestamp() * 1e3)
@@ -142,7 +284,8 @@ class ObsidianTaskProvider(ITaskProvider):
         status = " "
         calm = "False"
 
-        task = ObsidianTaskModel(description, "inbox", starts, due, 1, severity, invested, status, "", -1, calm, None, None)
+        line_number, task_id = self._reserve_new_location(description)
+        task = ObsidianTaskModel(description, "inbox", starts, due, 1, severity, invested, status, self._NEW_TASK_FILE, line_number, calm, None, None, task_id)
         return task
 
     def getTaskMetadata(self, task: ITaskModel) -> str:
@@ -190,6 +333,7 @@ class ObsidianTaskProvider(ITaskProvider):
         tasks: list[dict[str, str]] = []
         for task in taskList:
             taskDict = {
+                "id": task.getTaskUID(),
                 "description": task.getDescription(),
                 "context": task.getContext(),
                 "start": str(task.getStart().as_int()),

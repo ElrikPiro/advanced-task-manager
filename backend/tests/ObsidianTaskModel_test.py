@@ -1,5 +1,7 @@
+import hashlib
 import unittest
 from src.taskmodels.ObsidianTaskModel import ObsidianTaskModel
+from src.taskmodels.TaskIdentity import InvalidTaskIdentityError
 
 
 class TestObsidianTaskModel(unittest.TestCase):
@@ -56,6 +58,57 @@ class TestObsidianTaskModel(unittest.TestCase):
     def test_setLine(self):
         self.task.setLine(20)
         self.assertEqual(self.task.getLine(), 20)
+
+    def test_getTaskUID_uses_the_existing_fallback_formula(self):
+        expected = hashlib.md5(b"Test Tasktest_file.md10").hexdigest()
+        self.assertEqual(self.task.getTaskUID(), expected)
+
+    def test_getTaskUID_is_frozen_when_task_is_edited_or_moved(self):
+        task_id = self.task.getTaskUID()
+        self.task.setDescription("Updated task")
+        self.task.setFile("archive/test_file.md")
+        self.task.setLine(20)
+        self.assertEqual(self.task.getTaskUID(), task_id)
+
+    def test_explicit_task_uid_is_opaque_and_stable(self):
+        task = ObsidianTaskModel(
+            description="Task",
+            context="work",
+            start=self.task.getStart().as_int(),
+            due=self.task.getDue().as_int(),
+            severity=1,
+            totalCost=1,
+            investedEffort=0,
+            status=" ",
+            file="tasks.md",
+            line=0,
+            calm="false",
+            raised=None,
+            waited=None,
+            task_id=" opaque/id ",
+        )
+        task.setDescription("Changed")
+        task.setFile("moved.md")
+        self.assertEqual(task.getTaskUID(), " opaque/id ")
+
+    def test_explicit_whitespace_only_task_uid_is_rejected(self):
+        with self.assertRaises(InvalidTaskIdentityError):
+            ObsidianTaskModel(
+                description="Task",
+                context="work",
+                start=self.task.getStart().as_int(),
+                due=self.task.getDue().as_int(),
+                severity=1,
+                totalCost=1,
+                investedEffort=0,
+                status=" ",
+                file="tasks.md",
+                line=0,
+                calm="false",
+                raised=None,
+                waited=None,
+                task_id="   ",
+            )
 
     def test_eq(self):
         # Use valid timestamps (current time for start, future time for due)

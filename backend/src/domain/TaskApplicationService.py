@@ -10,11 +10,17 @@ from src.Interfaces.ITaskProvider import ITaskProvider
 from src.TelegramTaskListManager import TelegramTaskListManager
 from src.Utils import AgendaContent, TaskInformation, TaskListContent
 from src.wrappers.TimeManagement import TimeAmount, TimePoint
+from src.taskproviders.TaskIdentityErrors import (
+    AmbiguousTaskIdentityError,
+    InvalidTaskIdentityError,
+    MissingTaskIdentityError,
+)
 
 from .errors import (
     AmbiguousResourceError,
     DomainCalculationError,
     DomainError,
+    InvalidResourceDataError,
     OperationFailedError,
     ResourceNotFoundError,
     ResourceReadError,
@@ -27,9 +33,8 @@ from .models import AgendaQuery, OperationResult, OperationTarget, TaskView
 class TaskApplicationService:
     """Application boundary with explicit query inputs and typed outcomes.
 
-    Task UIDs still follow the current providers' provisional identity behavior.
-    Resolution is not yet persistent; this service never writes an ID merely
-    because a task was read.
+    Reads resolve IDs without writing. A task's captured provider identity is
+    carried through edits and operations until its first real save persists it.
     """
 
     _EDIT_FIELDS = {
@@ -64,6 +69,14 @@ class TaskApplicationService:
         """Load current provider data without running discovery or maintenance."""
         try:
             return list(self._task_provider.getTaskList(include_completed=include_completed))
+        except InvalidTaskIdentityError as error:
+            raise InvalidResourceDataError("Task data declares an invalid identifier") from error
+        except AmbiguousTaskIdentityError as error:
+            raise AmbiguousResourceError("More than one task matches the requested identifier") from error
+        except MissingTaskIdentityError as error:
+            raise ResourceNotFoundError("No task matches the requested identifier") from error
+        except DomainError:
+            raise
         except Exception as error:
             raise ResourceReadError("Task data could not be read") from error
 
@@ -74,6 +87,14 @@ class TaskApplicationService:
             return self._all_tasks(include_completed=False)
         try:
             return list(discover())
+        except InvalidTaskIdentityError as error:
+            raise InvalidResourceDataError("Task data declares an invalid identifier") from error
+        except AmbiguousTaskIdentityError as error:
+            raise AmbiguousResourceError("More than one task matches the requested identifier") from error
+        except MissingTaskIdentityError as error:
+            raise ResourceNotFoundError("No task matches the requested identifier") from error
+        except DomainError:
+            raise
         except Exception as error:
             raise ResourceReadError("Task discovery failed") from error
 
@@ -85,7 +106,7 @@ class TaskApplicationService:
         """Read one task by its currently exposed UID, including completed tasks."""
         if not isinstance(task_id, str) or not task_id:
             raise ValidationError("A task identifier is required", details={"field": "id"})
-        matches = [task for task in self._all_tasks() if task.getTaskUID() == task_id]
+        matches = [task for task in self._all_tasks() if self._capture_task_id(task) == task_id]
         if not matches:
             raise ResourceNotFoundError("No task matches the requested identifier")
         if len(matches) > 1:
@@ -98,11 +119,17 @@ class TaskApplicationService:
         tasks = self._all_tasks(include_completed=False)
         try:
             manager = self._task_list_manager.clone_for_view(tasks, view)
+        except DomainError:
+            raise
         except ValueError as error:
+            self._raise_task_identity_error(error)
             raise ValidationError(str(error), details={"field": "view"}) from error
         try:
             return manager.get_task_list_content()
+        except DomainError:
+            raise
         except Exception as error:
+            self._raise_task_identity_error(error)
             raise DomainCalculationError("Task view could not be calculated") from error
 
     def read_agenda(self, query: AgendaQuery) -> AgendaContent:
@@ -115,11 +142,17 @@ class TaskApplicationService:
                 tasks,
                 TaskView(heuristic=query.heuristic),
             )
+        except DomainError:
+            raise
         except ValueError as error:
+            self._raise_task_identity_error(error)
             raise ValidationError(str(error), details={"field": "heuristic"}) from error
         try:
             return manager.get_day_agenda_content(query.day, self._categories)
+        except DomainError:
+            raise
         except Exception as error:
+            self._raise_task_identity_error(error)
             raise DomainCalculationError("Agenda could not be calculated") from error
 
     def read_task_information(self, task_id: str, *, extended: bool = False) -> TaskInformation:
@@ -127,17 +160,22 @@ class TaskApplicationService:
         task = self.read_task(task_id)
         try:
             return self._task_list_manager.get_task_information(task, self._task_provider, extended)
+        except DomainError:
+            raise
         except Exception as error:
+            self._raise_task_identity_error(error)
             raise ResourceReadError("Task detail could not be read") from error
 
     def edit_task(self, task_id: str, changes: Mapping[str, Any]) -> ITaskModel:
         """Validate all replacements before saving one copied task model."""
         task = self.read_task(task_id)
+        resolved_id = self._capture_task_id(task)
         prepared = self._prepare_changes(task, changes)
         candidate = copy.deepcopy(task)
         try:
             self._apply_changes(candidate, prepared)
-            self._task_provider.saveTask(candidate)
+            self._assert_task_identity(candidate, resolved_id)
+            self._save_task(candidate, expected_id=resolved_id)
         except DomainError:
             raise
         except Exception as error:
@@ -210,44 +248,56 @@ class TaskApplicationService:
         cost_amount = self._as_time_amount(cost, "total_cost")
         try:
             task = self._task_provider.createDefaultTask(description.strip())
+            task_id = self._capture_task_id(task)
             task.setContext(context)
             task.setTotalCost(cost_amount)
-            self._task_provider.saveTask(task)
+            self._assert_task_identity(task, task_id)
+            self._save_task(task, expected_id=task_id)
         except DomainError:
             self._discard_pending_task_reservations()
             raise
         except Exception as error:
             self._discard_pending_task_reservations()
+            self._raise_task_identity_error(error)
             raise OperationFailedError("The new task could not be saved", effects_state="unknown") from error
-        task_id = task.getTaskUID()
         return OperationResult("create-task", target, value=task, affected_ids=(task_id,))
 
     def _complete_task(self, target: OperationTarget, parameters: Mapping[str, Any]) -> OperationResult:
         self._require_task_target(target)
         if parameters:
             raise ValidationError("complete-task accepts no parameters", details={"field": "parameters"})
-        task = copy.deepcopy(self.read_task(target.id or ""))
+        original = self.read_task(target.id or "")
+        original_id = self._capture_task_id(original)
+        task = copy.deepcopy(original)
         related: list[ITaskModel] = []
+        related_ids: list[str] = []
         event = task.getEventRaised()
         if isinstance(event, str):
             now = TimePoint.now()
             # The target task may itself await the event it is now raising.
             # It is saved as the completed target below, so update it here and
-            # avoid a duplicate save for the same provisional identity.
+            # avoid a duplicate save for the same task identity.
             if task.getEventWaited() == event:
                 task.setEventWaited(None)
                 task.setStart(now)
-            related = []
             for candidate in self._all_tasks():
-                matches_target = candidate.getTaskUID() != target.id
+                candidate_id = self._capture_task_id(candidate)
+                matches_target = candidate_id != original_id
                 awaits_event = candidate.getEventWaited() == event
                 if matches_target and awaits_event:
                     related.append(copy.deepcopy(candidate))
+                    related_ids.append(candidate_id)
             for candidate in related:
                 candidate.setEventWaited(None)
                 candidate.setStart(now)
         task.setStatus("x")
-        return self._save_sequential("complete-task", target, [*related, task], value=task)
+        self._assert_task_identity(task, original_id)
+        expected_ids = [*related_ids, original_id]
+        for candidate, expected_id in zip(related, related_ids):
+            self._assert_task_identity(candidate, expected_id)
+        return self._save_sequential(
+            "complete-task", target, [*related, task], value=task, expected_ids=expected_ids
+        )
 
     def _schedule_task(self, target: OperationTarget, parameters: Mapping[str, Any]) -> OperationResult:
         self._require_task_target(target)
@@ -258,16 +308,38 @@ class TaskApplicationService:
         if not isinstance(effort, str):
             raise ValidationError("effort_per_day must be a string", details={"field": "effort_per_day"})
         original = self.read_task(target.id or "")
+        original_id = self._capture_task_id(original)
         task_copy = copy.deepcopy(original)
         try:
             tasks = list(self._scheduling.schedule(task_copy, effort))
+        except DomainError:
+            self._discard_pending_task_reservations()
+            raise
         except Exception as error:
             self._discard_pending_task_reservations()
+            self._raise_task_identity_error(error)
             raise OperationFailedError("The task could not be scheduled", effects_state="none") from error
         if not tasks:
             self._discard_pending_task_reservations()
             raise OperationFailedError("Scheduling produced no tasks", effects_state="none")
-        return self._save_sequential("schedule-task", target, tasks, value=tasks)
+        try:
+            all_existing_ids = {self._capture_task_id(task) for task in self._all_tasks()}
+            scheduled_ids = [self._capture_task_id(task) for task in tasks]
+        except DomainError:
+            self._discard_pending_task_reservations()
+            raise
+        if scheduled_ids[0] != original_id:
+            self._discard_pending_task_reservations()
+            raise InvalidResourceDataError("Scheduling changed the identity of the original task")
+        new_ids = scheduled_ids[1:]
+        if len(set(scheduled_ids)) != len(scheduled_ids) or any(
+            not task_id or task_id in all_existing_ids for task_id in new_ids
+        ):
+            self._discard_pending_task_reservations()
+            raise AmbiguousResourceError("Scheduled tasks do not have distinct identifiers")
+        return self._save_sequential(
+            "schedule-task", target, tasks, value=tasks, expected_ids=scheduled_ids
+        )
 
     def _record_work(self, target: OperationTarget, parameters: Mapping[str, Any]) -> OperationResult:
         self._require_task_target(target)
@@ -275,14 +347,19 @@ class TaskApplicationService:
         if unknown:
             raise ValidationError("Unknown record-work parameter", details={"field": sorted(unknown)[0]})
         duration = self._as_time_amount(parameters.get("duration"), "duration")
-        task = copy.deepcopy(self.read_task(target.id or ""))
+        original = self.read_task(target.id or "")
+        task_id = self._capture_task_id(original)
+        task = copy.deepcopy(original)
         task.setInvestedEffort(task.getInvestedEffort() + duration)
         task.setTotalCost(task.getTotalCost() - duration)
         now = parameters.get("now", TimePoint.now())
         if not isinstance(now, TimePoint):
             raise ValidationError("now must be a TimePoint", details={"field": "now"})
+        self._assert_task_identity(task, task_id)
         try:
-            self._task_provider.saveTask(task)
+            self._save_task(task, expected_id=task_id)
+        except DomainError:
+            raise
         except Exception as error:
             raise OperationFailedError("The task could not be saved", effects_state="unknown") from error
         try:
@@ -300,9 +377,14 @@ class TaskApplicationService:
         now = parameters.get("now", TimePoint.now())
         if not isinstance(now, TimePoint):
             raise ValidationError("now must be a TimePoint", details={"field": "now"})
-        task = copy.deepcopy(self.read_task(target.id or ""))
+        original = self.read_task(target.id or "")
+        task_id = self._capture_task_id(original)
+        task = copy.deepcopy(original)
         task.setStart(now + duration)
-        return self._save_sequential("snooze-task", target, [task], value=task)
+        self._assert_task_identity(task, task_id)
+        return self._save_sequential(
+            "snooze-task", target, [task], value=task, expected_ids=[task_id]
+        )
 
     def _raise_event(self, target: OperationTarget, parameters: Mapping[str, Any]) -> OperationResult:
         if target.kind != "event" or not target.id:
@@ -310,15 +392,20 @@ class TaskApplicationService:
         if parameters:
             raise ValidationError("raise-event accepts no parameters", details={"field": "parameters"})
         now = TimePoint.now()
-        tasks = [
-            copy.deepcopy(task)
-            for task in self._all_tasks()
-            if task.getEventWaited() == target.id
-        ]
-        for task in tasks:
+        tasks: list[ITaskModel] = []
+        task_ids: list[str] = []
+        for original in self._all_tasks():
+            if original.getEventWaited() != target.id:
+                continue
+            task_ids.append(self._capture_task_id(original))
+            tasks.append(copy.deepcopy(original))
+        for task, task_id in zip(tasks, task_ids):
             task.setEventWaited(None)
             task.setStart(now)
-        return self._save_sequential("raise-event", target, tasks, value=len(tasks))
+            self._assert_task_identity(task, task_id)
+        return self._save_sequential(
+            "raise-event", target, tasks, value=len(tasks), expected_ids=task_ids
+        )
 
     def _save_sequential(
         self,
@@ -327,11 +414,23 @@ class TaskApplicationService:
         tasks: list[ITaskModel],
         *,
         value: Any,
+        expected_ids: list[str] | None = None,
     ) -> OperationResult:
         saved_ids: list[str] = []
-        for task in tasks:
+        identities = expected_ids or [self._capture_task_id(task) for task in tasks]
+        if len(identities) != len(tasks):
+            raise InvalidResourceDataError("The number of task identities does not match the write set")
+        if len(set(identities)) != len(identities):
+            raise AmbiguousResourceError("More than one affected task has the same identifier")
+        for task, expected_id in zip(tasks, identities):
             try:
-                self._task_provider.saveTask(task)
+                self._assert_task_identity(task, expected_id)
+                self._save_task(task, expected_id=expected_id)
+            except DomainError as error:
+                if saved_ids:
+                    error.details.setdefault("saved_count", str(len(saved_ids)))
+                    error.effects_state = "partial"
+                raise
             except Exception as error:
                 effects = "partial" if saved_ids else "unknown"
                 raise OperationFailedError(
@@ -339,8 +438,49 @@ class TaskApplicationService:
                     effects_state=effects,
                     details={"saved_count": str(len(saved_ids))},
                 ) from error
-            saved_ids.append(task.getTaskUID())
+            saved_ids.append(expected_id)
         return OperationResult(operation_type, target, value=value, affected_ids=tuple(saved_ids))
+
+    def _save_task(self, task: ITaskModel, *, expected_id: str) -> None:
+        """Save using the identity resolved before mutation and preserve typed outcomes."""
+        self._assert_task_identity(task, expected_id)
+        try:
+            self._task_provider.saveTask(task)
+        except InvalidTaskIdentityError as error:
+            raise InvalidResourceDataError("Task data declares an invalid identifier") from error
+        except AmbiguousTaskIdentityError as error:
+            raise AmbiguousResourceError("More than one task matches the requested identifier") from error
+        except MissingTaskIdentityError as error:
+            raise ResourceNotFoundError("The task no longer matches its resolved identifier") from error
+        except DomainError:
+            raise
+        self._assert_task_identity(task, expected_id)
+
+    @staticmethod
+    def _raise_task_identity_error(error: Exception) -> None:
+        if isinstance(error, InvalidTaskIdentityError):
+            raise InvalidResourceDataError("Task data declares an invalid identifier") from error
+        if isinstance(error, AmbiguousTaskIdentityError):
+            raise AmbiguousResourceError("More than one task matches the requested identifier") from error
+        if isinstance(error, MissingTaskIdentityError):
+            raise ResourceNotFoundError("No task matches the requested identifier") from error
+
+    @classmethod
+    def _capture_task_id(cls, task: ITaskModel) -> str:
+        try:
+            task_id = task.getTaskUID()
+        except Exception as error:
+            cls._raise_task_identity_error(error)
+            raise
+        if not isinstance(task_id, str) or not task_id:
+            raise InvalidResourceDataError("Task data has an empty or invalid identifier")
+        return task_id
+
+    @classmethod
+    def _assert_task_identity(cls, task: ITaskModel, expected_id: str) -> None:
+        actual_id = cls._capture_task_id(task)
+        if actual_id != expected_id:
+            raise InvalidResourceDataError("A task's resolved identifier changed before it was saved")
 
     def _discard_pending_task_reservations(self) -> None:
         self._task_provider.discardPendingTaskReservations()
@@ -395,14 +535,18 @@ class TaskApplicationService:
         delta: Any,
     ) -> ITaskModel:
         original = self.read_task(task_id)
+        resolved_id = self._capture_task_id(original)
         prepared = self._prepare_changes(original, changes)
         amount = self._as_time_amount(delta, "effort_delta")
         candidate = copy.deepcopy(original)
         self._apply_changes(candidate, prepared)
         candidate.setInvestedEffort(candidate.getInvestedEffort() + amount)
         candidate.setTotalCost(candidate.getTotalCost() - amount)
+        self._assert_task_identity(candidate, resolved_id)
         try:
-            self._task_provider.saveTask(candidate)
+            self._save_task(candidate, expected_id=resolved_id)
+        except DomainError:
+            raise
         except Exception as error:
             raise OperationFailedError("The task could not be saved", effects_state="unknown") from error
         return candidate

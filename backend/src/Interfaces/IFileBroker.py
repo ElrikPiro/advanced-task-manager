@@ -19,6 +19,11 @@ class VaultRegistry(Enum):
 class IFileBroker(ABC):
 
     @abstractmethod
+    def getFilePath(self, fileRegistry: FileRegistry) -> str:
+        """Return the configured path for a registered file."""
+        pass
+
+    @abstractmethod
     def readFileContent(self, fileRegistry: FileRegistry) -> str:
         pass
 

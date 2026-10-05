@@ -10,6 +10,7 @@ from src.HeuristicScheduling import HeuristicScheduling
 from src.domain.TaskApplicationService import TaskApplicationService
 from src.domain.errors import (
     AmbiguousResourceError,
+    InvalidResourceDataError,
     OperationFailedError,
     ResourceNotFoundError,
     ResourceReadError,
@@ -19,6 +20,12 @@ from src.domain.models import AgendaQuery, OperationTarget, TaskView
 from src.heuristics.RemainingEffortHeuristic import RemainingEffortHeuristic
 from src.heuristics.StartTimeHeuristic import StartTimeHeuristic
 from src.taskmodels.TaskModel import TaskModel
+from src.taskmodels.TaskIdentity import fallback_task_id
+from src.taskproviders.TaskIdentityErrors import (
+    AmbiguousTaskIdentityError,
+    InvalidTaskIdentityError,
+    MissingTaskIdentityError,
+)
 from src.taskproviders.TaskProvider import TaskProvider
 from src.wrappers.TimeManagement import TimeAmount
 
@@ -29,6 +36,7 @@ class MemoryTaskProvider:
     def __init__(self, tasks: list[TaskModel]):
         self.tasks = copy.deepcopy(tasks)
         self.saved: list[str] = []
+        self.save_error: Exception | None = None
         self.fail_on_save_number: int | None = None
         self.discovery_calls = 0
 
@@ -44,6 +52,8 @@ class MemoryTaskProvider:
 
     def saveTask(self, task: TaskModel) -> None:
         self.saved.append(task.getTaskUID())
+        if self.save_error is not None:
+            raise self.save_error
         if self.fail_on_save_number == len(self.saved):
             raise OSError("injected persistence failure")
         for index, current in enumerate(self.tasks):
@@ -277,12 +287,35 @@ class TaskApplicationServiceTest(unittest.TestCase):
         self.assertEqual(self.provider.discovery_calls, 1)
         self.assertEqual(self.provider.saved, [])
 
-    def test_missing_and_ambiguous_provisional_ids_are_typed_errors(self) -> None:
+    def test_missing_and_ambiguous_ids_are_typed_errors_and_block_writes(self) -> None:
         with self.assertRaises(ResourceNotFoundError):
             self.application.read_task("missing")
         self.provider.tasks.append(copy.deepcopy(self.provider.tasks[1]))
+        original = [task.getDescription() for task in self.provider.tasks]
         with self.assertRaises(AmbiguousResourceError):
             self.application.read_task("1")
+        with self.assertRaises(AmbiguousResourceError):
+            self.application.edit_task("1", {"description": "Must not be saved"})
+        self.assertEqual(self.provider.saved, [])
+        self.assertEqual([task.getDescription() for task in self.provider.tasks], original)
+
+    def test_provider_identity_data_errors_keep_their_domain_type(self) -> None:
+        self.provider.read_error = InvalidTaskIdentityError("empty id")
+        with self.assertRaises(InvalidResourceDataError):
+            self.application.read_task("1")
+
+        self.provider.read_error = None
+        self.provider.save_error = InvalidTaskIdentityError("invalid declared id")
+        with self.assertRaises(InvalidResourceDataError):
+            self.application.edit_task("1", {"description": "Updated"})
+
+        self.provider.save_error = AmbiguousTaskIdentityError("duplicate id")
+        with self.assertRaises(AmbiguousResourceError):
+            self.application.edit_task("1", {"description": "Updated"})
+
+        self.provider.save_error = MissingTaskIdentityError("id no longer exists")
+        with self.assertRaises(ResourceNotFoundError):
+            self.application.edit_task("1", {"description": "Updated"})
 
     def test_complete_operation_reports_partial_effects_after_a_later_save_fails(self) -> None:
         self.provider.tasks = [
@@ -336,7 +369,7 @@ class TaskApplicationServiceTest(unittest.TestCase):
         self.assertIsNone(self.provider.tasks[2].getEventWaited())
         self.assertEqual(self.provider.tasks[0].getStatus(), "x")
 
-    def test_real_schedule_split_reserves_distinct_physical_ids_until_saved(self) -> None:
+    def test_real_schedule_split_reserves_distinct_ids_until_saved(self) -> None:
         json_provider = MemoryTaskJsonProvider({
             "tasks": [{
                 "description": "Split this",
@@ -351,7 +384,10 @@ class TaskApplicationServiceTest(unittest.TestCase):
                 "project": "",
             }],
         })
-        provider = TaskProvider(json_provider, MagicMock(), disableThreading=True)
+        file_broker = MagicMock()
+        file_broker.getFilePath.return_value = "/configured/tasks.json"
+        provider = TaskProvider(json_provider, file_broker, disableThreading=True)
+        original_id = provider.getTaskList()[0].getTaskUID()
         manager = TelegramTaskListManager([], [], [], [], self.statistics)
         application = TaskApplicationService(
             provider,
@@ -363,18 +399,21 @@ class TaskApplicationServiceTest(unittest.TestCase):
 
         result = application.execute_operation(
             "schedule-task",
-            OperationTarget("task", "0"),
+            OperationTarget("task", original_id),
             {"effort_per_day": "11p"},
         )
 
         self.assertEqual(len(result.value), 3)
-        self.assertEqual(result.affected_ids, ("0", "1", "2"))
+        stored_ids = tuple(task.get("id") for task in json_provider.getJson()["tasks"])
+        self.assertEqual(len(set(stored_ids)), 3)
+        self.assertEqual(result.affected_ids, stored_ids)
         persisted = json_provider.getJson()["tasks"]
         self.assertEqual(len(persisted), 3)
         self.assertEqual([task["description"] for task in persisted], [
             "Split this 1/3", "Split this 2/3", "Split this 3/3"
         ])
-        self.assertEqual([task.getTaskUID() for task in provider.getTaskList()], ["0", "1", "2"])
+        self.assertEqual([task.getTaskUID() for task in provider.getTaskList()], list(stored_ids))
+        self.assertEqual(stored_ids[0], original_id)
 
     def test_empty_schedule_discards_pending_id_reservations(self) -> None:
         json_provider = MemoryTaskJsonProvider({
@@ -391,7 +430,10 @@ class TaskApplicationServiceTest(unittest.TestCase):
                 "project": "",
             }],
         })
-        provider = TaskProvider(json_provider, MagicMock(), disableThreading=True)
+        file_broker = MagicMock()
+        file_broker.getFilePath.return_value = "/configured/tasks.json"
+        provider = TaskProvider(json_provider, file_broker, disableThreading=True)
+        original_id = provider.getTaskList()[0].getTaskUID()
         manager = TelegramTaskListManager([], [], [], [], self.statistics)
 
         class EmptyScheduler:
@@ -404,10 +446,13 @@ class TaskApplicationServiceTest(unittest.TestCase):
         )
         with self.assertRaises(OperationFailedError):
             application.execute_operation(
-                "schedule-task", OperationTarget("task", "0"), {}
+                "schedule-task", OperationTarget("task", original_id), {}
             )
 
-        self.assertEqual(provider.createDefaultTask("Next part").getTaskUID(), "1")
+        self.assertEqual(
+            provider.createDefaultTask("Next part").getTaskUID(),
+            fallback_task_id("Next part", "/configured/tasks.json", 1),
+        )
 
     def test_schedule_exception_discards_pending_id_reservations(self) -> None:
         json_provider = MemoryTaskJsonProvider({
@@ -424,7 +469,10 @@ class TaskApplicationServiceTest(unittest.TestCase):
                 "project": "",
             }],
         })
-        provider = TaskProvider(json_provider, MagicMock(), disableThreading=True)
+        file_broker = MagicMock()
+        file_broker.getFilePath.return_value = "/configured/tasks.json"
+        provider = TaskProvider(json_provider, file_broker, disableThreading=True)
+        original_id = provider.getTaskList()[0].getTaskUID()
         manager = TelegramTaskListManager([], [], [], [], self.statistics)
 
         class FailingScheduler:
@@ -437,10 +485,13 @@ class TaskApplicationServiceTest(unittest.TestCase):
         )
         with self.assertRaises(OperationFailedError):
             application.execute_operation(
-                "schedule-task", OperationTarget("task", "0"), {}
+                "schedule-task", OperationTarget("task", original_id), {}
             )
 
-        self.assertEqual(provider.createDefaultTask("Next part").getTaskUID(), "1")
+        self.assertEqual(
+            provider.createDefaultTask("Next part").getTaskUID(),
+            fallback_task_id("Next part", "/configured/tasks.json", 1),
+        )
 
 
 if __name__ == "__main__":

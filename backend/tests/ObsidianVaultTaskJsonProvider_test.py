@@ -4,6 +4,8 @@ from src.taskjsonproviders.ObsidianVaultTaskJsonProvider import ObsidianVaultTas
 from src.Interfaces.IFileBroker import IFileBroker, VaultRegistry
 from src.wrappers.TimeManagement import TimePoint
 from src.Utils import TaskDiscoveryPolicies
+from src.taskmodels.TaskIdentity import fallback_task_id
+from src.taskproviders.TaskIdentityErrors import AmbiguousTaskIdentityError, InvalidTaskIdentityError
 
 
 class TestObsidianVaultTaskJsonProvider(unittest.TestCase):
@@ -69,7 +71,23 @@ class TestObsidianVaultTaskJsonProvider(unittest.TestCase):
         self.assertEqual(result["tasks"][0]["taskText"], "Define next action")
         self.assertEqual(result["tasks"][0]["track"], "work")
         self.assertIn("Define next action", "".join(contents["project.md"]))
+        self.assertIn(f"[id::{fallback_task_id('Define next action', 'project.md', 4)}]", contents["project.md"][4])
         self.mock_file_broker.writeVaultFileLines.assert_called_once()
+
+    def test_discover_rejects_a_generated_identifier_already_in_the_vault(self):
+        duplicate_id = fallback_task_id("Define next action", "project.md", 4)
+        files = [("project.md", 100.0), ("other.md", 200.0)]
+        contents = {
+            "project.md": ["---\n", "project: open\n", "---\n", "# Project\n"],
+            "other.md": [f"- [ ] Existing [track::work] [id::{duplicate_id}]\n"],
+        }
+        self.mock_file_broker.getVaultFiles.return_value = files
+        self.mock_file_broker.getVaultFileLines.side_effect = lambda _, path: list(contents[path])
+
+        with self.assertRaises(AmbiguousTaskIdentityError):
+            self.provider.discover()
+
+        self.mock_file_broker.writeVaultFileLines.assert_not_called()
 
     def test_process_task_with_metadata(self):
         self.mock_file_broker.getVaultFiles.return_value = [("tasks.md", 100.0)]
@@ -141,6 +159,36 @@ class TestObsidianVaultTaskJsonProvider(unittest.TestCase):
         result = self.provider.getJson()
         self.assertEqual(len(result["tasks"]), 1)
         self.assertEqual(result["tasks"][0]["status"], "x")
+
+    def test_task_line_identity_is_read_as_an_opaque_value(self):
+        self.mock_file_broker.getVaultFiles.return_value = [("tasks.md", 100.0)]
+        self.mock_file_broker.getVaultFileLines.return_value = [
+            "---\n",
+            "---\n",
+            "- [ ] Task [track::work] [id::opaque/id:7] [extra:: keep]\n",
+        ]
+
+        task = self.provider.getJson()["tasks"][0]
+
+        self.assertEqual(task["id"], "opaque/id:7")
+
+    def test_empty_task_line_identity_is_rejected(self):
+        self.mock_file_broker.getVaultFiles.return_value = [("tasks.md", 100.0)]
+        self.mock_file_broker.getVaultFileLines.return_value = [
+            "- [ ] Task [track::work] [id::   ]\n",
+        ]
+
+        with self.assertRaises(InvalidTaskIdentityError):
+            self.provider.getJson()
+
+    def test_conflicting_task_line_identities_are_rejected(self):
+        self.mock_file_broker.getVaultFiles.return_value = [("tasks.md", 100.0)]
+        self.mock_file_broker.getVaultFileLines.return_value = [
+            "- [ ] Task [track::work] [id::first] [id::second]\n",
+        ]
+
+        with self.assertRaises(InvalidTaskIdentityError):
+            self.provider.getJson()
 
     def test_update_existing_task(self):
         # First call to add a task
