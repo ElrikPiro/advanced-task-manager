@@ -22,6 +22,7 @@ graph TB
         G[HeuristicScheduling]
         H[StatisticsService]
         P[Atomic file store]
+        R[NotificationHistoryStore]
     end
 
     subgraph "Data Providers"
@@ -33,6 +34,7 @@ graph TB
 
     subgraph "Storage"
         N[JSON Files]
+        Q[notifications.json]
         O[Markdown Vault<br/>Obsidian/Logseq]
     end
 
@@ -47,6 +49,8 @@ graph TB
     E --> H
     E --> I
     E --> K
+    C --> R
+    D --> R
     I --> J
     J --> N
     K --> L
@@ -54,6 +58,8 @@ graph TB
     J --> P
     L --> P
     H --> P
+    R --> P
+    P --> Q
 ```
 
 ## Key Features
@@ -66,6 +72,13 @@ graph TB
 | **Categories/Contexts** | Organize tasks by context (indoor, outdoor, workstation, etc.) |
 | **Statistics Tracking** | Track work done and productivity metrics |
 | **Event System** | Tasks can wait for and raise events for dependency management |
+| **Notification History** | Authenticated API reads a complete, persistent history without consuming entries |
+
+## Notification history
+
+The HTTP resource API and internal notification sender use one `NotificationHistoryStore`. It writes sanitized notification text to `notifications.json` through the same atomic persistence path and shared mutation queue used by task changes. The write completes before the sender returns, so a successful send is visible to later reads.
+
+The API exposes the entire retained history in ascending sequence order. It does not provide acknowledgement, cursor-based deletion, or a background consumer. At most 1,024 entries are retained; the snapshot records the next sequence and the highest discarded sequence. Startup initializes a new history only when the file is absent. Reads are non-mutating, and invalid files remain available for operator recovery while startup fails closed.
 
 ## Technology Stack
 
@@ -192,7 +205,7 @@ The main service that handles user interactions through the configured interface
 
 ### HttpUserCommService and the HTTP resource API
 
-`HttpUserCommService` hosts the versioned API under the configured prefix (default `/api/v1`). It exposes HAL JSON resources for the root, task collections and details, agenda, statistics, events, strategies and projects. Task changes use `PATCH /tasks/{id}` with `application/merge-patch+json` or typed `POST /operations` actions; project changes use the supported typed project operations. Responses use `application/hal+json`, errors use `application/problem+json`, and all responses are `no-store`. Errors carry a generated request ID in both `X-Request-ID` and `requestId`. Query parameters and request bodies are validated strictly, including unknown fields and non-finite numbers.
+`HttpUserCommService` hosts the versioned API under the configured prefix (default `/api/v1`). It exposes HAL JSON resources for the root, task collections and details, agenda, statistics, events, strategies, projects and notification history. Task changes use `PATCH /tasks/{id}` with `application/merge-patch+json` or typed `POST /operations` actions; project changes use the supported typed project operations. Responses use `application/hal+json`, errors use `application/problem+json`, and all responses are `no-store`. Errors carry a generated request ID in both `X-Request-ID` and `requestId`. Query parameters and request bodies are validated strictly, including unknown fields and non-finite numbers.
 
 Task-list defaults are page 1, page size 5, the `All active task filter`, the `GTD Algorithm` and `Remaining Effort(1)`. `filters` and `search` are repeatable query parameters. Every `POST /operations` request requires a client-generated UUID in `id`, assigned before the first send; the other required members are `type`, `target` and `parameters`. Creating a task targets the `tasks` collection.
 
@@ -207,10 +220,11 @@ Task-list defaults are page 1, page size 5, the `All active task filter`, the `G
 | `/api/v1/projects`, `/api/v1/projects/{name}` | GET | Project summaries and stored project content. |
 | `/api/v1/operations` | POST | Submit a task or project action with its required client-generated UUID and typed target. Creating a task uses target kind `tasks`. |
 | `/api/v1/operations/{id}` | GET | Read an available in-process operation receipt without replaying it. |
+| `/api/v1/notifications` | GET | Read the complete retained notification history without consuming entries. |
 
 Task and project links include the configured mount prefix and encode opaque identifiers as path segments. Task instants use ISO 8601 values with a UTC offset, and effort values use finite decimal text with the `pomodoro` unit. Project details expose a JSON description or Markdown content according to the configured storage mode.
 
-Every request requires a Bearer token. Authenticated successes and errors use `Cache-Control: no-store`; errors use `application/problem+json` and carry a generated request ID in both the body and `X-Request-ID`. Mutating command-style GET paths are retired with an explicit `legacy-route-retired` response. The old volatile notifications endpoint is unavailable; no notification history is exposed by this API version.
+Every request requires a Bearer token. Authenticated successes and errors use `Cache-Control: no-store`; errors use `application/problem+json` and carry a generated request ID in both the body and `X-Request-ID`. Mutating command-style GET paths are retired with an explicit `legacy-route-retired` response. Notification history is returned in ascending sequence order with its `historyId`, `nextSequence`, retained sequence bounds and `discardedThrough` marker. The API has no acknowledgement, cursor-based deletion or history consumer.
 
 Operation UUIDs make retries with the same intent return the original in-process outcome; using an existing UUID with different intent is a conflict. Receipts are held in memory and are lost on restart. An absent receipt is reported without replaying the operation and does not establish whether previous effects occurred.
 
@@ -240,4 +254,6 @@ The API listener requires `HTTP_TLS_CERT_CHAIN_PATH` and `HTTP_TLS_PRIVATE_KEY_P
 
 Restrict the private key to the service account, keep it out of source control and shared artifacts, and never put certificate paths or credentials in diagnostic output. Operators obtain and renew certificates separately, check that the certificate and key match, and restart the service in a controlled window to activate replacements. The service has no automatic enrollment or hot reload. Clients must trust the presented chain independently of the Bearer token. Distribute private trust anchors and fingerprints through an authenticated channel, install them in the effective trust store, and verify the certificate's validity and SAN for the exact endpoint hostname or IP. Firefox uses its certificate manager and Authorities list; Chromium uses its certificate manager or the effective system store, depending on platform. After removing an anchor, restart affected client connections and verify rejection; an alternate trusted chain can still validate the endpoint. Clients follow their native revocation policy; the listener does not implement OCSP or CRL checks of its own, and behavior when revocation data is unavailable can vary. Browser trust behavior has not been verified here. The API does not enable CORS for external web pages.
 
-The API does not expose notifications yet, and it has no persistent notification-history resource. Mutating legacy GET paths are retired, so HTTP GET requests do not perform task or project actions.
+The notification history is stored in `notifications.json` beneath `JSON_PATH`. Startup creates a fresh empty history only when the file is absent; a read never creates it. The file retains the latest 1,024 entries, and its sequence metadata records discarded entries. Invalid history is preserved and prevents the HTTPS listener from starting. Restoring an intact snapshot preserves its IDs. After restoring an older snapshot that might reuse IDs, stop the service and use `NotificationHistoryStore.renew_history_id()` from a local maintenance process before restarting; this preserves the snapshot while assigning a new history ID and new entry IDs. Removing the file while the service is stopped causes startup to create a fresh empty history.
+
+Mutating legacy GET paths are retired, so HTTP GET requests do not perform task or project actions.

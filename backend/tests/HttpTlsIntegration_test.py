@@ -21,6 +21,9 @@ from unittest.mock import Mock, patch
 import aiohttp
 from aiohttp import ClientSession, TCPConnector
 
+from src.FileBroker import FileBroker
+from src.MutationCoordinator import MutationCoordinator
+from src.NotificationHistoryStore import NotificationHistoryStore
 from src.api.ProblemDetails import safe_detail
 from src.domain.errors import ValidationError
 from src.wrappers.HttpUserCommService import HttpUserCommService
@@ -253,6 +256,29 @@ class HttpTlsIntegrationTest(unittest.IsolatedAsyncioTestCase):
         self.agent.description = "Loopback only"
         self.application = Mock()
         self.token = "local-test-secret-token"
+        self.data_directory = tempfile.TemporaryDirectory(prefix="tls-history-")
+        self.data_path = Path(self.data_directory.name) / "data"
+        self.appdata_path = Path(self.data_directory.name) / "appdata"
+        self.vault_path = Path(self.data_directory.name) / "vault"
+        self.data_path.mkdir()
+        self.appdata_path.mkdir()
+        self.vault_path.mkdir()
+        self.mutation_coordinator = MutationCoordinator()
+        self.file_broker = FileBroker(
+            str(self.data_path),
+            str(self.appdata_path),
+            str(self.vault_path),
+            mutation_coordinator=self.mutation_coordinator,
+        )
+        self.notification_history_store = NotificationHistoryStore(
+            self.file_broker,
+            self.mutation_coordinator,
+            self.token,
+        )
+
+    def tearDown(self) -> None:
+        self.mutation_coordinator.close()
+        self.data_directory.cleanup()
 
     @contextlib.asynccontextmanager
     async def listener(
@@ -270,6 +296,7 @@ class HttpTlsIntegrationTest(unittest.IsolatedAsyncioTestCase):
             tls_cert_chain_path=str(chain) if chain is not None else None,
             tls_private_key_path=str(key) if key is not None else None,
             application_service=application or self.application,
+            notification_history_store=self.notification_history_store,
         )
         await service.initialize()
         try:
@@ -469,6 +496,7 @@ class HttpTlsIntegrationTest(unittest.IsolatedAsyncioTestCase):
             tls_cert_chain_path=str(certs.valid_chain),
             tls_private_key_path=str(certs.valid_key),
             application_service=self.application,
+            notification_history_store=self.notification_history_store,
         )
         factory = service._new_tls_context
         client_context = self.client_context(certs.ca_cert)
@@ -527,6 +555,7 @@ class HttpTlsIntegrationTest(unittest.IsolatedAsyncioTestCase):
                         tls_cert_chain_path=str(chain) if chain is not None else None,
                         tls_private_key_path=str(key) if key is not None else None,
                         application_service=self.application,
+                        notification_history_store=self.notification_history_store,
                     )
                     with self.assertRaises(RuntimeError):
                         await service.initialize()

@@ -26,6 +26,7 @@ from src.domain.errors import (
     AmbiguousResourceError,
     DomainCalculationError,
     InvalidResourceDataError,
+    ResourceReadError,
 )
 from src.domain.models import (
     AgendaQuery,
@@ -47,6 +48,7 @@ class ApiResources:
         application_service: TaskApplicationService,
         prefix: str = "/api/v1",
         token: str = "",
+        notification_history_store: Any | None = None,
     ) -> None:
         if not isinstance(prefix, str) or not prefix.strip():
             raise ValueError("API prefix must be a non-empty path")
@@ -55,25 +57,112 @@ class ApiResources:
             raise ValueError("API prefix must be a path without query or fragment")
         self.application_service = application_service
         self._diagnostic_token = token
+        self.notification_history_store = notification_history_store
         self.prefix = "/" + "/".join(part for part in prefix.split("/") if part)
         if self.prefix == "/":
             raise ValueError("API prefix must include a version path")
 
     def read_root(self) -> dict[str, Any]:
         """Return the API entry point and its collection relationships."""
+        links = {
+            "self": self._link(self.prefix),
+            "tasks": self._link(self._href("tasks")),
+            "agenda": self._link(self._href("agenda")),
+            "statistics": self._link(self._href("statistics")),
+            "events": self._link(self._href("events")),
+            "strategies": self._link(self._href("strategies")),
+            "projects": self._link(self._href("projects")),
+            "operations": self._link(self._href("operations"), method="POST"),
+        }
+        if self.notification_history_store is not None:
+            links["notifications"] = self._link(self._href("notifications"))
         return {
             "version": "1",
             "timeZone": self._time_zone_name(),
+            "_links": links,
+        }
+
+    def read_notifications(self) -> dict[str, Any]:
+        """Return the full saved notification history without consuming it."""
+        store = self.notification_history_store
+        if store is None:
+            raise ResourceReadError("Notification history is not configured")
+        snapshot = store.read()
+        snapshot_data = snapshot.to_dict()
+        if not isinstance(snapshot_data, Mapping):
+            raise ResourceReadError("Notification history could not be read")
+
+        schema_version = snapshot_data.get("schemaVersion")
+        history_id = snapshot_data.get("historyId")
+        next_sequence = snapshot_data.get("nextSequence")
+        discarded_through = snapshot_data.get("discardedThrough")
+        entries = snapshot_data.get("entries")
+        if isinstance(schema_version, bool) or not isinstance(schema_version, int):
+            raise ResourceReadError("Notification history could not be read")
+        if schema_version < 1:
+            raise ResourceReadError("Notification history could not be read")
+        if not isinstance(history_id, str) or not history_id:
+            raise ResourceReadError("Notification history could not be read")
+        if isinstance(next_sequence, bool) or not isinstance(next_sequence, int):
+            raise ResourceReadError("Notification history could not be read")
+        if next_sequence < 1:
+            raise ResourceReadError("Notification history could not be read")
+        if isinstance(discarded_through, bool) or not isinstance(discarded_through, int):
+            raise ResourceReadError("Notification history could not be read")
+        if discarded_through < 0:
+            raise ResourceReadError("Notification history could not be read")
+        if not isinstance(entries, Sequence) or isinstance(entries, (str, bytes)):
+            raise ResourceReadError("Notification history could not be read")
+
+        notifications: list[dict[str, Any]] = []
+        previous_sequence = 0
+        for entry in entries:
+            if not isinstance(entry, Mapping):
+                raise ResourceReadError("Notification history could not be read")
+            sequence = entry.get("sequence")
+            timestamp = entry.get("timestamp")
+            text = entry.get("text")
+            if isinstance(sequence, bool) or not isinstance(sequence, int):
+                raise ResourceReadError("Notification history could not be read")
+            if sequence <= previous_sequence or sequence >= next_sequence:
+                raise ResourceReadError("Notification history could not be read")
+            if not isinstance(timestamp, str) or not isinstance(text, str):
+                raise ResourceReadError("Notification history could not be read")
+            try:
+                parsed_timestamp = datetime.datetime.fromisoformat(timestamp)
+            except ValueError as error:
+                raise ResourceReadError("Notification history could not be read") from error
+            if parsed_timestamp.tzinfo is None:
+                raise ResourceReadError("Notification history could not be read")
+            expected_id = f"{history_id}:{sequence}"
+            if entry.get("id") != expected_id:
+                raise ResourceReadError("Notification history could not be read")
+            notifications.append({
+                "id": expected_id,
+                "historyId": history_id,
+                "sequence": sequence,
+                "timestamp": timestamp,
+                "text": safe_detail(text, self._diagnostic_token),
+            })
+            previous_sequence = sequence
+
+        if len(notifications) > 1024:
+            raise ResourceReadError("Notification history could not be read")
+        sequences = [item["sequence"] for item in notifications]
+        return {
+            "schemaVersion": schema_version,
+            "historyId": history_id,
+            "nextSequence": next_sequence,
+            "discardedThrough": discarded_through,
+            "retainedFromSequence": sequences[0] if sequences else None,
+            "retainedThroughSequence": sequences[-1] if sequences else None,
+            "total": len(notifications),
+            "observedAt": self._now_iso(),
             "_links": {
-                "self": self._link(self.prefix),
-                "tasks": self._link(self._href("tasks")),
-                "agenda": self._link(self._href("agenda")),
-                "statistics": self._link(self._href("statistics")),
-                "events": self._link(self._href("events")),
-                "strategies": self._link(self._href("strategies")),
-                "projects": self._link(self._href("projects")),
-                "operations": self._link(self._href("operations"), method="POST"),
+                "self": self._link(self._href("notifications")),
+                "root": self._link(self.prefix),
             },
+            "_embedded": {"notifications": notifications},
         }
 
     def read_tasks(self, view: TaskView) -> dict[str, Any]:

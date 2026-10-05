@@ -265,6 +265,26 @@ class HttpApiV1IntegrationTest(IsolatedAsyncioTestCase):
             self.assertEqual(response.status, 405, (method, path))
             self.assertEqual(response.headers["Cache-Control"], "no-store", (method, path))
 
+    async def test_notifications_without_history_store_is_not_advertised_or_created(self) -> None:
+        notifications_path = Path(
+            self.broker.getFilePath(FileRegistry.NOTIFICATIONS_JSON)
+        )
+        self.assertFalse(notifications_path.exists())
+
+        status, root, _ = await self._get_json(PREFIX + "/")
+        self.assertEqual(status, 200)
+        self.assertNotIn("notifications", root["_links"])
+
+        response = await self.client.get(PREFIX + "/notifications", headers=self._headers())
+        problem = await response.json()
+        self.assertEqual(response.status, 503)
+        self.assertEqual(response.content_type, "application/problem+json")
+        self.assertEqual(problem["code"], "notification-history-unavailable")
+        self.assertEqual(problem["effectsState"], "none")
+        self.assertEqual(problem["requestId"], response.headers["X-Request-ID"])
+        self.assertEqual(response.headers["Cache-Control"], "no-store")
+        self.assertFalse(notifications_path.exists())
+
     async def test_authentication_precedes_reads_and_admission_and_legacy_gets_are_inert(self) -> None:
         data_path = Path(self.broker.getFilePath(FileRegistry.STANDALONE_TASKS_JSON))
         before = data_path.read_bytes()

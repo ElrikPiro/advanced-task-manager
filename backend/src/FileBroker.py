@@ -46,6 +46,10 @@ class FileBroker(IFileBroker):
                 "path": os.path.join(jsonPath, "import.dat"),
                 "default": defaultTaskJson
             },
+            FileRegistry.NOTIFICATIONS_JSON: {
+                "path": os.path.join(jsonPath, "notifications.json"),
+                "default": ""
+            },
         }
 
         self.vaultPaths: dict[VaultRegistry, str] = {
@@ -287,6 +291,7 @@ class FileBroker(IFileBroker):
             FileRegistry.STATISTICS_JSON,
             FileRegistry.OBSIDIAN_TASKS_JSON,
             FileRegistry.LAST_RECEIVED_FILE,
+            FileRegistry.NOTIFICATIONS_JSON,
         }
         if fileRegistry in json_registries:
             def validate_json(content: bytes) -> None:

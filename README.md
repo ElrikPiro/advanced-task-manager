@@ -30,17 +30,47 @@ Available combinations:
 
 ### HTTP API behavior and limits
 
-`APP_MODE` 5/6 exposes the versioned resource API. `HTTP_API_PREFIX` sets its base path and defaults to `/api/v1`; a mount prefix such as `/manager/api/v1` is supported. It provides task, agenda, statistics, event, strategy, project and operation resources using HAL JSON (`application/hal+json`). Reads use explicit query parameters and do not change a shared task-list selection. Task changes use `PATCH` with `application/merge-patch+json`; task and project actions use typed `POST /operations` requests. Arbitrary command names and unknown fields are rejected. Errors use `application/problem+json`. Bearer authentication is required, and responses are marked `Cache-Control: no-store`.
+`APP_MODE` 5/6 exposes the versioned resource API. `HTTP_API_PREFIX` sets its base path and defaults to `/api/v1`; a mount prefix such as `/manager/api/v1` is supported. It provides task, agenda, statistics, event, strategy, project, operation and notification-history resources using HAL JSON (`application/hal+json`). Reads use explicit query parameters and do not change a shared task-list selection. Task changes use `PATCH` with `application/merge-patch+json`; task and project actions use typed `POST /operations` requests. Arbitrary command names and unknown fields are rejected. Errors use `application/problem+json`. Bearer authentication is required, and responses are marked `Cache-Control: no-store`.
 
 Task-list queries default to page 1, five items per page, the `All active task filter`, the `GTD Algorithm`, and `Remaining Effort(1)`. `filters` and `search` can be repeated; page and page size must be positive integers. Each `POST /operations` request must carry a client-generated UUID in `id` before it is first sent. The server returns the final result; the same UUID and intent return the original in-process outcome, while a different intent conflicts. Receipts are held in memory, disappear after restart, and are never replayed when absent; a missing receipt does not prove that no write happened.
 
-Older command-style GET paths that could change task data or shared view state are retired and return `404` with the `legacy-route-retired` problem code. The old volatile `/notifications` endpoint is also unavailable; persistent notification history is not part of the current API.
+Older command-style GET paths that could change task data or shared view state are retired and return `404` with the `legacy-route-retired` problem code.
+
+`GET {HTTP_API_PREFIX}/notifications` returns the complete retained notification history in sequence order. Reads do not acknowledge, delete, or otherwise consume entries. Each entry has a stable ID formed from its history ID and sequence number, plus an offset-aware timestamp and sanitized text. The response includes the next sequence number, the retained sequence bounds, and `discardedThrough`, which identifies the highest sequence removed when the history exceeded its 1,024-entry retention limit. Notification messages are saved before `sendMessage` returns.
+
+The history is stored in `notifications.json` under `JSON_PATH`. Service startup creates a fresh empty history only when this file is absent; a GET never creates it. An invalid history file is left unchanged and prevents the HTTPS listener from starting. Keep the file with the rest of the task data in backups. Restoring an intact history preserves its entry IDs. To restore an older snapshot safely, stop the service, make a separate backup of the current file, archive any invalid file for recovery, and restore the selected valid snapshot. Run the local renewal procedure below before restarting. Renewal keeps the restored entries and sequence counters while assigning a new history ID and new entry IDs. Deleting or moving the file while the service is stopped and restarting creates a new empty history with a fresh ID.
+
+To renew the history ID after restoring a snapshot, run this from the repository checkout root (the same working directory that contains `config.json`) while the service is stopped and the API configuration is available:
+
+```bash
+PYTHONPATH=backend .venv/bin/python - <<'PY'
+from src.containers.TelegramReportingServiceContainer import TelegramReportingServiceContainer
+
+container = TelegramReportingServiceContainer()
+try:
+    store = container.container.notificationHistoryStore()
+    before = store.read()
+    renewed = store.renew_history_id()
+    old_content = [(entry.sequence, entry.timestamp, entry.text) for entry in before.entries]
+    new_content = [(entry.sequence, entry.timestamp, entry.text) for entry in renewed.entries]
+    if (
+        renewed.history_id == before.history_id
+        or renewed.next_sequence != before.next_sequence
+        or renewed.discarded_through != before.discarded_through
+        or new_content != old_content
+    ):
+        raise RuntimeError("History renewal could not be verified")
+    print(f"History renewed; retained entries={len(renewed.entries)}; history ID={renewed.history_id}")
+finally:
+    container.container.mutationCoordinator().close()
+PY
+```
+
+The command loads the configured file location and token but does not display the token. Confirm that it reports a new history ID and the expected retained-entry count, then restart the service and read `GET {HTTP_API_PREFIX}/notifications`. Keep the pre-renewal backup so the original history can be restored if needed. If the file is invalid, archive its original bytes before placing a valid backup at `notifications.json`; the renewal command intentionally refuses to rewrite an invalid snapshot.
 
 The API requires HTTPS and a configured Bearer token. It will not start an authenticated HTTP listener if its TLS certificate chain or private key is missing or cannot be loaded. See [HTTPS certificates and client trust](#https-certificates-and-client-trust) before enabling API mode.
 
 Task IDs are opaque strings stored with each task: JSON records use `id`, and Markdown task lines can declare `[id:: value]`. When an older task has no ID, the backend derives a compatibility ID from its description and current storage location. JSON uses the configured task-file path and the task's zero-based position in the full array; Markdown uses the file path and line number. Reading does not write a derived ID. The first real task update stores it, and later edits or moves keep that value. Resolution includes completed tasks. A lookup for an ID with no matching task reports absence, while duplicate IDs report ambiguity and block writes to that ID. MD5 fallback IDs can collide, so the backend does not guarantee mathematical uniqueness.
-
-The backend does not provide persistent, non-destructive notification history.
 
 ### File save behavior
 
@@ -135,7 +165,7 @@ Open `http://localhost:5173` and configure:
 - **Backend URL** (default `/api`, proxied by Vite)
 - **Bearer token** (from `HTTP_TOKEN` in your `config.json`)
 
-The current frontend development proxy and client still issue GET requests to command paths. They need a resource-API client before they can be used with the backend described here. The frontend currently contains task lists, dashboards and legacy task actions, but the backend no longer accepts those mutating GET routes. Notification polling is unavailable until a persistent notification resource is provided.
+The current frontend development proxy and client still issue GET requests to command paths. They need a resource-API client before they can be used with the backend described here. The frontend currently contains task lists, dashboards and legacy task actions, but the backend no longer accepts those mutating GET routes. Notification polling also needs to be updated to use the configured resource API prefix and its non-destructive history representation.
 
 ### Build frontend
 

@@ -5,7 +5,7 @@ import logging
 import ssl
 import threading
 import uuid
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Optional
 
 from aiohttp import web
 from aiohttp.abc import AbstractAccessLogger
@@ -15,12 +15,12 @@ from aiohttp.web_protocol import RequestHandler
 
 from src.api.HttpApiV1 import HttpApiV1
 from src.domain.TaskApplicationService import TaskApplicationService
+from src.NotificationHistoryStore import NotificationHistoryStore
 from src.wrappers.Messaging import (
     IAgent,
     IMessage,
     OutboundMessage,
 )
-from src.wrappers.TimeManagement import TimePoint
 from src.wrappers.interfaces.IUserCommService import IUserCommService
 
 
@@ -99,6 +99,7 @@ class HttpUserCommService(IUserCommService):
         tls_private_key_path: Optional[str] = None,
         application_service: TaskApplicationService | None = None,
         api_prefix: str = "/api/v1",
+        notification_history_store: NotificationHistoryStore | None = None,
     ) -> None:
         self.url = url
         self.port = port
@@ -109,13 +110,18 @@ class HttpUserCommService(IUserCommService):
         self.agent = agent
         self.application_service = application_service
         self.api_prefix = api_prefix
+        self.notification_history_store = notification_history_store
         self.api = (
-            HttpApiV1(application_service, token, api_prefix)
+            HttpApiV1(
+                application_service,
+                token,
+                api_prefix,
+                notification_history_store=notification_history_store,
+            )
             if application_service is not None
             else None
         )
         self.pendingMessages: list[tuple[IMessage, asyncio.Future[IMessage]]] = []
-        self.notificationQueue: list[tuple[IMessage, TimePoint]] = []
         self.lock = threading.Lock()
         self.req_id_counter = 0
 
@@ -123,6 +129,13 @@ class HttpUserCommService(IUserCommService):
         if self.api is None:
             raise ValueError("The HTTP API requires an application service")
         ssl_context = self._create_ssl_context()
+        history_store = self.notification_history_store
+        if history_store is None:
+            raise RuntimeError("Notification history is not configured")
+        try:
+            history_store.initialize()
+        except Exception:
+            raise RuntimeError("Notification history could not be initialized") from None
         server = _SafeAiohttpServer(
             self.__handle_request__,
             debug=False,
@@ -211,23 +224,24 @@ class HttpUserCommService(IUserCommService):
         # HTTP file transfer is not part of the current API contract.
         return None
 
-    async def getNotifications(self, delete_queue: bool = True) -> List[Dict[str, Any]]:
-        """Retain the internal notification queue for later API integration."""
-        with self.lock:
-            notifications = [
-                {"message": str(message.content.text), "timestamp": str(timestamp)}
-                for message, timestamp in self.notificationQueue.copy()
-            ]
-            if delete_queue:
-                self.notificationQueue.clear()
-        return notifications
+    async def getNotifications(self) -> Dict[str, Any]:
+        """Return the full persisted notification history without consuming it."""
+        history_store = self.notification_history_store
+        if history_store is None:
+            raise RuntimeError("Notification history is not configured")
+        return history_store.read().to_dict()
 
     async def sendMessage(self, message: IMessage) -> None:
         if not isinstance(message, OutboundMessage):
             raise ValueError("Only OutboundMessage is supported in HttpUserCommService")
         if message.content.requestId is None:
-            with self.lock:
-                self.notificationQueue.append((message, TimePoint.now()))
+            history_store = self.notification_history_store
+            notification_text = message.content.text
+            if history_store is None:
+                raise RuntimeError("Notification history is not configured")
+            if not isinstance(notification_text, str):
+                raise ValueError("Notification text must be a string")
+            history_store.append(notification_text)
             return
         for pending_message, future in self.pendingMessages:
             if pending_message.content.requestId == message.content.requestId and not future.done():

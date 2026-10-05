@@ -27,15 +27,24 @@ def create_agent_mock():
     return mock
 
 
-def build_http_service(agent_mock):
+def build_http_service(agent_mock, notification_history_store=None):
     """Helper function to build HttpUserCommService with mocked web.Server"""
+    history_store = notification_history_store or Mock()
+    history_store.read.return_value.to_dict.return_value = {
+        "schemaVersion": 1,
+        "historyId": "history-id",
+        "nextSequence": 1,
+        "discardedThrough": 0,
+        "entries": [],
+    }
     with patch('src.wrappers.HttpUserCommService.web.Server'):
         return HttpUserCommService(
             url="localhost",
             port=8080,
             token="test_token_123",
             chat_id=12345,
-            agent=agent_mock
+            agent=agent_mock,
+            notification_history_store=history_store,
         )
 
 
@@ -53,7 +62,6 @@ class TestHttpUserCommService(unittest.TestCase):
         self.assertEqual(self.service.chat_id, 12345)
         self.assertEqual(self.service.agent, self.agent)
         self.assertEqual(len(self.service.pendingMessages), 0)
-        self.assertEqual(len(self.service.notificationQueue), 0)
 
     def test_getBotAgent(self):
         """Test getBotAgent returns the correct agent"""
@@ -94,7 +102,7 @@ class TestHttpUserCommServiceAsync(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result, outbound_message)
 
     async def test_sendMessage_without_requestId_stores_notification(self):
-        """Test sendMessage without request ID stores message in notification queue"""
+        """Test sendMessage without request ID persists notification text"""
         # Create a bot agent and user agent
         bot_agent = BotAgent("bot_1", "TestBot", "Test bot")
         user_agent = UserAgent("user_1", "TestUser", "Test user")
@@ -103,18 +111,12 @@ class TestHttpUserCommServiceAsync(unittest.IsolatedAsyncioTestCase):
         content = MessageContent(requestId=None, text="Notification message")
         outbound_message = OutboundMessage(bot_agent, user_agent, content, RenderMode.RAW_TEXT)
         
-        # Verify notification queue is empty
-        self.assertEqual(len(self.service.notificationQueue), 0)
-        
         # Send the message
         await self.service.sendMessage(outbound_message)
-        
-        # Check that the message was added to notification queue
-        self.assertEqual(len(self.service.notificationQueue), 1)
-        # The queue stores tuples of (message, timestamp)
-        stored_message, stored_timestamp = self.service.notificationQueue[0]
-        self.assertEqual(stored_message, outbound_message)
-        self.assertIsNotNone(stored_timestamp)
+
+        self.service.notification_history_store.append.assert_called_once_with(
+            "Notification message"
+        )
 
     async def test_sendMessage_with_invalid_message_type_raises_error(self):
         """Test sendMessage raises ValueError for non-OutboundMessage types"""
@@ -131,43 +133,29 @@ class TestHttpUserCommServiceAsync(unittest.IsolatedAsyncioTestCase):
         
         self.assertIn("Only OutboundMessage is supported", str(context.exception))
 
-    async def test_getNotifications_returns_and_clears_queue(self):
-        """Test getNotifications returns all notifications and clears the queue"""
-        # Create bot agent and user agent
-        bot_agent = BotAgent("bot_1", "TestBot", "Test bot")
-        user_agent = UserAgent("user_1", "TestUser", "Test user")
-        
-        # Add multiple notifications to the queue
-        content1 = MessageContent(requestId=None, text="Notification 1")
-        notification1 = OutboundMessage(bot_agent, user_agent, content1, RenderMode.RAW_TEXT)
-        
-        content2 = MessageContent(requestId=None, text="Notification 2")
-        notification2 = OutboundMessage(bot_agent, user_agent, content2, RenderMode.RAW_TEXT)
-        
-        await self.service.sendMessage(notification1)
-        await self.service.sendMessage(notification2)
-        
-        # Verify notifications are in the queue
-        self.assertEqual(len(self.service.notificationQueue), 2)
-        
-        # Get notifications
-        notifications = await self.service.getNotifications()
-        
-        # Verify we got the correct notifications (returns formatted dictionaries)
-        self.assertEqual(len(notifications), 2)
-        self.assertEqual(notifications[0]['message'], 'Notification 1')
-        self.assertEqual(notifications[1]['message'], 'Notification 2')
-        self.assertIn('timestamp', notifications[0])
-        self.assertIn('timestamp', notifications[1])
-        
-        # Verify the queue is now empty
-        self.assertEqual(len(self.service.notificationQueue), 0)
+    async def test_getNotifications_returns_the_persisted_snapshot_repeatedly(self):
+        """Reading notification history must not consume saved entries."""
+        snapshot = {
+            "schemaVersion": 1,
+            "historyId": "history-id",
+            "nextSequence": 2,
+            "discardedThrough": 0,
+            "entries": [{
+                "id": "history-id:1",
+                "sequence": 1,
+                "timestamp": "2026-10-04T12:00:00+02:00",
+                "text": "Notification 1",
+            }],
+        }
+        store = self.service.notification_history_store
+        store.read.return_value.to_dict.return_value = snapshot
 
-    async def test_getNotifications_empty_queue(self):
-        """Test getNotifications returns empty list when queue is empty"""
-        notifications = await self.service.getNotifications()
-        self.assertEqual(len(notifications), 0)
-        self.assertIsInstance(notifications, list)
+        first = await self.service.getNotifications()
+        second = await self.service.getNotifications()
+
+        self.assertEqual(first, snapshot)
+        self.assertEqual(second, snapshot)
+        self.assertEqual(store.read.call_count, 2)
 
     async def test_getMessageUpdates_empty(self):
         """Test getMessageUpdates returns empty list when no pending messages"""
@@ -292,6 +280,9 @@ class TestHttpUserCommServiceAsync(unittest.IsolatedAsyncioTestCase):
         server.assert_not_called()
 
     async def test_listener_always_receives_tls_context_and_logs_no_endpoint(self):
+        events = []
+        history_store = Mock()
+        history_store.initialize.side_effect = lambda: events.append("history")
         api_service = HttpUserCommService(
             url="sensitive-host",
             port=8080,
@@ -301,16 +292,18 @@ class TestHttpUserCommServiceAsync(unittest.IsolatedAsyncioTestCase):
             tls_cert_chain_path="secret-chain.pem",
             tls_private_key_path="secret-key.pem",
             application_service=Mock(),
+            notification_history_store=history_store,
         )
         context = object()
         runner = Mock()
-        runner.setup = AsyncMock()
+        runner.setup = AsyncMock(side_effect=lambda: events.append("setup"))
         runner.cleanup = AsyncMock()
         site = Mock()
-        site.start = AsyncMock()
+        site.start = AsyncMock(side_effect=lambda: events.append("bind"))
 
         with patch.object(api_service, "_create_ssl_context", return_value=context):
             with patch("src.wrappers.HttpUserCommService._SafeAiohttpServer") as server:
+                server.side_effect = lambda *_args, **_kwargs: events.append("server")
                 with patch(
                     "src.wrappers.HttpUserCommService.web.ServerRunner",
                     return_value=runner,
@@ -337,6 +330,9 @@ class TestHttpUserCommServiceAsync(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(server_kwargs["access_log_format"], "")
         output.assert_called_once_with("HTTPS User Communication Service started")
+        history_store.initialize.assert_called_once_with()
+        self.assertLess(events.index("history"), events.index("server"))
+        self.assertLess(events.index("history"), events.index("bind"))
 
     async def test_aiohttp_server_logger_redacts_parser_exception(self):
         logger = _SafeAiohttpServerLogger()

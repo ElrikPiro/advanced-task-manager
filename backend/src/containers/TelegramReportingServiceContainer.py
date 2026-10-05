@@ -29,6 +29,7 @@ from src.heuristics.DaysToThresholdHeuristic import DaysToThresholdHeuristic
 from src.StatisticsService import StatisticsService
 from src.FileBroker import FileBroker
 from src.AtomicFileStore import AtomicFileStore
+from src.NotificationHistoryStore import NotificationHistoryStore
 from src.MutationCoordinator import MutationCoordinator
 from src.filters.WorkloadAbleFilter import WorkloadAbleFilter
 from src.ProjectManager import ObsidianProjectManager
@@ -296,6 +297,13 @@ class TelegramReportingServiceContainer():
             vaultPath,
             mutation_coordinator=self.container.mutationCoordinator(),
         )
+        if httpMode:
+            self.container.notificationHistoryStore = providers.Singleton(
+                NotificationHistoryStore,
+                self.container.fileBroker,
+                self.container.mutationCoordinator(),
+                httpToken,
+            )
         cleanup_directories = [str(jsonPath)]
         if obsidianMode:
             cleanup_directories.extend([os.path.join(str(appdata), "obsidian"), str(vaultPath)])
@@ -454,6 +462,7 @@ class TelegramReportingServiceContainer():
                 tls_private_key_path=tlsPrivateKeyPath,
                 application_service=self.container.taskApplicationService,
                 api_prefix=httpApiPrefix,
+                notification_history_store=self.container.notificationHistoryStore,
             )
             self.container.userCommService = self.container.httpUserCommService
 

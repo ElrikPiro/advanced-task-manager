@@ -100,16 +100,24 @@ class HttpApiV1:
         "search",
     }
 
-    def __init__(self, application_service: Any, token: str, prefix: str = "/api/v1") -> None:
+    def __init__(
+        self,
+        application_service: Any,
+        token: str,
+        prefix: str = "/api/v1",
+        notification_history_store: Any | None = None,
+    ) -> None:
         if application_service is None:
             raise ValueError("An application service is required")
         self.application_service = application_service
         self.token = token
+        self.notification_history_store = notification_history_store
         self.prefix, self._prefix_segments = normalize_api_prefix(prefix)
         self.resources = ApiResources(
             application_service,
             prefix=self.prefix,
             token=token,
+            notification_history_store=notification_history_store,
         )
 
     def create_app(self) -> web.Application:
@@ -211,11 +219,20 @@ class HttpApiV1:
         except Exception as error:
             operation_id = self._known_operation_id(request, operation_id)
             error_code = getattr(error, "code", None)
+            if error_code == "notification-history-unavailable":
+                return self._problem(
+                    request_id,
+                    503,
+                    "notification-history-unavailable",
+                    "Notification history is unavailable",
+                    effects_state="none",
+                )
             safe_codes = {
                 "operation-failed",
                 "operation-id-conflict",
                 "operation-result-unavailable",
                 "resource-read-failed",
+                "notification-history-invalid",
                 "calculation-failed",
                 "invalid-resource-data",
             }
@@ -393,6 +410,17 @@ class HttpApiV1:
         if path == ("statistics",):
             self._require_method(request, {"GET"})
             return self._hal(self.resources.read_statistics(self._task_view(request))), None
+
+        if path == ("notifications",):
+            self._require_method(request, {"GET"})
+            self._require_no_query(request)
+            if self.notification_history_store is None:
+                raise _HttpFailure(
+                    503,
+                    "notification-history-unavailable",
+                    "Notification history is not configured",
+                )
+            return self._hal(self.resources.read_notifications()), None
 
         if path in {("events",), ("strategies",)}:
             self._require_method(request, {"GET"})
@@ -1018,6 +1046,10 @@ class HttpApiV1:
 
     @staticmethod
     def _domain_problem(error: DomainError) -> tuple[int, str]:
+        if error.code == "notification-history-unavailable":
+            return 503, "Notification history is unavailable"
+        if error.code == "notification-history-invalid":
+            return 500, "Notification history could not be read"
         if isinstance(error, ValidationError):
             return 400, "The request contains invalid fields or values"
         if isinstance(error, OperationConflictError):
