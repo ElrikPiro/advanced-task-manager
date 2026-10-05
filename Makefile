@@ -1,17 +1,28 @@
-.PHONY: test run run-frontend
+.PHONY: install install-runtime install-test test package-linux-source run run-frontend
 
-# Keep .venv as a real directory target so existing virtual environments are reused.
-RUN_IN_VENV = . .venv/bin/activate &&
+PYTHON ?= python3
+VENV ?= .venv
+VENV_PYTHON = $(VENV)/bin/python
 
-.venv:
-	python3 -m venv .venv
-	$(RUN_IN_VENV) pip install -r requirements.txt
+$(VENV_PYTHON):
+	$(PYTHON) -m venv $(VENV)
 
-test: .venv
-	$(RUN_IN_VENV) ./tools/bash/local-quality-checks.sh
+install: install-runtime
 
-run: .venv
-	$(RUN_IN_VENV) python3 backend/backend.py
+install-runtime: $(VENV_PYTHON)
+	$(VENV_PYTHON) -m pip install --disable-pip-version-check --requirement requirements.lock
+
+install-test: $(VENV_PYTHON)
+	$(VENV_PYTHON) -m pip install --disable-pip-version-check --requirement requirements-test.lock
+
+test: install-test
+	PYTHON="$(abspath $(VENV_PYTHON))" ./tools/bash/local-quality-checks.sh
+
+package-linux-source:
+	$(PYTHON) tools/build_linux_source.py
+
+run: install-runtime
+	$(VENV_PYTHON) backend/backend.py
 
 run-frontend:
 	npm --prefix frontend run dev

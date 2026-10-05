@@ -77,28 +77,8 @@ echo "*** Starting Local Quality Checks for Advanced Task Manager ***"
 echo "Project Root: $PROJECT_ROOT"
 echo "Python Version: $($PYTHON --version 2>&1)"
 
-# ========================================
-# DEPENDENCY INSTALLATION
-# ========================================
-write_section "Installing Dependencies"
-
-echo "Upgrading pip..."
-run_check "Pip Upgrade" $PYTHON -m pip install --upgrade pip || true
-
-if [[ "$SKIP_LINT" == false ]] || [[ "$SKIP_TYPE_CHECK" == false ]]; then
-    echo "Installing linting dependencies..."
-    run_check "Lint Dependencies" pip install flake8 mypy || true
-fi
-
-if [[ "$SKIP_TESTS" == false ]] || [[ "$SKIP_COVERAGE" == false ]]; then
-    echo "Installing project dependencies..."
-    run_check "Project Dependencies" pip install -r requirements.txt || true
-fi
-
-if [[ "$SKIP_COVERAGE" == false ]]; then
-    echo "Installing coverage..."
-    run_check "Coverage Dependency" pip install coverage || true
-fi
+write_section "Locked environment"
+echo "Dependencies are installed from requirements-test.lock by make test."
 
 # ========================================
 # LINTING
@@ -106,7 +86,7 @@ fi
 if [[ "$SKIP_LINT" == false ]]; then
     write_section "Code Linting with Flake8"
 
-    if run_check "Flake8 Linting" flake8 --ignore=E501,E266,W293 backend/src/; then
+    if run_check "Flake8 Linting" "$PYTHON" -m flake8 --ignore=E501,E266,W293 backend/src/; then
         CHECK_RESULTS+=("Flake8 Linting: PASSED")
     else
         CHECK_RESULTS+=("Flake8 Linting: FAILED")
@@ -121,7 +101,7 @@ fi
 if [[ "$SKIP_TYPE_CHECK" == false ]]; then
     write_section "Type Checking with MyPy"
 
-    if run_check "MyPy Type Checking" mypy backend/src/ --strict --ignore-missing-imports --show-error-codes --warn-unused-ignores; then
+    if run_check "MyPy Type Checking" "$PYTHON" -m mypy backend/src/ --strict --ignore-missing-imports --show-error-codes --warn-unused-ignores; then
         CHECK_RESULTS+=("MyPy Type Checking: PASSED")
     else
         CHECK_RESULTS+=("MyPy Type Checking: FAILED")
@@ -136,7 +116,7 @@ fi
 if [[ "$SKIP_TESTS" == false ]]; then
     write_section "Running Unit Tests"
 
-    if (cd backend && run_check "Unit Tests" $PYTHON -m unittest discover -s tests -p '*_test.py'); then
+    if (cd backend && run_check "Unit Tests" "$PYTHON" -m unittest discover -s tests -p '*_test.py'); then
         CHECK_RESULTS+=("Unit Tests: PASSED")
     else
         CHECK_RESULTS+=("Unit Tests: FAILED")
@@ -153,12 +133,12 @@ if [[ "$SKIP_COVERAGE" == false ]]; then
 
     echo "Running tests with coverage..."
     coverage_passed=true
-    if (cd backend && run_check "Coverage Run" coverage run -m unittest discover -s tests -p '*_test.py'); then
+    if (cd backend && run_check "Coverage Run" "$PYTHON" -m coverage run -m unittest discover -s tests -p '*_test.py'); then
         echo "Generating coverage report..."
-        (cd backend && run_check "Coverage Report" coverage report -m) || coverage_passed=false
+        (cd backend && run_check "Coverage Report" "$PYTHON" -m coverage report -m) || coverage_passed=false
 
         echo "Checking coverage threshold (80%)..."
-        (cd backend && run_check "Coverage Threshold" coverage report --fail-under=80) || coverage_passed=false
+        (cd backend && run_check "Coverage Threshold" "$PYTHON" -m coverage report --fail-under=80) || coverage_passed=false
     else
         coverage_passed=false
     fi

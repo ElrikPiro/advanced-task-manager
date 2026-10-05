@@ -21,17 +21,15 @@ jobs:
           python-version: 3.11
 
       - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install flake8 mypy
+        run: python -m pip install --disable-pip-version-check -r requirements-test.lock
 
       - name: Lint code
         run: |
-          flake8 --ignore=E501,E266,W293 .
+          python -m flake8 --ignore=E501,E266,W293 backend/src/
 
       - name: Type checking
         run: |
-          mypy backend/src/ --strict --ignore-missing-imports --show-error-codes --warn-unused-ignores
+          python -m mypy backend/src/ --strict --ignore-missing-imports --show-error-codes --warn-unused-ignores
 
   test:
     runs-on: ubuntu-latest
@@ -45,9 +43,7 @@ jobs:
           python-version: 3.11
 
       - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt
+        run: python -m pip install --disable-pip-version-check -r requirements-test.lock
 
       - name: Run tests
         run: |
@@ -66,23 +62,45 @@ jobs:
           python-version: 3.11
 
       - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt coverage
+        run: python -m pip install --disable-pip-version-check -r requirements-test.lock
 
       - name: Run tests with coverage
         run: |
           cd backend
-          coverage run -m unittest discover -s tests -p '*_test.py'
-          coverage report -m
+          python -m coverage run -m unittest discover -s tests -p '*_test.py'
+          python -m coverage report -m
 
       # Fail if coverage is below 80%
       - name: Check coverage
         run: |
           cd backend
-          coverage report --fail-under=80
+          python -m coverage report --fail-under=80
 
-  build-artifacts:
+  linux-source-archives:
+    name: Reproducible Linux source archives
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: 3.11
+
+      - name: Build source and test archives
+        run: make package-linux-source PYTHON=python
+
+      - name: Upload source archives
+        uses: actions/upload-artifact@v4
+        with:
+          name: advanced-task-manager-linux-source-${{ github.sha }}
+          path: dist/linux-source/*.tar.gz
+          if-no-files-found: error
+          retention-days: 30
+
+  legacy-windows-build:
+    name: Legacy Windows binary (not a release candidate)
     runs-on: windows-latest  # Changed from ubuntu-latest
     steps:
       - uses: actions/checkout@v2
@@ -94,8 +112,8 @@ jobs:
 
       - name: Install dependencies
         run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt pyinstaller
+          python -m pip install --disable-pip-version-check --requirement requirements.lock
+          python -m pip install --disable-pip-version-check pyinstaller
 
       - name: Copy default config
         run: |

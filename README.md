@@ -6,6 +6,34 @@ Elrikpiro's Advanced Task Manager is a tool designed to help users manage and au
 
 For detailed architecture documentation, see [ARCHITECTURE.md](./ARCHITECTURE.md).
 
+## Backend Python environment
+
+The backend targets Python 3.11 on Linux. `requirements.txt` lists the direct application dependencies. Reproducible installation uses `requirements.lock` for runtime and `requirements-test.lock` for runtime plus lint, type-checking and coverage tools. The older Windows binary workflow is retained for maintenance and is not a reproducible delivery candidate.
+
+Create the virtual environment and install the runtime lock with:
+
+```bash
+make install-runtime PYTHON=python3.11
+```
+
+Run all backend quality checks and tests with:
+
+```bash
+make test PYTHON=python3.11
+```
+
+Start the backend from that environment with `make run`. If `.venv` was created with a different Python interpreter, recreate that local environment before installing dependencies. Updating a lock is a deliberate dependency change: update the relevant direct declaration, regenerate or review the full pinned closure, then run `make test` and the applicable packaging check.
+
+### Linux source package
+
+Build a repeatable source archive and its separate test-source archive with:
+
+```bash
+make package-linux-source PYTHON=python3.11
+```
+
+The source archive contains the backend runtime, operating documentation, dependency declarations and locks, and the Linux container recipe. It excludes local configuration/data, credentials, generated files, the legacy frontend and test sources. The companion test archive contains the test suite; extract it at the same directory level as the source archive before running `make test`. The builder normalizes archive metadata and checks that two builds from the same checkout have identical SHA-256 digests. The Dockerfile still uses the moving `python:3.11` image tag, so reproducible source archives do not imply byte-identical container images.
+
 
 ## Before starting
 
@@ -126,9 +154,9 @@ If a Markdown vault mode is selected, the application will need a directory (and
 
 A file called `config.json` will be created with a basic set of task categories/contexts, you can modify this file to reconfigure your task manager or delete it so the application will prompt you again on the next start.
 
-## Usage (Python 3.11)
+## Run the backend
 
-run `python backend.py` in the backend folder
+Configure the application mode in `config.json`, then run `make run` from the repository root. For an API configuration, the listener also requires valid TLS certificate-chain and private-key files; see [HTTPS certificates and client trust](#https-certificates-and-client-trust).
 
 ## Web Frontend (React + TypeScript)
 

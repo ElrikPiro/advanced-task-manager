@@ -90,6 +90,12 @@ The API exposes the entire retained history in ascending sequence order. It does
   - `aiohttp` - HTTP server for REST API
 - **Deployment**: Docker support with compose.yaml
 
+## Python dependency locks
+
+`requirements.txt` contains the direct runtime package names. `requirements.lock` pins the runtime dependency closure. `requirements-test.lock` includes that closure and the pinned tools used by linting, type checking, unit tests and coverage. `make install-runtime`, `make install-test` and `make test` install these files into `.venv`; they do not upgrade the package installer or resolve unpinned dependencies. Updating dependency versions should keep direct declarations, the applicable lock, CI and the documented runtime in agreement. The separate Windows executable job is a legacy maintenance flow and is not treated as a reproducible delivery candidate.
+
+`tools/build_linux_source.py` assembles a deterministic Linux source archive from an explicit allowlist and creates a separate test-source archive. It normalizes timestamps, ownership and modes, excludes local configuration and generated data, and checks that repeated builds match by SHA-256. The Dockerfile uses the moving `python:3.11` image tag; the source archive is reproducible, while a container image built later is not guaranteed to have identical base-image bytes.
+
 ## Project Structure
 
 ```

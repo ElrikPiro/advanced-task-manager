@@ -12,6 +12,7 @@ import.dat
 .vscode/
 backend/build/
 backend/dist/
+dist/
 config.json
 .coverage
 backend/tests/private/*

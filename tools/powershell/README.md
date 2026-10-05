@@ -8,11 +8,10 @@ The `local-quality-checks.ps1` script replicates the same quality checks that ru
 
 This script performs the following quality checks:
 
-1. **Dependency Installation**
-   - Upgrades pip
-   - Installs linting dependencies (flake8, mypy)
-   - Installs project dependencies from `requirements.txt`
-   - Installs coverage tools
+1. **Locked Dependency Installation**
+   - Creates `.venv` when needed
+   - Installs runtime and quality tools from `requirements-test.lock`
+   - Uses the local virtual environment without upgrading pip
 
 2. **Code Linting (Flake8)**
    - Runs flake8 with the same ignore rules as CI/CD
