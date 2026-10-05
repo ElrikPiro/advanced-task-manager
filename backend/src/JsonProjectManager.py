@@ -2,10 +2,20 @@ import json
 from copy import deepcopy
 from .Interfaces.IProjectManager import IProjectManager, ProjectCommands
 from .Interfaces.ITaskJsonProvider import VALID_PROJECT_STATUS, ITaskJsonProvider
+from .MutationCoordinator import MutationCoordinator
 from .Utils import stripDoc
 
-from typing import Any, List, Callable, cast
+from typing import Any, List, Callable, Mapping, cast
+from uuid import uuid4
 from src.Utils import TaskJsonType
+from src.domain.errors import (
+    AmbiguousResourceError,
+    InvalidResourceDataError,
+    OperationFailedError,
+    ResourceNotFoundError,
+    ValidationError,
+)
+from src.domain.models import ProjectMutationResult
 
 
 class JsonProjectManager(IProjectManager):
@@ -14,11 +24,39 @@ class JsonProjectManager(IProjectManager):
     Handles project management operations and processes commands.
     """
 
-    def __init__(self, taskListProvider: ITaskJsonProvider):
+    _MUTATING_COMMANDS = frozenset({
+        ProjectCommands.EDIT.value,
+        ProjectCommands.OPEN.value,
+        ProjectCommands.CLOSE.value,
+        ProjectCommands.HOLD.value,
+    })
+
+    def __init__(
+        self,
+        taskListProvider: ITaskJsonProvider,
+        mutation_coordinator: Any | None = None,
+    ):
         """
         Initialize the ProjectManager with an empty projects dictionary.
         """
         self.__taskListProvider = taskListProvider
+        broker = getattr(taskListProvider, "fileBroker", None)
+        candidates = [
+            getattr(source, "mutation_coordinator", None)
+            for source in (taskListProvider, broker)
+            if source is not None
+        ]
+        candidates = [candidate for candidate in candidates if isinstance(candidate, MutationCoordinator)]
+        if len({id(candidate) for candidate in candidates}) > 1:
+            raise ValueError("Project storage components must share one mutation coordinator")
+        shared = mutation_coordinator if mutation_coordinator is not None else (
+            candidates[0] if candidates else None
+        )
+        if mutation_coordinator is not None and any(
+            candidate is not mutation_coordinator for candidate in candidates
+        ):
+            raise ValueError("Project storage components must share one mutation coordinator")
+        self.mutation_coordinator = shared
         self.commands: dict[str, Callable[[List[str]], str]] = {
             ProjectCommands.LIST.value: self._list_projects,
             ProjectCommands.CAT.value: self._cat_project,
@@ -39,10 +77,185 @@ class JsonProjectManager(IProjectManager):
         Returns:
             str: The result of the command
         """
-        if command in self.commands.keys():
-            return self.commands.get(command, self._get_help)(messageArgs)
-        else:
+        if command not in self.commands:
             return self._get_help()
+        arguments = list(messageArgs)
+        handler = self.commands[command]
+        if command in self._MUTATING_COMMANDS and self.mutation_coordinator is not None:
+            intent = ("project-command", command, tuple(arguments))
+            return cast(
+                str,
+                self.mutation_coordinator.run_operation(
+                    uuid4(),
+                    intent,
+                    lambda admitted: handler(list(admitted[2])),
+                ),
+            )
+        return handler(arguments)
+
+    def perform_operation(
+        self,
+        operation_type: str,
+        project_name: str,
+        parameters: Mapping[str, Any],
+    ) -> ProjectMutationResult:
+        """Apply a typed project operation and return the saved project data."""
+        self.validate_operation_structure(operation_type, project_name, parameters)
+        coordinator = self.mutation_coordinator
+        if coordinator is None:
+            return self._perform_operation(operation_type, project_name, parameters)
+        return cast(
+            ProjectMutationResult,
+            coordinator.run_or_inline(
+                lambda: self._perform_operation(operation_type, project_name, parameters)
+            ),
+        )
+
+    def _perform_operation(
+        self,
+        operation_type: str,
+        project_name: str,
+        parameters: Mapping[str, Any],
+    ) -> ProjectMutationResult:
+        results: list[ProjectMutationResult] = []
+        if operation_type == "open-project":
+            description = parameters.get("description", "")
+
+            def open_project(current: TaskJsonType) -> TaskJsonType:
+                results.clear()
+                document = deepcopy(current)
+                projects = self._typed_projects(document)
+                matches = [project for project in projects if project.get("name") == project_name]
+                if len(matches) > 1:
+                    raise AmbiguousResourceError("More than one project has this name")
+                created = False
+                if matches:
+                    project = self._find_typed_project(projects, project_name)
+                    self._project_result(document, project_name)
+                    project["status"] = "open"
+                else:
+                    projects.append({
+                        "name": project_name,
+                        "description": description,
+                        "status": "open",
+                    })
+                    cast(dict[str, Any], document)["projects"] = projects
+                    created = True
+                results.append(self._project_result(document, project_name, created=created))
+                return document
+
+            self.__taskListProvider.updateJson(open_project)
+        elif operation_type in {"close-project", "hold-project"}:
+            status = "closed" if operation_type == "close-project" else "on-hold"
+
+            def update_status(current: TaskJsonType) -> TaskJsonType:
+                results.clear()
+                document = deepcopy(current)
+                project = self._find_typed_project(self._typed_projects(document), project_name)
+                self._project_result(document, project_name)
+                project["status"] = status
+                results.append(self._project_result(document, project_name))
+                return document
+
+            self.__taskListProvider.updateJson(update_status)
+        elif operation_type == "edit-project-content":
+            description = parameters.get("description")
+            if not isinstance(description, str):
+                raise ValidationError(
+                    "JSON projects can only edit their description",
+                    details={"field": "description"},
+                )
+
+            def update_description(current: TaskJsonType) -> TaskJsonType:
+                results.clear()
+                document = deepcopy(current)
+                project = self._find_typed_project(self._typed_projects(document), project_name)
+                self._project_result(document, project_name)
+                project["description"] = description
+                results.append(self._project_result(document, project_name))
+                return document
+
+            self.__taskListProvider.updateJson(update_description)
+        else:
+            raise ValidationError("Unsupported project operation", details={"field": "operation_type"})
+        if not results:
+            raise OperationFailedError(
+                "The saved project result could not be confirmed",
+                effects_state="unknown",
+                details={"resource": "project"},
+            )
+        return results[-1]
+
+    @staticmethod
+    def validate_operation_structure(
+        operation_type: str,
+        project_name: str,
+        parameters: Mapping[str, Any],
+    ) -> None:
+        if not isinstance(project_name, str) or not project_name.strip():
+            raise ValidationError("A project name is required", details={"field": "target"})
+        if not isinstance(parameters, Mapping):
+            raise ValidationError("Project parameters must be an object", details={"field": "parameters"})
+        allowed = {
+            "open-project": {"description"},
+            "close-project": set(),
+            "hold-project": set(),
+            "edit-project-content": {"description"},
+        }.get(operation_type)
+        if allowed is None:
+            raise ValidationError("Unsupported project operation", details={"field": "operation_type"})
+        unknown = set(parameters) - allowed
+        if unknown:
+            raise ValidationError(
+                "Unknown project operation parameter",
+                details={"field": str(sorted(unknown, key=str)[0])},
+            )
+        if "description" in parameters and not isinstance(parameters["description"], str):
+            raise ValidationError("description must be a string", details={"field": "description"})
+
+    def _project_result(
+        self,
+        document: TaskJsonType,
+        project_name: str,
+        *,
+        created: bool = False,
+    ) -> ProjectMutationResult:
+        projects = self._typed_projects(document)
+        project = self._find_typed_project(projects, project_name)
+        status = project.get("status")
+        if not isinstance(status, str) or status not in VALID_PROJECT_STATUS:
+            raise InvalidResourceDataError("Project status is invalid")
+        description = project.get("description", "")
+        if not isinstance(description, str):
+            raise InvalidResourceDataError("Project description is invalid")
+        return ProjectMutationResult(
+            name=project_name,
+            status=status,
+            description=description,
+            created=created,
+        )
+
+    @classmethod
+    def _typed_projects(cls, document: TaskJsonType) -> list[dict[str, object]]:
+        if not isinstance(document, dict):
+            raise InvalidResourceDataError("Project data has an invalid shape")
+        try:
+            return cls.__get_projects(document)
+        except (TypeError, ValueError) as error:
+            raise InvalidResourceDataError("Project data has an invalid shape") from error
+
+    @classmethod
+    def _find_typed_project(
+        cls,
+        projects: list[dict[str, object]],
+        name: str,
+    ) -> dict[str, object]:
+        try:
+            return cls.__find_project(projects, name)
+        except LookupError as error:
+            raise ResourceNotFoundError("No project matches this name") from error
+        except ValueError as error:
+            raise AmbiguousResourceError("More than one project has this name") from error
 
     def _get_help(self, messageArgs: List[str] = []) -> str:
         """

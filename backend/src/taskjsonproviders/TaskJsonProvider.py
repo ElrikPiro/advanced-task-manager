@@ -10,6 +10,7 @@ from ..Interfaces.ITaskJsonProvider import ITaskJsonProvider
 from ..Interfaces.IFileBroker import IFileBroker, FileRegistry
 from ..taskmodels.TaskIdentity import fallback_task_id, validate_task_id
 from ..taskproviders.TaskIdentityErrors import AmbiguousTaskIdentityError
+from ..MutationCoordinator import MutationCoordinator
 
 
 class ConfirmedTaskJsonRefreshError(RuntimeError):
@@ -20,8 +21,17 @@ class ConfirmedTaskJsonRefreshError(RuntimeError):
 
 class TaskJsonProvider(ITaskJsonProvider):
 
-    def __init__(self, fileBroker: IFileBroker):
+    def __init__(
+        self,
+        fileBroker: IFileBroker,
+        mutation_coordinator: MutationCoordinator | None = None,
+    ):
         self.fileBroker = fileBroker
+        self.mutation_coordinator = mutation_coordinator
+        if self.mutation_coordinator is None:
+            inherited_coordinator = getattr(fileBroker, "mutation_coordinator", None)
+            if isinstance(inherited_coordinator, MutationCoordinator):
+                self.mutation_coordinator = inherited_coordinator
 
     def getJson(self) -> TaskJsonType:
         """
@@ -36,6 +46,11 @@ class TaskJsonProvider(ITaskJsonProvider):
 
     def discover(self) -> TaskJsonType:
         """Persist the default next action for every uncovered open project."""
+        if self.mutation_coordinator is not None:
+            return self.mutation_coordinator.run_or_inline(self.__discover)
+        return self.__discover()
+
+    def __discover(self) -> TaskJsonType:
         today = str(TimePoint.today().as_int())
         identity_path = self.fileBroker.getFilePath(FileRegistry.STANDALONE_TASKS_JSON)
 

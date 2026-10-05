@@ -5,7 +5,7 @@ import re
 import threading
 
 from src.Utils import TaskJsonType
-from typing import Any
+from typing import Any, TypeVar
 
 from ..Interfaces.IFileBroker import IFileBroker, FileRegistry, VaultRegistry
 from ..Interfaces.ITaskProvider import ITaskProvider
@@ -14,7 +14,10 @@ from ..Interfaces.ITaskJsonProvider import ITaskJsonProvider
 from ..taskmodels.ObsidianTaskModel import ObsidianTaskModel
 from ..taskmodels.TaskIdentity import fallback_task_id, validate_task_id
 from .TaskIdentityErrors import AmbiguousTaskIdentityError, InvalidTaskIdentityError, MissingTaskIdentityError
+from ..MutationCoordinator import MutationCoordinator
 from typing import Callable, List
+
+T = TypeVar("T")
 
 
 class ConfirmedMarkdownRefreshError(RuntimeError):
@@ -35,9 +38,24 @@ class ObsidianTaskProvider(ITaskProvider):
     _NEW_TASK_FILE = "ObsidianTaskProvider.md"
     _METADATA_ORDER = ("track", "starts", "due", "severity", "remaining_cost", "invested", "calm", "raised", "waited", "id")
 
-    def __init__(self, taskJsonProvider: ITaskJsonProvider, fileBroker: IFileBroker, disableThreading: bool = False):
+    def __init__(
+        self,
+        taskJsonProvider: ITaskJsonProvider,
+        fileBroker: IFileBroker,
+        disableThreading: bool = False,
+        mutation_coordinator: MutationCoordinator | None = None,
+    ):
         self.TaskJsonProvider = taskJsonProvider
         self.fileBroker = fileBroker
+        self.mutation_coordinator = mutation_coordinator
+        if self.mutation_coordinator is None:
+            json_coordinator = getattr(taskJsonProvider, "mutation_coordinator", None)
+            if isinstance(json_coordinator, MutationCoordinator):
+                self.mutation_coordinator = json_coordinator
+            else:
+                broker_coordinator = getattr(fileBroker, "mutation_coordinator", None)
+                if isinstance(broker_coordinator, MutationCoordinator):
+                    self.mutation_coordinator = broker_coordinator
         self.serviceRunning = True
         self.lastJson: TaskJsonType = {}
         self.lastTaskList: List[ITaskModel] = []
@@ -85,11 +103,19 @@ class ObsidianTaskProvider(ITaskProvider):
 
     def discoverTasks(self) -> List[ITaskModel]:
         """Run the explicit discovery hook and refresh its maintenance snapshot."""
+        return self._run_mutation(self.__discoverTasks)
+
+    def __discoverTasks(self) -> List[ITaskModel]:
         with self.__discoveryLock:
             discoveredJson = self.TaskJsonProvider.discover()
             self.lastJson = discoveredJson
             self.lastTaskList = self.__buildTaskList(discoveredJson)
         return self.lastTaskList
+
+    def _run_mutation(self, callback: Callable[[], T]) -> T:
+        if self.mutation_coordinator is None:
+            return callback()
+        return self.mutation_coordinator.run_or_inline(callback)
 
     def getTaskListAttribute(self, string: str) -> list[dict[str, str]]:
         value = self.TaskJsonProvider.getJson().get(string, [])
@@ -155,6 +181,9 @@ class ObsidianTaskProvider(ITaskProvider):
         }
 
     def saveTask(self, task: ITaskModel) -> None:
+        self._run_mutation(lambda: self.__saveTask(task))
+
+    def __saveTask(self, task: ITaskModel) -> None:
         if isinstance(task, ObsidianTaskModel) and self.__pendingNewLines.get(task.getLine()) == task.getTaskUID():
             self._save_reserved_new_task(task)
             return
@@ -435,6 +464,9 @@ class ObsidianTaskProvider(ITaskProvider):
         return prefix + updated_body + newline
 
     def createDefaultTask(self, description: str) -> ObsidianTaskModel:
+        return self._run_mutation(lambda: self.__createDefaultTask(description))
+
+    def __createDefaultTask(self, description: str) -> ObsidianTaskModel:
         starts = int(datetime.datetime.now().timestamp() * 1e3)
         due = int(datetime.datetime.today().timestamp() * 1e3)
         starts = starts - starts % 60000

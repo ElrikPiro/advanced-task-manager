@@ -504,7 +504,7 @@ class TestTelegramReportingService(unittest.TestCase):
         asyncio.run(self.telegramReportingService.setCommand("/set description test description"))
 
         # Assert
-        self.telegramReportingService.processSetParam.assert_awaited_once_with(mock_task, "description", "test description", reqId=None)
+        mock_task.setDescription.assert_called_once_with("test description")
         self.taskProvider.saveTask.assert_called_once_with(mock_task)
         self.telegramReportingService.sendTaskInformation.assert_awaited_once_with(mock_task, reqId=None)
 
@@ -530,7 +530,7 @@ class TestTelegramReportingService(unittest.TestCase):
         asyncio.run(self.telegramReportingService.setCommand("/set description test_value"))
 
         # Assert
-        self.telegramReportingService.processSetParam.assert_awaited_once()
+        mock_task.setDescription.assert_called_once_with("test_value")
         self.taskProvider.saveTask.assert_called_once_with(mock_task)
 
     def test_newCommand_with_description(self) -> None:
@@ -644,7 +644,8 @@ class TestTelegramReportingService(unittest.TestCase):
         asyncio.run(self.telegramReportingService.workCommand("/work 1h"))
 
         # Assert
-        self.telegramReportingService.processSetParam.assert_awaited_once()
+        mock_task.setInvestedEffort.assert_called_once()
+        mock_task.setTotalCost.assert_called_once()
         self.taskProvider.saveTask.assert_called_once_with(mock_task)
         self.statisticsProvider.doWork.assert_called_once()
         self.telegramReportingService.sendTaskInformation.assert_awaited_once_with(mock_task, reqId=None)
@@ -1276,7 +1277,7 @@ class TestTelegramReportingService(unittest.TestCase):
         asyncio.run(self.telegramReportingService.setCommand("/set description test", False))
 
         # Assert
-        self.telegramReportingService.processSetParam.assert_awaited_once_with(mock_task, "description", "test", reqId=None)
+        mock_task.setDescription.assert_called_once_with("test")
         self.taskProvider.saveTask.assert_called_once_with(mock_task)
         self.telegramReportingService.sendTaskInformation.assert_not_awaited()
 
@@ -1321,7 +1322,8 @@ class TestTelegramReportingService(unittest.TestCase):
         asyncio.run(self.telegramReportingService.workCommand("/work 1h", False))
 
         # Assert
-        self.telegramReportingService.processSetParam.assert_awaited_once()
+        mock_task.setInvestedEffort.assert_called_once()
+        mock_task.setTotalCost.assert_called_once()
         self.taskProvider.saveTask.assert_called_once_with(mock_task)
         self.statisticsProvider.doWork.assert_called_once()
         self.telegramReportingService.sendTaskInformation.assert_not_awaited()
@@ -1490,7 +1492,7 @@ class TestTelegramReportingService(unittest.TestCase):
         task = MagicMock()
         task.getTaskUID.return_value = "task-7"
         task.getDescription.return_value = "Updated task"
-        application.execute_operation.side_effect = [
+        application.execute_operation_async = AsyncMock(side_effect=[
             SimpleNamespace(value=task),
             SimpleNamespace(value=task),
             SimpleNamespace(value=task),
@@ -1498,7 +1500,7 @@ class TestTelegramReportingService(unittest.TestCase):
             SimpleNamespace(value=task),
             SimpleNamespace(value=task),
             SimpleNamespace(value=2),
-        ]
+        ])
         self.telegramReportingService._application_service = application
         self.task_list_manager.selected_task = task
         self.taskProvider.getTaskList.return_value = []
@@ -1511,7 +1513,7 @@ class TestTelegramReportingService(unittest.TestCase):
         asyncio.run(self.telegramReportingService.snoozeCommand("/snooze 5m", expectAnswer=False))
         asyncio.run(self.telegramReportingService.raiseAlgorithmCommand("/raise ready", expectAnswer=False))
 
-        calls = application.execute_operation.call_args_list
+        calls = application.execute_operation_async.await_args_list
         self.assertEqual([entry.args[0] for entry in calls], [
             "complete-task", "edit-task", "create-task", "schedule-task",
             "record-work", "snooze-task", "raise-event",
@@ -1528,7 +1530,7 @@ class TestTelegramReportingService(unittest.TestCase):
 
     def test_application_domain_error_is_reported_without_success_response(self) -> None:
         application = MagicMock()
-        application.execute_operation.side_effect = ValidationError("invalid field")
+        application.execute_operation_async = AsyncMock(side_effect=ValidationError("invalid field"))
         self.telegramReportingService._application_service = application
         task = MagicMock()
         task.getTaskUID.return_value = "task-7"

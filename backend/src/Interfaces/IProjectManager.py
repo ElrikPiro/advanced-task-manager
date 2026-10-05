@@ -1,6 +1,8 @@
 from abc import ABC, abstractmethod
-from typing import List
 from enum import Enum
+from typing import Any, List, Mapping
+
+from src.domain.models import ProjectMutationResult
 
 
 class ProjectCommands(Enum):
@@ -33,4 +35,24 @@ class IProjectManager(ABC):
             command (str): The command to process.
             messageArgs (List[str]): Arguments for the command.
         """
+        pass
+
+    @abstractmethod
+    def perform_operation(
+        self,
+        operation_type: str,
+        project_name: str,
+        parameters: Mapping[str, Any],
+    ) -> ProjectMutationResult:
+        """Apply a typed project change and return project data, not display text."""
+        pass
+
+    @abstractmethod
+    def validate_operation_structure(
+        self,
+        operation_type: str,
+        project_name: str,
+        parameters: Mapping[str, Any],
+    ) -> None:
+        """Validate a project's operation fields without reading stored data."""
         pass

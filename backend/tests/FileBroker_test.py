@@ -6,6 +6,7 @@ import threading
 from unittest.mock import patch, mock_open
 from src.FileBroker import FileBroker
 from src.Interfaces.IFileBroker import FileRegistry, VaultRegistry
+from src.MutationCoordinator import MutationCoordinator
 
 
 class TestFileBroker(unittest.TestCase):
@@ -121,6 +122,75 @@ class TestFileBroker(unittest.TestCase):
             self.assertFalse(os.path.exists(json_path))
             self.assertFalse(os.path.exists(appdata))
             self.assertFalse(os.path.exists(vault_path))
+
+    def test_storage_mutations_join_shared_turn_and_run_inline_when_nested(self):
+        with tempfile.TemporaryDirectory() as directory:
+            vault_path = os.path.join(directory, "vault")
+            coordinator = MutationCoordinator()
+            broker = FileBroker(directory, os.path.join(directory, "app"), vault_path, coordinator)
+            try:
+                def complete_storage_turn() -> None:
+                    broker.writeFileContent(FileRegistry.LAST_RECEIVED_FILE, '{"tasks": []}')
+                    broker.updateFileContentJson(
+                        FileRegistry.STANDALONE_TASKS_JSON,
+                        lambda current: {**current, "marker": "task"},
+                    )
+                    broker.initializeFileContent(FileRegistry.STATISTICS_JSON)
+                    broker.writeVaultFileLines(VaultRegistry.OBSIDIAN, "project.md", ["# Project\n"])
+                    broker.updateVaultFileLines(
+                        VaultRegistry.OBSIDIAN,
+                        "project.md",
+                        lambda lines: lines + ["- [ ] Next action\n"],
+                    )
+
+                coordinator.run_job(complete_storage_turn)
+                self.assertEqual(broker.readFileContentJson(FileRegistry.STANDALONE_TASKS_JSON)["marker"], "task")
+                self.assertEqual(
+                    broker.getVaultFileLines(VaultRegistry.OBSIDIAN, "project.md"),
+                    ["# Project\n", "- [ ] Next action\n"],
+                )
+                self.assertEqual(broker.readStatisticsFileContentJson(), {"log": []})
+            finally:
+                coordinator.close(wait=True)
+
+    def test_storage_write_waits_behind_an_admitted_turn(self):
+        with tempfile.TemporaryDirectory() as directory:
+            coordinator = MutationCoordinator()
+            broker = FileBroker(directory, directory, os.path.join(directory, "vault"), coordinator)
+            turn_started = threading.Event()
+            release_turn = threading.Event()
+            writer_started = threading.Event()
+            writer_finished = threading.Event()
+
+            def hold_turn() -> None:
+                turn_started.set()
+                if not release_turn.wait(2):
+                    raise TimeoutError("test did not release queued storage turn")
+
+            def blocking_writer() -> None:
+                writer_started.set()
+                broker.writeFileContent(FileRegistry.STANDALONE_TASKS_JSON, '{"tasks": []}')
+                writer_finished.set()
+
+            coordinator_thread = threading.Thread(target=lambda: coordinator.run_job(hold_turn))
+            writer_thread = threading.Thread(target=blocking_writer)
+            try:
+                coordinator_thread.start()
+                self.assertTrue(turn_started.wait(1))
+                writer_thread.start()
+                self.assertTrue(writer_started.wait(1))
+                self.assertFalse(writer_finished.wait(0.05))
+                release_turn.set()
+                coordinator_thread.join(2)
+                writer_thread.join(2)
+                self.assertFalse(coordinator_thread.is_alive())
+                self.assertFalse(writer_thread.is_alive())
+                self.assertTrue(writer_finished.is_set())
+            finally:
+                release_turn.set()
+                coordinator_thread.join(2)
+                writer_thread.join(2)
+                coordinator.close(wait=True)
 
     def test_invalidJsonIsRaisedAndNeverReplaced(self):
         with tempfile.TemporaryDirectory() as directory:

@@ -7,6 +7,7 @@ from ..Interfaces.ITaskJsonProvider import ITaskJsonProvider, VALID_PROJECT_STAT
 from ..Interfaces.IFileBroker import IFileBroker, VaultRegistry
 from ..taskmodels.TaskIdentity import fallback_task_id, validate_task_id
 from ..taskproviders.TaskIdentityErrors import AmbiguousTaskIdentityError, InvalidTaskIdentityError
+from ..MutationCoordinator import MutationCoordinator
 
 
 class ObsidianVaultTaskJsonProvider(ITaskJsonProvider):
@@ -14,9 +15,19 @@ class ObsidianVaultTaskJsonProvider(ITaskJsonProvider):
     _TASK_LINE = re.compile(r"^\s*-\s+\[([ xX])\]\s*(.*)$")
     _TASK_METADATA = re.compile(r"\[([^\]:]+)::\s*([^\]]*)\]")
 
-    def __init__(self, fileBroker: IFileBroker, policies: TaskDiscoveryPolicies):
+    def __init__(
+        self,
+        fileBroker: IFileBroker,
+        policies: TaskDiscoveryPolicies,
+        mutation_coordinator: MutationCoordinator | None = None,
+    ):
         self.__fileBroker = fileBroker
         self.__policies = policies
+        self.mutation_coordinator = mutation_coordinator
+        if self.mutation_coordinator is None:
+            inherited_coordinator = getattr(fileBroker, "mutation_coordinator", None)
+            if isinstance(inherited_coordinator, MutationCoordinator):
+                self.mutation_coordinator = inherited_coordinator
 
     def getJson(self) -> TaskJsonType:
         """Read and parse vault data without creating or changing task files."""
@@ -46,6 +57,11 @@ class ObsidianVaultTaskJsonProvider(ITaskJsonProvider):
         return task_list
 
     def discover(self) -> TaskJsonType:
+        if self.mutation_coordinator is not None:
+            return self.mutation_coordinator.run_or_inline(self.__discover)
+        return self.__discover()
+
+    def __discover(self) -> TaskJsonType:
         """Persist a default next action in each uncovered open project."""
         vaultFiles = [
             file for file in self.__fileBroker.getVaultFiles(VaultRegistry.OBSIDIAN)

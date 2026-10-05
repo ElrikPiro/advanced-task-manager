@@ -9,11 +9,22 @@ from src.Interfaces.IFileBroker import IFileBroker, FileRegistry
 
 
 class TelegramBotUserCommService(IUserCommService):
-    def __init__(self, bot: telegram.Bot, fileBroker: IFileBroker, agent: IAgent) -> None:
+    def __init__(
+        self,
+        bot: telegram.Bot,
+        fileBroker: IFileBroker,
+        agent: IAgent,
+        authorized_chat_id: str | int | None = None,
+    ) -> None:
         self.bot: telegram.Bot = bot
         self.fileBroker: IFileBroker = fileBroker
         self.offset = 0
         self.agent: IAgent = agent
+        self.authorized_chat_id = (
+            str(authorized_chat_id).strip()
+            if authorized_chat_id is not None and str(authorized_chat_id).strip()
+            else None
+        )
 
         self.__renders = {
             RenderMode.TASK_LIST: self.__renderTaskList,
@@ -97,10 +108,26 @@ class TelegramBotUserCommService(IUserCommService):
             return (message.chat.id, self.__preprocessMessageText(message.text))
         elif message.document is not None:
             self.offset = result[0].update_id + 1
+            incoming_chat_id = getattr(getattr(message, "chat", None), "id", None)
+            if self.authorized_chat_id is None or incoming_chat_id is None:
+                return None
+            if str(incoming_chat_id) != self.authorized_chat_id:
+                return None
             file_id = message.document.file_id
             file = await self.bot.get_file(file_id)
             fileContent = await file.download_as_bytearray()
-            self.fileBroker.writeFileContent(FileRegistry.LAST_RECEIVED_FILE, fileContent.decode())
+            mutation_coordinator = getattr(self.fileBroker, "mutation_coordinator", None)
+            run_job_async = getattr(mutation_coordinator, "run_job_async", None)
+            if callable(run_job_async):
+                await run_job_async(lambda: self.fileBroker.writeFileContent(
+                    FileRegistry.LAST_RECEIVED_FILE,
+                    fileContent.decode(),
+                ))
+            else:
+                self.fileBroker.writeFileContent(
+                    FileRegistry.LAST_RECEIVED_FILE,
+                    fileContent.decode(),
+                )
             detectedFileType = "json"
             return (message.chat.id, f"/import {detectedFileType}")
         else:

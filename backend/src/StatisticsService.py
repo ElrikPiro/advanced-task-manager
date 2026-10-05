@@ -1,7 +1,7 @@
 import datetime
 import math
 from copy import deepcopy
-from typing import Any
+from typing import Any, Callable
 
 from src.Utils import WorkLogEntry, WorkloadStats, EventsContent, EventStatistics
 
@@ -11,6 +11,7 @@ from .Interfaces.IFileBroker import IFileBroker, FileRegistry
 from .Interfaces.IFilter import IFilter
 from .Interfaces.IHeuristic import IHeuristic
 from .wrappers.TimeManagement import TimePoint, TimeAmount
+from .MutationCoordinator import MutationCoordinator
 
 
 class StatisticsUpdateError(ValueError):
@@ -27,9 +28,22 @@ class ConfirmedStatisticsRefreshError(RuntimeError):
 
 class StatisticsService(IStatisticsService):
 
-    def __init__(self, fileBroker: IFileBroker, workLoadAbleFilter: IFilter, remainingEffortHeuristic: IHeuristic, mainHeuristic: IHeuristic) -> None:
+    def __init__(
+        self,
+        fileBroker: IFileBroker,
+        workLoadAbleFilter: IFilter,
+        remainingEffortHeuristic: IHeuristic,
+        mainHeuristic: IHeuristic,
+        mutation_coordinator: MutationCoordinator | None = None,
+    ) -> None:
         self.workDone: dict[str, float | list[WorkLogEntry]] = {datetime.date.today().isoformat(): 0.0}
         self.fileBroker = fileBroker
+        inherited_coordinator = getattr(fileBroker, "mutation_coordinator", None)
+        self.mutation_coordinator = mutation_coordinator or (
+            inherited_coordinator
+            if isinstance(inherited_coordinator, MutationCoordinator)
+            else None
+        )
         self.workLoadAbleFilter = workLoadAbleFilter
         self.remainingEffortHeuristic = remainingEffortHeuristic
         self.mainHeuristic = mainHeuristic
@@ -41,6 +55,9 @@ class StatisticsService(IStatisticsService):
         self.workDone = deepcopy(data)
 
     def doWork(self, date: datetime.date, work_units: TimeAmount, task: ITaskModel) -> None:
+        self._run_mutation(lambda: self.__doWork(date, work_units, task))
+
+    def __doWork(self, date: datetime.date, work_units: TimeAmount, task: ITaskModel) -> None:
         try:
             work_units_pomodoros: float = work_units.as_pomodoros()
         except Exception as error:
@@ -113,6 +130,11 @@ class StatisticsService(IStatisticsService):
             raise ConfirmedStatisticsRefreshError("Statistics cache could not be refreshed from confirmed data") from error
         self.workDone = committed_work_done
         print(f"Work done on {TimePoint.now()}: {work_units} on {task_description}")
+
+    def _run_mutation(self, callback: Callable[[], Any]) -> Any:
+        if self.mutation_coordinator is None:
+            return callback()
+        return self.mutation_coordinator.run_or_inline(callback)
 
     def getWorkDone(self, date: TimePoint) -> TimeAmount:
         work_done: str = f"{self.workDone.get(date.datetime_representation.date().isoformat(), 0.0)}p"

@@ -1,11 +1,25 @@
-from typing import Callable, List
+from typing import Any, Callable, List, Mapping, cast
 import re
+import os
+from uuid import uuid4
 
+from .MutationCoordinator import MutationCoordinator
 from .Utils import stripDoc
 from .Interfaces.IProjectManager import IProjectManager, ProjectCommands
 from .Interfaces.ITaskJsonProvider import VALID_PROJECT_STATUS
 from .Interfaces.ITaskProvider import ITaskProvider
 from .Interfaces.IFileBroker import IFileBroker, VaultRegistry
+from .domain.errors import (
+    AmbiguousResourceError,
+    DomainError,
+    InvalidResourceDataError,
+    OperationFailedError,
+    ResourceConflictError,
+    ResourceNotFoundError,
+    ResourceReadError,
+    ValidationError,
+)
+from .domain.models import ProjectMutationResult
 
 
 class ObsidianProjectManager(IProjectManager):
@@ -14,12 +28,42 @@ class ObsidianProjectManager(IProjectManager):
     Handles project management operations and processes commands.
     """
 
-    def __init__(self, taskListProvider: ITaskProvider, fileBroker: IFileBroker) -> None:
+    _MUTATING_COMMANDS = frozenset({
+        ProjectCommands.EDIT.value,
+        ProjectCommands.ADD.value,
+        ProjectCommands.REMOVE.value,
+        ProjectCommands.OPEN.value,
+        ProjectCommands.CLOSE.value,
+        ProjectCommands.HOLD.value,
+    })
+
+    def __init__(
+        self,
+        taskListProvider: ITaskProvider,
+        fileBroker: IFileBroker,
+        mutation_coordinator: Any | None = None,
+    ) -> None:
         """
         Initialize the ProjectManager with an empty projects dictionary.
         """
         self.__taskListProvider = taskListProvider
         self.__fileBroker = fileBroker
+        candidates = [
+            getattr(source, "mutation_coordinator", None)
+            for source in (taskListProvider, fileBroker)
+            if source is not None
+        ]
+        candidates = [candidate for candidate in candidates if isinstance(candidate, MutationCoordinator)]
+        if len({id(candidate) for candidate in candidates}) > 1:
+            raise ValueError("Project storage components must share one mutation coordinator")
+        shared = mutation_coordinator if mutation_coordinator is not None else (
+            candidates[0] if candidates else None
+        )
+        if mutation_coordinator is not None and any(
+            candidate is not mutation_coordinator for candidate in candidates
+        ):
+            raise ValueError("Project storage components must share one mutation coordinator")
+        self.mutation_coordinator = shared
         self.commands: dict[str, Callable[[list[str]], str]] = {
             ProjectCommands.LIST.value: self._list_projects,
             ProjectCommands.CAT.value: self._cat_project,
@@ -42,10 +86,307 @@ class ObsidianProjectManager(IProjectManager):
         Returns:
             str: The result of the command
         """
-        if command in ProjectCommands.values():
-            return self.commands.get(command, self._get_help)(messageArgs)
-        else:
+        if command not in ProjectCommands.values():
             return self._get_help()
+        arguments = list(messageArgs)
+        if command in self.commands and command in self._MUTATING_COMMANDS and self.mutation_coordinator is not None:
+            handler = self.commands[command]
+            intent = ("project-command", command, tuple(arguments))
+            return cast(
+                str,
+                self.mutation_coordinator.run_operation(
+                    uuid4(),
+                    intent,
+                    lambda admitted: handler(list(admitted[2])),
+                ),
+            )
+        return self.commands.get(command, self._get_help)(arguments)
+
+    def perform_operation(
+        self,
+        operation_type: str,
+        project_name: str,
+        parameters: Mapping[str, Any],
+    ) -> ProjectMutationResult:
+        """Apply a typed project change and return the saved project data."""
+        self.validate_operation_structure(operation_type, project_name, parameters)
+        coordinator = self.mutation_coordinator
+        if coordinator is None:
+            return self._perform_operation(operation_type, project_name, parameters)
+        return cast(
+            ProjectMutationResult,
+            coordinator.run_or_inline(
+                lambda: self._perform_operation(operation_type, project_name, parameters)
+            ),
+        )
+
+    def _perform_operation(
+        self,
+        operation_type: str,
+        project_name: str,
+        parameters: Mapping[str, Any],
+    ) -> ProjectMutationResult:
+        if operation_type == "open-project":
+            return self._open_typed_project(project_name, parameters)
+        project = self._find_typed_project(project_name)
+        if operation_type in {"close-project", "hold-project"}:
+            status = "closed" if operation_type == "close-project" else "on-hold"
+            return self._update_typed_project_lines(
+                str(project["path"]),
+                project_name,
+                lambda lines: self._replace_project_status(lines, project_name, status),
+            )
+        if operation_type == "edit-project-content":
+            if "description" in parameters:
+                raise ValidationError(
+                    "Markdown projects require a line action",
+                    details={"field": "action"},
+                )
+            action = parameters["action"]
+            line_number = parameters.get("line", parameters.get("position"))
+            content = parameters.get("content")
+            return self._update_typed_project_lines(
+                str(project["path"]),
+                project_name,
+                lambda lines: self._edit_project_content(
+                    lines,
+                    project_name,
+                    action,
+                    line_number,
+                    content,
+                ),
+            )
+        raise ValidationError("Unsupported project operation", details={"field": "operation_type"})
+
+    def _update_typed_project_lines(
+        self,
+        project_path: str,
+        project_name: str,
+        updater: Callable[[list[str]], list[str]],
+    ) -> ProjectMutationResult:
+        results: list[ProjectMutationResult] = []
+
+        def update(lines: list[str]) -> list[str]:
+            results.clear()
+            try:
+                updated = updater(lines)
+                status = self._typed_project_status(updated, project_name)
+                result = ProjectMutationResult(
+                    name=project_name,
+                    status=status,
+                    content="".join(updated),
+                )
+            except DomainError:
+                raise
+            except (FileNotFoundError, ValueError) as error:
+                raise InvalidResourceDataError("Project file data is invalid") from error
+            results.append(result)
+            return updated
+
+        saved_lines = self.__fileBroker.updateVaultFileLines(
+            VaultRegistry.OBSIDIAN,
+            project_path,
+            update,
+        )
+        if not results:
+            raise OperationFailedError(
+                "The saved project result could not be confirmed",
+                effects_state="unknown",
+                details={"resource": "project"},
+            )
+        return ProjectMutationResult(
+            name=results[-1].name,
+            status=results[-1].status,
+            content="".join(saved_lines),
+        )
+
+    @staticmethod
+    def _typed_project_status(lines: list[str], project_name: str) -> str:
+        try:
+            status_line = ObsidianProjectManager.__validate_project_file(lines, project_name)
+        except (FileNotFoundError, ValueError) as error:
+            raise InvalidResourceDataError("Project file data is invalid") from error
+        match = re.match(r"^\s*project\s*:\s*(.*?)\s*(?:\r?\n)?$", lines[status_line])
+        if match is None or match.group(1) not in VALID_PROJECT_STATUS:
+            raise InvalidResourceDataError("Project status is invalid")
+        return match.group(1)
+
+    def _open_typed_project(
+        self,
+        project_name: str,
+        parameters: Mapping[str, Any],
+    ) -> ProjectMutationResult:
+        description = parameters.get("description", "")
+        self._validate_project_name(project_name)
+        projects = self._load_typed_projects()
+        matches = [project for project in projects if project.get("name") == project_name]
+        if len(matches) > 1:
+            raise AmbiguousResourceError("More than one project has this name")
+        if matches:
+            project = self._validate_typed_project(matches[0], project_name)
+            return self._update_typed_project_lines(
+                str(project["path"]),
+                project_name,
+                lambda lines: self._replace_project_status(lines, project_name, "open"),
+            )
+
+        lines = [
+            "---\n",
+            "project: open\n",
+            "---\n",
+            f"# {project_name}\n",
+            "\n",
+            "## Description\n",
+            "\n",
+        ]
+        if description:
+            lines.extend(description.splitlines(keepends=True))
+            if not lines[-1].endswith(("\n", "\r")):
+                lines[-1] += "\n"
+        lines.extend(["\n", "## Tasks\n", "\n"])
+        project_path = f"{project_name}.md"
+        created = self.__fileBroker.createVaultFileLinesIfAbsent(
+            VaultRegistry.OBSIDIAN,
+            project_path,
+            lines,
+        )
+        if not created:
+            raise ResourceConflictError("A vault file already exists at the requested project path")
+        return ProjectMutationResult(
+            name=project_name,
+            status="open",
+            description=description,
+            content="".join(lines),
+            created=True,
+        )
+
+    @staticmethod
+    def validate_operation_structure(
+        operation_type: str,
+        project_name: str,
+        parameters: Mapping[str, Any],
+    ) -> None:
+        if not isinstance(project_name, str) or not project_name.strip():
+            raise ValidationError("A project name is required", details={"field": "target"})
+        if not isinstance(parameters, Mapping):
+            raise ValidationError("Project parameters must be an object", details={"field": "parameters"})
+        if operation_type == "open-project":
+            allowed = {"description"}
+        elif operation_type in {"close-project", "hold-project"}:
+            allowed = set()
+        elif operation_type == "edit-project-content":
+            allowed = {"action", "line", "position", "content"}
+        else:
+            raise ValidationError("Unsupported project operation", details={"field": "operation_type"})
+        unknown = set(parameters) - allowed
+        if unknown:
+            raise ValidationError(
+                "Unknown project operation parameter",
+                details={"field": str(sorted(unknown, key=str)[0])},
+            )
+        if operation_type == "open-project":
+            if "description" in parameters and not isinstance(parameters["description"], str):
+                raise ValidationError("description must be a string", details={"field": "description"})
+            ObsidianProjectManager._validate_project_name(project_name)
+        elif operation_type == "edit-project-content":
+            action = parameters.get("action")
+            if not isinstance(action, str) or action not in {"replace", "insert", "delete"}:
+                raise ValidationError("Invalid project content action", details={"field": "action"})
+            if "line" in parameters and "position" in parameters:
+                raise ValidationError("Supply line or position, not both", details={"field": "line"})
+            line = parameters.get("line", parameters.get("position"))
+            if type(line) is not int or line < 1:
+                raise ValidationError("A positive line or position is required", details={"field": "line"})
+            if action in {"replace", "insert"} and not isinstance(parameters.get("content"), str):
+                raise ValidationError("content is required", details={"field": "content"})
+            if action == "delete" and "content" in parameters:
+                raise ValidationError("delete does not accept content", details={"field": "content"})
+
+    @staticmethod
+    def _validate_project_name(project_name: str) -> None:
+        if project_name in {".", ".."} or os.path.basename(project_name) != project_name or "/" in project_name or "\\" in project_name or "\x00" in project_name:
+            raise ValidationError("Project name contains an invalid path", details={"field": "target"})
+
+    def _find_typed_project(self, project_name: str) -> dict[str, Any]:
+        projects = self._load_typed_projects()
+        matches = [project for project in projects if project.get("name") == project_name]
+        if not matches:
+            raise ResourceNotFoundError("No project matches this name")
+        if len(matches) > 1:
+            raise AmbiguousResourceError("More than one project has this name")
+        project = matches[0]
+        return self._validate_typed_project(project, project_name)
+
+    @staticmethod
+    def _validate_typed_project(project: dict[str, Any], project_name: str) -> dict[str, Any]:
+        if not isinstance(project.get("name"), str) or project["name"] != project_name:
+            raise InvalidResourceDataError("Project data has an invalid shape")
+        if not isinstance(project.get("path"), str) or not isinstance(project.get("status"), str):
+            raise InvalidResourceDataError("Project data has an invalid shape")
+        if project["status"] not in VALID_PROJECT_STATUS:
+            raise InvalidResourceDataError("Project status is invalid")
+        return project
+
+    def _load_typed_projects(self) -> list[dict[str, Any]]:
+        try:
+            projects = self.__taskListProvider.getTaskListAttribute("projects")
+        except DomainError:
+            raise
+        except Exception as error:
+            raise ResourceReadError("Project data could not be read") from error
+        if not isinstance(projects, list) or any(not isinstance(project, dict) for project in projects):
+            raise InvalidResourceDataError("Project data has an invalid shape")
+        return projects
+
+    def _replace_project_status(self, lines: list[str], project_name: str, status: str) -> list[str]:
+        updated = list(lines)
+        status_line = self.__validate_project_file(updated, project_name)
+        source = updated[status_line]
+        match = re.match(r"^(\s*project\s*:\s*)(.*?)(\r?\n)?$", source)
+        if match is None:
+            raise InvalidResourceDataError("Project status line is invalid")
+        updated[status_line] = f"{match.group(1)}{status}{match.group(3) or ''}"
+        return updated
+
+    def _edit_project_content(
+        self,
+        lines: list[str],
+        project_name: str,
+        action: str,
+        line_number: int,
+        content: str | None,
+    ) -> list[str]:
+        updated = list(lines)
+        self.__validate_project_file(updated, project_name)
+        closing = next(
+            (index for index in range(1, len(updated)) if updated[index].strip() == "---"),
+            None,
+        )
+        if closing is None:
+            raise InvalidResourceDataError("Project frontmatter is incomplete")
+        first_body_line = closing + 2
+        if action == "insert":
+            if line_number < first_body_line or line_number > len(updated) + 1:
+                raise ValidationError("Project content position is out of range", details={"field": "line"})
+            ending = "\r\n" if updated and updated[-1].endswith("\r\n") else "\n"
+            line = content or ""
+            if not line.endswith(("\n", "\r")):
+                line += ending
+            updated.insert(line_number - 1, line)
+            return updated
+        if line_number < first_body_line or line_number > len(updated):
+            raise ValidationError("Project content line is out of range", details={"field": "line"})
+        if action == "delete":
+            updated.pop(line_number - 1)
+            return updated
+        if action == "replace":
+            ending = "\r\n" if updated[line_number - 1].endswith("\r\n") else "\n"
+            replacement = content or ""
+            if updated[line_number - 1].endswith(("\n", "\r")):
+                replacement += ending
+            updated[line_number - 1] = replacement
+            return updated
+        raise ValidationError("Unsupported project content action", details={"field": "action"})
 
     def _get_help(self, messageArgs: List[str] = []) -> str:
         """

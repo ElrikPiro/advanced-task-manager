@@ -1,5 +1,6 @@
 import unittest
 import asyncio
+from types import SimpleNamespace
 from unittest.mock import Mock, patch
 from src.wrappers.HttpUserCommService import HttpUserCommService
 from src.wrappers.Messaging import (
@@ -164,6 +165,18 @@ class TestHttpUserCommServiceAsync(unittest.IsolatedAsyncioTestCase):
         updates = await self.service.getMessageUpdates()
         self.assertEqual(len(updates), 0)
         self.assertIsInstance(updates, list)
+
+    async def test_unauthorized_request_is_rejected_before_message_admission(self):
+        request = SimpleNamespace(
+            method="GET",
+            rel_url=SimpleNamespace(path="/set", query={}),
+            headers={"Authorization": "Bearer wrong-token"},
+        )
+
+        response = await self.service.__handle_request__(request)
+
+        self.assertEqual(response.status, 401)
+        self.assertEqual(self.service.pendingMessages, [])
 
     async def test_sendFile(self):
         """Test sendFile method (currently a no-op)"""

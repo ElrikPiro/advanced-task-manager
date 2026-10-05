@@ -180,6 +180,12 @@ Provider `getJson()` and `getTaskList()` reads parse the current JSON or Markdow
 
 The shared file store writes a complete candidate into an exclusive temporary file beside its destination, flushes and synchronizes it, preserves applicable permissions, then replaces the destination atomically. The store checks for external changes before replacement and retries from fresh file contents where it can; editors that do not cooperate can still race after that check. Memory snapshots are published only after the replacement is confirmed. A failure before replacement has no effect on that file; a failure after replacement can leave durability uncertain. Each file is atomic independently. Operations spanning task, statistics, project, or several task files stop at the first failure, keep earlier confirmed writes, and report known and uncertain effects for manual review without rollback or automatic retry.
 
+### Mutation coordination
+
+One in-memory FIFO coordinator serializes writes initiated by the running process. Task commands, project changes, imports, Markdown discovery, statistics updates, and writes made directly through the shared file broker enter this same queue. A business operation holds its turn across all of its file changes, while each individual file keeps its own atomic replacement boundary. Lower-level writes called from the active turn run inline, so a task operation can save task data and statistics without waiting behind itself. Channel responses and other asynchronous I/O happen after the mutation callback returns. A disconnected caller or expired wait does not cancel an admitted mutation.
+
+Internal callers can identify an operation with a UUID, separate from a channel request ID. Reusing that UUID with the same intent waits for the existing operation or returns its recorded outcome; using it for a different intent is a conflict. Results are retained in memory for up to 1024 completed operations, while in-progress operations are not evicted. A lookup never replays an operation, and a missing result does not establish that no effects occurred. All queue state and receipts disappear when the process restarts.
+
 ### TelegramReportingService
 
 The main service that handles user interactions through the configured interface. It processes commands, manages task lists, and coordinates between different components.

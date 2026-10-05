@@ -2,16 +2,26 @@ import json
 import os
 import typing
 from io import StringIO
-from typing import Any, Callable, cast
+from typing import Any, Callable, TypeVar, cast
 from .AtomicFileStore import AtomicFileStore
+from .MutationCoordinator import MutationCoordinator
 from .Utils import FileContent, FileContentJson, StatisticsFileContentJson, WorkLogEntry
 from .Interfaces.IFileBroker import IFileBroker, FileRegistry, VaultRegistry
 from .taskmodels.TaskIdentity import InvalidTaskIdentityError
 
+T = TypeVar("T")
+
 
 class FileBroker(IFileBroker):
-    def __init__(self, jsonPath: str, appdata: str, vaultPath: str):
+    def __init__(
+        self,
+        jsonPath: str,
+        appdata: str,
+        vaultPath: str,
+        mutation_coordinator: MutationCoordinator | None = None,
+    ):
         self._atomicFileStore = AtomicFileStore()
+        self.mutation_coordinator = mutation_coordinator
         defaultTaskJson: FileContent = '{"tasks": []}'
 
         self.filePaths: dict[FileRegistry, dict[str, FileContent]] = {
@@ -55,11 +65,11 @@ class FileBroker(IFileBroker):
     def writeFileContent(self,
                          fileRegistry: FileRegistry, content: str) -> None:
         file_path = str(self.filePaths[fileRegistry]["path"])
-        self._atomicFileStore.write(
+        self._run_mutation(lambda: self._atomicFileStore.write(
             file_path,
             content.encode("utf-8"),
             self.__validatorFor(fileRegistry),
-        )
+        ))
 
     def updateFileContent(self, fileRegistry: FileRegistry, updater: Callable[[str], str]) -> str:
         """Reapply a text mutation to the latest file snapshot and return saved text."""
@@ -73,12 +83,12 @@ class FileBroker(IFileBroker):
                 raise TypeError("Text updater must return a string")
             return updated_text.encode("utf-8")
 
-        saved = self._atomicFileStore.update(
+        saved = self._run_mutation(lambda: self._atomicFileStore.update(
             file_path,
             update,
             default,
             self.__validatorFor(fileRegistry),
-        )
+        ))
         return saved.decode("utf-8")
 
     def readFileContentJson(self, fileRegistry: FileRegistry) -> FileContentJson:
@@ -142,23 +152,23 @@ class FileBroker(IFileBroker):
         def validate_json(content: bytes) -> None:
             self.__parseJsonBytes(fileRegistry, content)
 
-        saved = self._atomicFileStore.update(
+        saved = self._run_mutation(lambda: self._atomicFileStore.update(
             file_path,
             update,
             default,
             validate_json,
-        )
+        ))
         return self.__parseJsonBytes(fileRegistry, saved)
 
     def initializeFileContent(self, fileRegistry: FileRegistry) -> None:
         """Create a registered file with its default content if it is absent."""
         file_path = str(self.filePaths[fileRegistry]["path"])
         default = str(self.filePaths[fileRegistry]["default"]).encode("utf-8")
-        self._atomicFileStore.create_if_absent(
+        self._run_mutation(lambda: self._atomicFileStore.create_if_absent(
             file_path,
             default,
             self.__validatorFor(fileRegistry),
-        )
+        ))
 
     @typing.no_type_check
     def writeFileContentJson(self,
@@ -167,11 +177,11 @@ class FileBroker(IFileBroker):
         file_path = str(self.filePaths[fileRegistry]["path"])
         serializable_content = self.__serializableContent(content)
         serialized = json.dumps(serializable_content, indent=4, allow_nan=False)
-        self._atomicFileStore.write(
+        self._run_mutation(lambda: self._atomicFileStore.write(
             file_path,
             serialized.encode("utf-8"),
             self.__validatorFor(fileRegistry),
-        )
+        ))
 
     def getVaultFileLines(self,
                           vaultRegistry: VaultRegistry,
@@ -185,7 +195,8 @@ class FileBroker(IFileBroker):
                             relativePath: str,
                             lines: list[str]) -> None:
         filePath = os.path.join(self.vaultPaths[vaultRegistry], relativePath)
-        self._atomicFileStore.write(filePath, "".join(lines).encode("utf-8"), self.__validateUtf8)
+        content = "".join(lines).encode("utf-8")
+        self._run_mutation(lambda: self._atomicFileStore.write(filePath, content, self.__validateUtf8))
 
     def updateVaultFileLines(
         self,
@@ -203,7 +214,7 @@ class FileBroker(IFileBroker):
                 raise TypeError("Vault line updater must return a list of strings")
             return "".join(updated_lines).encode("utf-8")
 
-        saved = self._atomicFileStore.update(file_path, update, b"", self.__validateUtf8)
+        saved = self._run_mutation(lambda: self._atomicFileStore.update(file_path, update, b"", self.__validateUtf8))
         return StringIO(saved.decode("utf-8"), newline="").readlines()
 
     def createVaultFileLinesIfAbsent(
@@ -215,7 +226,7 @@ class FileBroker(IFileBroker):
         """Create a vault note only if its path is still unused."""
         file_path = os.path.join(self.vaultPaths[vaultRegistry], relativePath)
         content = "".join(lines).encode("utf-8")
-        return self._atomicFileStore.create_if_absent(file_path, content, self.__validateUtf8)
+        return self._run_mutation(lambda: self._atomicFileStore.create_if_absent(file_path, content, self.__validateUtf8))
 
     def __ensureParentDirectory(self, file_path: str) -> None:
         parent_dir = os.path.dirname(file_path)
@@ -228,7 +239,13 @@ class FileBroker(IFileBroker):
         if roots is None:
             roots = [os.path.dirname(str(entry["path"])) for entry in self.filePaths.values()]
             roots.extend(self.vaultPaths.values())
-        return AtomicFileStore.cleanup_temporary_files(roots)
+        return self._run_mutation(lambda: AtomicFileStore.cleanup_temporary_files(roots))
+
+    def _run_mutation(self, callback: Callable[[], T]) -> T:
+        """Serialize storage changes and run nested writes inline in their turn."""
+        if self.mutation_coordinator is None:
+            return callback()
+        return self.mutation_coordinator.run_or_inline(callback)
 
     @staticmethod
     def __validateUtf8(content: bytes) -> None:

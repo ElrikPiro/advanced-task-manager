@@ -6,6 +6,7 @@ from ..Interfaces.ITaskJsonProvider import ITaskJsonProvider
 from ..Interfaces.IFileBroker import IFileBroker, FileRegistry, VaultRegistry
 from ..taskmodels.TaskIdentity import validate_task_id
 from ..taskproviders.TaskIdentityErrors import InvalidTaskIdentityError
+from ..MutationCoordinator import MutationCoordinator
 
 
 class ObsidianDataviewTaskJsonProvider(ITaskJsonProvider):
@@ -13,8 +14,17 @@ class ObsidianDataviewTaskJsonProvider(ITaskJsonProvider):
     _TASK_LINE = re.compile(r"^\s*-\s+\[([ xX])\]\s*(.*)$")
     _TASK_METADATA = re.compile(r"\[([^\]:]+)::\s*([^\]]*)\]")
 
-    def __init__(self, fileBroker: IFileBroker) -> None:
+    def __init__(
+        self,
+        fileBroker: IFileBroker,
+        mutation_coordinator: MutationCoordinator | None = None,
+    ) -> None:
         self.fileBroker = fileBroker
+        self.mutation_coordinator = mutation_coordinator
+        if self.mutation_coordinator is None:
+            inherited_coordinator = getattr(fileBroker, "mutation_coordinator", None)
+            if isinstance(inherited_coordinator, MutationCoordinator):
+                self.mutation_coordinator = inherited_coordinator
 
     def getJson(self) -> TaskJsonType:
         retval = self.fileBroker.readFileContentJson(FileRegistry.OBSIDIAN_TASKS_JSON)

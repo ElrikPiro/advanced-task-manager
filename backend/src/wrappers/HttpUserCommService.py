@@ -211,7 +211,8 @@ class HttpUserCommService(IUserCommService):
             if not request.secure:
                 return web.Response(status=403, text="Forbidden: HTTPS required")
         
-        # check if client token is valid
+        # Keep authentication before message admission; the reporting channel
+        # queues any mutation only after it receives this authenticated message.
         client_token = request.headers.get('Authorization', '')
         if client_token != f"Bearer {self.token}":
             return web.Response(status=401, text="Unauthorized: Invalid token")

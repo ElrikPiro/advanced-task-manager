@@ -7,10 +7,13 @@ from ..Interfaces.IFileBroker import IFileBroker, FileRegistry
 from ..taskmodels.TaskModel import TaskModel
 from ..taskmodels.TaskIdentity import fallback_task_id, validate_task_id
 from .TaskIdentityErrors import AmbiguousTaskIdentityError, InvalidTaskIdentityError, MissingTaskIdentityError
-from typing import Any, Callable, List, cast
+from ..MutationCoordinator import MutationCoordinator
+from typing import Any, Callable, List, TypeVar, cast
 import json
 from copy import deepcopy
 from src.Utils import TaskJsonType
+
+T = TypeVar("T")
 
 
 class ConfirmedTaskRefreshError(RuntimeError):
@@ -27,9 +30,24 @@ class TaskPrepareError(ValueError):
 
 class TaskProvider(ITaskProvider):
 
-    def __init__(self, task_json_provider: ITaskJsonProvider, fileBroker: IFileBroker, disableThreading: bool = False):
+    def __init__(
+        self,
+        task_json_provider: ITaskJsonProvider,
+        fileBroker: IFileBroker,
+        disableThreading: bool = False,
+        mutation_coordinator: MutationCoordinator | None = None,
+    ):
         self.taskJsonProvider = task_json_provider
         self.fileBroker = fileBroker
+        self.mutation_coordinator = mutation_coordinator
+        if self.mutation_coordinator is None:
+            json_coordinator = getattr(task_json_provider, "mutation_coordinator", None)
+            if isinstance(json_coordinator, MutationCoordinator):
+                self.mutation_coordinator = json_coordinator
+            else:
+                broker_coordinator = getattr(fileBroker, "mutation_coordinator", None)
+                if isinstance(broker_coordinator, MutationCoordinator):
+                    self.mutation_coordinator = broker_coordinator
         self.dict_task_list = self.taskJsonProvider.getJson()
         self.onTaskListUpdatedCallbacks: list[Callable[[], None]] = []
         self.__discoveryLock = threading.Lock()
@@ -95,9 +113,17 @@ class TaskProvider(ITaskProvider):
 
     def discoverTasks(self) -> List[ITaskModel]:
         """Explicitly reconcile provider discoveries, then return a fresh view."""
+        return self._run_mutation(self.__discoverTasks)
+
+    def __discoverTasks(self) -> List[ITaskModel]:
         with self.__discoveryLock:
             self.taskJsonProvider.discover()
         return self.getTaskList()
+
+    def _run_mutation(self, callback: Callable[[], T]) -> T:
+        if self.mutation_coordinator is None:
+            return callback()
+        return self.mutation_coordinator.run_or_inline(callback)
 
     def createTaskFromDict(self, dict_task: dict[str, str], index: int, task_id: str | None = None, identity_path: str | None = None) -> ITaskModel:
         """
@@ -191,6 +217,9 @@ class TaskProvider(ITaskProvider):
         return value
 
     def saveTask(self, task: ITaskModel) -> None:
+        self._run_mutation(lambda: self.__saveTask(task))
+
+    def __saveTask(self, task: ITaskModel) -> None:
         """
         Saves a task.
 
@@ -314,6 +343,9 @@ class TaskProvider(ITaskProvider):
         setattr(target, "_task_provider_baseline", TaskProvider.__getTaskSaveFields(target))
 
     def createDefaultTask(self, description: str) -> ITaskModel:
+        return self._run_mutation(lambda: self.__createDefaultTask(description))
+
+    def __createDefaultTask(self, description: str) -> ITaskModel:
         """
         Creates a default task.
 
@@ -430,6 +462,9 @@ class TaskProvider(ITaskProvider):
         self.dict_task_list = deepcopy(committed)
 
     def importTasks(self, selectedFormat: str) -> None:
+        self._run_mutation(lambda: self.__importTasks(selectedFormat))
+
+    def __importTasks(self, selectedFormat: str) -> None:
         supportedFormats: dict[str, Callable[[], None]] = {
             "json": self._importJson,
         }

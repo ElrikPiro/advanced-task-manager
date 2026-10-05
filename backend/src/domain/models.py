@@ -44,3 +44,23 @@ class OperationResult:
     affected_ids: tuple[str, ...] = ()
     effects_state: Literal["none", "complete", "partial", "unknown"] = "complete"
     metadata: Mapping[str, Any] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class OperationIntent:
+    """Detached intent admitted for one serialized operation."""
+
+    operation_type: str
+    target: OperationTarget
+    parameters: Mapping[str, Any]
+
+
+@dataclass(frozen=True)
+class ProjectMutationResult:
+    """Typed project data returned after a confirmed project change."""
+
+    name: str
+    status: str
+    description: str | None = None
+    content: str | None = None
+    created: bool = False

@@ -1,14 +1,21 @@
 """Reusable task reads and operations shared by communication adapters."""
 
+import asyncio
 import copy
 import datetime
 import json
 import math
-from typing import Any, Literal, Mapping
+import uuid
+from typing import Any, Literal, Mapping, cast
 
 from src.AtomicFileStore import AtomicWriteError
 from src.Interfaces.ITaskModel import ITaskModel
 from src.Interfaces.ITaskProvider import ITaskProvider
+from src.MutationCoordinator import (
+    MutationCoordinator,
+    OperationIdConflict,
+    OperationResultUnavailable,
+)
 from src.TelegramTaskListManager import TelegramTaskListManager
 from src.Utils import AgendaContent, TaskInformation, TaskListContent
 from src.wrappers.TimeManagement import TimeAmount, TimePoint
@@ -23,13 +30,22 @@ from .errors import (
     DomainCalculationError,
     DomainError,
     InvalidResourceDataError,
+    OperationConflictError,
     OperationFailedError,
+    OperationResultUnavailableError,
     ResourceNotFoundError,
     ResourceReadError,
     UnsupportedOperationError,
     ValidationError,
 )
-from .models import AgendaQuery, OperationResult, OperationTarget, TaskView
+from .models import (
+    AgendaQuery,
+    OperationIntent,
+    OperationResult,
+    OperationTarget,
+    ProjectMutationResult,
+    TaskView,
+)
 
 
 class TaskApplicationService:
@@ -70,6 +86,7 @@ class TaskApplicationService:
         task_list_manager: TelegramTaskListManager,
         categories: list[dict[str, str]],
         project_manager: Any | None = None,
+        mutation_coordinator: Any | None = None,
     ) -> None:
         self._task_provider = task_provider
         self._scheduling = scheduling
@@ -77,6 +94,68 @@ class TaskApplicationService:
         self._task_list_manager = task_list_manager
         self._categories = categories
         self._project_manager = project_manager
+        self._mutation_coordinator = self._resolve_mutation_coordinator(
+            mutation_coordinator,
+            task_provider,
+            project_manager,
+            statistics_service,
+        )
+
+    @staticmethod
+    def _resolve_mutation_coordinator(
+        explicit: Any | None,
+        task_provider: Any,
+        project_manager: Any | None,
+        statistics_service: Any | None,
+    ) -> Any | None:
+        """Reuse one FIFO across the provider, its broker and project writes."""
+        file_broker = getattr(task_provider, "fileBroker", None)
+        json_providers = [
+            getattr(task_provider, "taskJsonProvider", None),
+            getattr(task_provider, "TaskJsonProvider", None),
+        ]
+        sources = [
+            task_provider,
+            file_broker,
+            getattr(task_provider, "file_broker", None),
+            *json_providers,
+            project_manager,
+            statistics_service,
+            getattr(statistics_service, "fileBroker", None),
+        ]
+        found: list[Any] = []
+        for source in sources:
+            coordinator = getattr(source, "mutation_coordinator", None)
+            if isinstance(coordinator, MutationCoordinator):
+                if all(coordinator is not existing for existing in found):
+                    found.append(coordinator)
+        if explicit is not None:
+            if not callable(getattr(explicit, "run_operation", None)) or not callable(
+                getattr(explicit, "run_or_inline", None)
+            ):
+                raise TypeError("mutation_coordinator must provide run_operation and run_or_inline")
+            if any(explicit is not existing for existing in found):
+                raise ValueError("Task providers and project managers must share one mutation coordinator")
+            selected = explicit
+        elif len(found) > 1:
+            raise ValueError("Task providers and project managers must share one mutation coordinator")
+        elif found:
+            selected = found[0]
+        elif isinstance(task_provider, ITaskProvider):
+            selected = MutationCoordinator()
+        else:
+            return None
+
+        for source in sources:
+            existing = getattr(source, "mutation_coordinator", None) if source is not None else None
+            if source is not None and existing is not selected and not isinstance(
+                existing, MutationCoordinator
+            ):
+                try:
+                    setattr(source, "mutation_coordinator", selected)
+                except (AttributeError, TypeError):
+                    pass
+        return selected
 
     def _all_tasks(self, *, include_completed: bool = True) -> list[ITaskModel]:
         """Load current provider data without running discovery or maintenance."""
@@ -95,6 +174,13 @@ class TaskApplicationService:
 
     def discover_initialize(self) -> list[ITaskModel]:
         """Run provider discovery explicitly before a communication listener."""
+        coordinator = self._mutation_coordinator
+        run_or_inline = getattr(coordinator, "run_or_inline", None)
+        if callable(run_or_inline):
+            return cast(list[ITaskModel], run_or_inline(self._discover_initialize))
+        return self._discover_initialize()
+
+    def _discover_initialize(self) -> list[ITaskModel]:
         discover = getattr(self._task_provider, "discoverTasks", None)
         if not callable(discover):
             return self._all_tasks(include_completed=False)
@@ -180,7 +266,244 @@ class TaskApplicationService:
             raise ResourceReadError("Task detail could not be read") from error
 
     def edit_task(self, task_id: str, changes: Mapping[str, Any]) -> ITaskModel:
-        """Validate all replacements before saving one copied task model."""
+        """Retain the original edit entry point while admitting it through the FIFO."""
+        result = self.submit_operation(
+            uuid.uuid4(),
+            "edit-task",
+            OperationTarget("task", task_id),
+            {"changes": changes},
+        )
+        return cast(ITaskModel, result.value)
+
+    def execute_operation(
+        self,
+        operation_type: str,
+        target: OperationTarget,
+        parameters: Mapping[str, Any],
+    ) -> OperationResult:
+        """Execute one synchronous operation using a generated operation identity."""
+        return self.submit_operation(uuid.uuid4(), operation_type, target, parameters)
+
+    async def execute_operation_async(
+        self,
+        operation_type: str,
+        target: OperationTarget,
+        parameters: Mapping[str, Any],
+        *,
+        operation_id: str | uuid.UUID | None = None,
+    ) -> OperationResult:
+        """Execute an internal operation without blocking an asynchronous caller."""
+        return await self.submit_operation_async(
+            operation_id or uuid.uuid4(), operation_type, target, parameters
+        )
+
+    def submit_operation(
+        self,
+        operation_id: str | uuid.UUID,
+        operation_type: str,
+        target: OperationTarget,
+        parameters: Mapping[str, Any],
+    ) -> OperationResult:
+        """Admit a client-identified operation, or return its known outcome."""
+        self.validate_operation_structure(operation_type, target, parameters)
+        normalized_id = self._normalize_operation_id(operation_id)
+        intent = self._make_operation_intent(operation_type, target, parameters)
+        coordinator = self._mutation_coordinator
+        if coordinator is None:
+            return self._execute_operation_intent(intent)
+        try:
+            return cast(
+                OperationResult,
+                coordinator.run_operation(
+                    normalized_id,
+                    intent,
+                    self._execute_operation_intent,
+                ),
+            )
+        except OperationIdConflict as error:
+            raise OperationConflictError(normalized_id) from error
+
+    async def submit_operation_async(
+        self,
+        operation_id: str | uuid.UUID,
+        operation_type: str,
+        target: OperationTarget,
+        parameters: Mapping[str, Any],
+    ) -> OperationResult:
+        """Admit an operation before yielding, without blocking the event loop."""
+        self.validate_operation_structure(operation_type, target, parameters)
+        normalized_id = self._normalize_operation_id(operation_id)
+        intent = self._make_operation_intent(operation_type, target, parameters)
+        coordinator = self._mutation_coordinator
+        if coordinator is None:
+            return await asyncio.to_thread(self._execute_operation_intent, intent)
+        run_async = getattr(coordinator, "run_operation_async", None)
+        if not callable(run_async):
+            try:
+                return cast(
+                    OperationResult,
+                    await asyncio.to_thread(
+                        coordinator.run_operation,
+                        normalized_id,
+                        intent,
+                        self._execute_operation_intent,
+                    ),
+                )
+            except OperationIdConflict as error:
+                raise OperationConflictError(normalized_id) from error
+        try:
+            return cast(
+                OperationResult,
+                await run_async(normalized_id, intent, self._execute_operation_intent),
+            )
+        except OperationIdConflict as error:
+            raise OperationConflictError(normalized_id) from error
+
+    def get_receipt(self, operation_id: str | uuid.UUID) -> Any:
+        """Return a detached receipt without starting or repeating its operation."""
+        normalized_id = self._normalize_operation_id(operation_id)
+        coordinator = self._mutation_coordinator
+        if coordinator is None:
+            raise OperationResultUnavailableError(normalized_id)
+        try:
+            return coordinator.get_receipt(normalized_id)
+        except OperationResultUnavailable as error:
+            raise OperationResultUnavailableError(normalized_id) from error
+
+    def get_operation_receipt(self, operation_id: str | uuid.UUID) -> Any:
+        """Alias that names the receipt resource explicitly."""
+        return self.get_receipt(operation_id)
+
+    @staticmethod
+    def _normalize_operation_id(operation_id: str | uuid.UUID) -> str:
+        try:
+            return str(uuid.UUID(str(operation_id)))
+        except (ValueError, TypeError, AttributeError) as error:
+            raise ValidationError(
+                "operation_id must be a UUID",
+                details={"field": "operation_id"},
+                effects_state="none",
+            ) from error
+
+    @staticmethod
+    def _make_operation_intent(
+        operation_type: str,
+        target: OperationTarget,
+        parameters: Mapping[str, Any],
+    ) -> OperationIntent:
+        try:
+            return OperationIntent(
+                operation_type=operation_type,
+                target=copy.deepcopy(target),
+                parameters=copy.deepcopy(dict(parameters)),
+            )
+        except Exception as error:
+            raise ValidationError(
+                "Operation parameters cannot be copied safely",
+                details={"field": "parameters"},
+                effects_state="none",
+            ) from error
+
+    def validate_operation_structure(
+        self,
+        operation_type: str,
+        target: OperationTarget,
+        parameters: Mapping[str, Any],
+    ) -> None:
+        """Reject malformed operation structure without reading provider state."""
+        if not isinstance(target, OperationTarget):
+            raise ValidationError(
+                "Operation target must be typed",
+                details={"field": "target"},
+                effects_state="none",
+            )
+        if not isinstance(parameters, Mapping):
+            raise ValidationError(
+                "Operation parameters must be an object",
+                details={"field": "parameters"},
+                effects_state="none",
+            )
+        if not isinstance(operation_type, str) or not operation_type:
+            raise ValidationError(
+                "Operation type is required",
+                details={"field": "operation_type"},
+                effects_state="none",
+            )
+
+        if operation_type == "create-task":
+            self._validate_create_structure(target, parameters)
+        elif operation_type == "edit-task":
+            self._validate_edit_structure(target, parameters)
+        elif operation_type == "complete-task":
+            self._validate_task_target_structure(target)
+            self._require_no_parameters(operation_type, parameters)
+        elif operation_type == "schedule-task":
+            self._validate_task_target_structure(target)
+            unknown = set(parameters) - {"effort_per_day"}
+            self._reject_unknown_parameter(unknown)
+            effort = parameters.get("effort_per_day", "")
+            if not isinstance(effort, str):
+                self._invalid_field("effort_per_day", "effort_per_day must be a string")
+        elif operation_type == "record-work":
+            self._validate_task_target_structure(target)
+            unknown = set(parameters) - {"duration", "now"}
+            self._reject_unknown_parameter(unknown)
+            if "duration" not in parameters:
+                self._invalid_field("duration", "duration is required")
+            self._as_time_amount(parameters["duration"], "duration")
+            self._validate_optional_now(parameters)
+        elif operation_type == "snooze-task":
+            self._validate_task_target_structure(target)
+            unknown = set(parameters) - {"duration", "now"}
+            self._reject_unknown_parameter(unknown)
+            if "duration" in parameters:
+                self._as_time_amount(parameters["duration"], "duration")
+            self._validate_optional_now(parameters)
+        elif operation_type == "raise-event":
+            if target.kind != "event" or not isinstance(target.id, str) or not target.id.strip():
+                self._invalid_field("target", "raise-event requires an event name")
+            self._require_no_parameters(operation_type, parameters)
+        elif operation_type in {"open-project", "close-project", "hold-project", "edit-project-content"}:
+            if not callable(getattr(self._project_manager, "perform_operation", None)):
+                raise UnsupportedOperationError(
+                    "Project operations are unavailable for this storage mode",
+                    effects_state="none",
+                )
+            self._validate_project_operation_structure(operation_type, target, parameters)
+        else:
+            raise UnsupportedOperationError(
+                f"Unsupported operation type: {operation_type}", effects_state="none"
+            )
+
+    def _execute_operation_intent(self, admitted: object) -> OperationResult:
+        if not isinstance(admitted, OperationIntent):
+            raise ValidationError("Admitted operation intent is invalid", effects_state="none")
+        operation_type = admitted.operation_type
+        target = admitted.target
+        parameters = admitted.parameters
+        if operation_type == "create-task":
+            return self._create_task(target, parameters)
+        if operation_type == "edit-task":
+            changes = parameters.get("changes", {})
+            delta = parameters.get("effort_delta")
+            if delta is not None:
+                updated = self._edit_task_with_effort_delta(target.id or "", changes, delta)
+            else:
+                updated = self._edit_task_in_turn(target.id or "", changes)
+            return OperationResult(operation_type, target, value=updated, affected_ids=(target.id or "",))
+        if operation_type == "complete-task":
+            return self._complete_task(target, parameters)
+        if operation_type == "schedule-task":
+            return self._schedule_task(target, parameters)
+        if operation_type == "record-work":
+            return self._record_work(target, parameters)
+        if operation_type == "snooze-task":
+            return self._snooze_task(target, parameters)
+        if operation_type == "raise-event":
+            return self._raise_event(target, parameters)
+        return self._execute_project_operation(operation_type, target, parameters)
+
+    def _edit_task_in_turn(self, task_id: str, changes: Mapping[str, Any]) -> ITaskModel:
         task = self.read_task(task_id)
         resolved_id = self._capture_task_id(task)
         prepared = self._prepare_changes(task, changes)
@@ -200,46 +523,163 @@ class TaskApplicationService:
             ) from error
         return candidate
 
-    def execute_operation(
+    @staticmethod
+    def _invalid_field(field: str, message: str) -> None:
+        raise ValidationError(message, details={"field": field}, effects_state="none")
+
+    @classmethod
+    def _reject_unknown_parameter(cls, unknown: set[str]) -> None:
+        if unknown:
+            cls._invalid_field(str(sorted(unknown, key=str)[0]), "Unknown operation parameter")
+
+    @classmethod
+    def _require_no_parameters(cls, operation_type: str, parameters: Mapping[str, Any]) -> None:
+        if parameters:
+            cls._invalid_field("parameters", f"{operation_type} accepts no parameters")
+
+    @classmethod
+    def _validate_task_target_structure(cls, target: OperationTarget) -> None:
+        if target.kind != "task" or not isinstance(target.id, str) or not target.id:
+            cls._invalid_field("target", "Operation requires a task identifier")
+
+    def _validate_create_structure(
+        self,
+        target: OperationTarget,
+        parameters: Mapping[str, Any],
+    ) -> None:
+        if target.kind not in ("tasks", "task") or target.id is not None:
+            self._invalid_field("target", "create-task targets the task collection")
+        description = parameters.get("description")
+        if not isinstance(description, str) or not description.strip():
+            self._invalid_field("description", "description is required")
+        unknown = set(parameters) - {"description", "context", "total_cost"}
+        self._reject_unknown_parameter(unknown)
+        if ("context" in parameters) != ("total_cost" in parameters):
+            self._invalid_field("context", "context and total_cost must be supplied together")
+        context = parameters.get("context", "inbox")
+        self._validate_context(context)
+        self._as_time_amount(parameters.get("total_cost", "1p"), "total_cost")
+
+    def _validate_edit_structure(
+        self,
+        target: OperationTarget,
+        parameters: Mapping[str, Any],
+    ) -> None:
+        self._validate_task_target_structure(target)
+        unknown = set(parameters) - {"changes", "effort_delta"}
+        self._reject_unknown_parameter(unknown)
+        changes = parameters.get("changes", {})
+        if not isinstance(changes, Mapping):
+            self._invalid_field("changes", "changes must be an object")
+        unknown_fields = set(changes) - self._EDIT_FIELDS
+        self._reject_unknown_parameter(unknown_fields)
+        for field, value in changes.items():
+            if field == "description" and (not isinstance(value, str) or not value.strip()):
+                self._invalid_field(field, "description must be a non-empty string")
+            elif field == "context":
+                self._validate_context(value)
+            elif field in ("start", "due") and not isinstance(value, (str, TimePoint)):
+                self._invalid_field(field, f"{field} must be a time expression")
+            elif field == "severity":
+                if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(float(value)):
+                    self._invalid_field(field, "severity must be finite numeric data")
+            elif field == "total_cost":
+                self._as_time_amount(value, field)
+            elif field == "calm" and not isinstance(value, bool):
+                self._invalid_field(field, "calm must be a boolean")
+            elif field in ("raised", "waited") and value is not None and not isinstance(value, str):
+                self._invalid_field(field, f"{field} must be a string or null")
+        if "effort_delta" in parameters and parameters["effort_delta"] is not None:
+            self._as_time_amount(parameters["effort_delta"], "effort_delta")
+
+    @staticmethod
+    def _validate_optional_now(parameters: Mapping[str, Any]) -> None:
+        now = parameters.get("now")
+        if now is not None and not isinstance(now, TimePoint):
+            raise ValidationError(
+                "now must be a TimePoint",
+                details={"field": "now"},
+                effects_state="none",
+            )
+
+    def _validate_project_operation_structure(
+        self,
+        operation_type: str,
+        target: OperationTarget,
+        parameters: Mapping[str, Any],
+    ) -> None:
+        if target.kind != "project" or not isinstance(target.id, str) or not target.id.strip():
+            self._invalid_field("target", f"{operation_type} requires a project name")
+        if operation_type in {"close-project", "hold-project"}:
+            self._require_no_parameters(operation_type, parameters)
+        elif operation_type == "open-project":
+            unknown = set(parameters) - {"description"}
+            self._reject_unknown_parameter(unknown)
+            description = parameters.get("description", "")
+            if not isinstance(description, str):
+                self._invalid_field("description", "description must be a string")
+        else:
+            unknown = set(parameters) - {"action", "line", "position", "content", "description"}
+            self._reject_unknown_parameter(unknown)
+            if "description" in parameters:
+                if set(parameters) != {"description"} or not isinstance(parameters["description"], str):
+                    self._invalid_field("description", "description must be the only content parameter")
+            else:
+                action = parameters.get("action")
+                if not isinstance(action, str) or action not in {"replace", "insert", "delete"}:
+                    self._invalid_field("action", "action must be replace, insert, or delete")
+                if "line" in parameters and "position" in parameters:
+                    self._invalid_field("line", "supply line or position, not both")
+                line = parameters.get("line", parameters.get("position"))
+                if type(line) is not int or line < 1:
+                    self._invalid_field("line", "line or position must be a positive integer")
+                if action in {"replace", "insert"}:
+                    if not isinstance(parameters.get("content"), str):
+                        self._invalid_field("content", "content is required")
+                elif "content" in parameters:
+                    self._invalid_field("content", "delete does not accept content")
+        manager_validator = getattr(self._project_manager, "validate_operation_structure", None)
+        if callable(manager_validator):
+            manager_validator(operation_type, target.id or "", parameters)
+
+    def _execute_project_operation(
         self,
         operation_type: str,
         target: OperationTarget,
         parameters: Mapping[str, Any],
     ) -> OperationResult:
-        """Execute an explicit supported task operation without UI text."""
-        if not isinstance(target, OperationTarget):
-            raise ValidationError("Operation target must be typed", details={"field": "target"})
-        if not isinstance(parameters, Mapping):
-            raise ValidationError("Operation parameters must be an object", details={"field": "parameters"})
-
-        if operation_type == "create-task":
-            return self._create_task(target, parameters)
-        if operation_type == "edit-task":
-            if target.kind != "task" or target.id is None:
-                raise ValidationError("edit-task requires a task identifier", details={"field": "target"})
-            changes = parameters.get("changes", {})
-            unknown = set(parameters) - {"changes", "effort_delta"}
-            if unknown:
-                raise ValidationError("Unknown edit-task parameter", details={"field": sorted(unknown)[0]})
-            if not isinstance(changes, Mapping):
-                raise ValidationError("changes must be an object", details={"field": "changes"})
-            delta = parameters.get("effort_delta")
-            if delta is not None:
-                updated = self._edit_task_with_effort_delta(target.id, changes, delta)
-            else:
-                updated = self.edit_task(target.id, changes)
-            return OperationResult(operation_type, target, value=updated, affected_ids=(target.id,))
-        if operation_type == "complete-task":
-            return self._complete_task(target, parameters)
-        if operation_type == "schedule-task":
-            return self._schedule_task(target, parameters)
-        if operation_type == "record-work":
-            return self._record_work(target, parameters)
-        if operation_type == "snooze-task":
-            return self._snooze_task(target, parameters)
-        if operation_type == "raise-event":
-            return self._raise_event(target, parameters)
-        raise UnsupportedOperationError(f"Unsupported operation type: {operation_type}")
+        manager = self._project_manager
+        apply_operation = getattr(manager, "perform_operation", None)
+        if not callable(apply_operation):
+            raise UnsupportedOperationError(
+                "Project operations are unavailable for this storage mode", effects_state="none"
+            )
+        try:
+            value = apply_operation(operation_type, target.id or "", parameters)
+        except DomainError:
+            raise
+        except Exception as error:
+            state = getattr(error, "effects_state", None)
+            effects: Literal["none", "partial", "unknown"] = (
+                state if state in {"none", "partial", "unknown"} else "unknown"
+            )
+            raise OperationFailedError(
+                "The project could not be saved",
+                effects_state=effects,
+                details={"resource": "project"},
+            ) from error
+        if not isinstance(value, ProjectMutationResult):
+            raise OperationFailedError(
+                "The project manager returned no typed result",
+                effects_state="unknown",
+                details={"resource": "project"},
+            )
+        return OperationResult(
+            operation_type,
+            target,
+            value=value,
+            affected_ids=(value.name,),
+        )
 
     def _create_task(self, target: OperationTarget, parameters: Mapping[str, Any]) -> OperationResult:
         if target.kind not in ("tasks", "task") or target.id is not None:

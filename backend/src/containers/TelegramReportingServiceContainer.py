@@ -27,6 +27,8 @@ from src.filters.ActiveTaskFilter import InactiveTaskFilter
 from src.heuristics.DaysToThresholdHeuristic import DaysToThresholdHeuristic
 from src.StatisticsService import StatisticsService
 from src.FileBroker import FileBroker
+from src.AtomicFileStore import AtomicFileStore
+from src.MutationCoordinator import MutationCoordinator
 from src.filters.WorkloadAbleFilter import WorkloadAbleFilter
 from src.ProjectManager import ObsidianProjectManager
 from src.JsonProjectManager import JsonProjectManager
@@ -193,12 +195,28 @@ class TelegramReportingServiceContainer():
 
         defaultConfig["DEDICATION_TIME"] = f"{pomodorosPerDay.as_pomodoros()}p"
 
-        # write the default config to the config.json file in disk
-        json.dump(defaultConfig, open("config.json", "w"), indent=4)
+        serialized_config = json.dumps(defaultConfig, indent=4, allow_nan=False).encode("utf-8")
+
+        def validate_config(content: bytes) -> None:
+            def reject_non_finite_constant(value: str) -> None:
+                raise ValueError(f"Invalid non-finite JSON number: {value}")
+
+            decoded = content.decode("utf-8")
+            parsed = json.loads(decoded, parse_constant=reject_non_finite_constant)
+            if not isinstance(parsed, dict):
+                raise TypeError("Configuration must be a JSON object")
+
+        # Bootstrap configuration uses the same atomic file primitive and
+        # shared mutation turn as later application data.
+        def write_default_config() -> None:
+            AtomicFileStore().write("config.json", serialized_config, validate_config)
+
+        self.container.mutationCoordinator().run_job(write_default_config)
 
     @typing.no_type_check
     def __init__(self) -> None:
         self.container = containers.DynamicContainer()
+        self.container.mutationCoordinator = providers.Object(MutationCoordinator())
         self.config = providers.Configuration()
 
         # Configuration
@@ -246,7 +264,13 @@ class TelegramReportingServiceContainer():
         self.container.bot = providers.Singleton(telegram.Bot, token=token)
 
         # Data providers
-        self.container.fileBroker = providers.Singleton(FileBroker, jsonPath, appdata, vaultPath)
+        self.container.fileBroker = providers.Singleton(
+            FileBroker,
+            jsonPath,
+            appdata,
+            vaultPath,
+            mutation_coordinator=self.container.mutationCoordinator(),
+        )
         cleanup_directories = [str(jsonPath)]
         if obsidianMode:
             cleanup_directories.extend([os.path.join(str(appdata), "obsidian"), str(vaultPath)])
@@ -256,7 +280,13 @@ class TelegramReportingServiceContainer():
         botId: IAgent = BotAgent(id="TaskManagerBot", name="Task Manager Bot", description="Bot for managing tasks")
 
         self.container.shellUserCommService = providers.Singleton(ShellUserCommService, chatId, botId)
-        self.container.telegramUserCommService = providers.Singleton(TelegramBotUserCommService, self.container.bot, self.container.fileBroker, botId)
+        self.container.telegramUserCommService = providers.Singleton(
+            TelegramBotUserCommService,
+            self.container.bot,
+            self.container.fileBroker,
+            botId,
+            authorized_chat_id=chatId,
+        )
         self.container.httpUserCommService = providers.Singleton(HttpUserCommService, httpUrl, httpPort, httpToken, httpChatId, botId)
 
         # Select the appropriate user communication service based on mode
@@ -268,11 +298,30 @@ class TelegramReportingServiceContainer():
             self.container.userCommService = self.container.shellUserCommService
 
         if obsidianMode:
-            self.container.taskJsonProvider = providers.Singleton(ObsidianVaultTaskJsonProvider, self.container.fileBroker, taskDiscoveryPolicies)
-            self.container.taskProvider = providers.Singleton(ObsidianTaskProvider, self.container.taskJsonProvider, self.container.fileBroker)
+            self.container.taskJsonProvider = providers.Singleton(
+                ObsidianVaultTaskJsonProvider,
+                self.container.fileBroker,
+                taskDiscoveryPolicies,
+                mutation_coordinator=self.container.mutationCoordinator(),
+            )
+            self.container.taskProvider = providers.Singleton(
+                ObsidianTaskProvider,
+                self.container.taskJsonProvider,
+                self.container.fileBroker,
+                mutation_coordinator=self.container.mutationCoordinator(),
+            )
         else:
-            self.container.taskJsonProvider = providers.Singleton(TaskJsonProvider, self.container.fileBroker)
-            self.container.taskProvider = providers.Singleton(TaskProvider, self.container.taskJsonProvider, self.container.fileBroker)
+            self.container.taskJsonProvider = providers.Singleton(
+                TaskJsonProvider,
+                self.container.fileBroker,
+                mutation_coordinator=self.container.mutationCoordinator(),
+            )
+            self.container.taskProvider = providers.Singleton(
+                TaskProvider,
+                self.container.taskJsonProvider,
+                self.container.fileBroker,
+                mutation_coordinator=self.container.mutationCoordinator(),
+            )
         # Heuristics
         self.container.remainingEffortHeuristic = providers.Factory(RemainingEffortHeuristic, dedicationTime)
         self.container.daysToThresholdHeuristic = providers.Factory(DaysToThresholdHeuristic, dedicationTime)
@@ -321,7 +370,14 @@ class TelegramReportingServiceContainer():
         self.container.filterList.extend(self.container.orderedCategories)
 
         # Statistics service
-        self.container.statisticsService = providers.Singleton(StatisticsService, self.container.fileBroker, self.container.workLoadAbleFilter, self.container.remainingEffortHeuristic(1.0), self.container.slackHeuristic)
+        self.container.statisticsService = providers.Singleton(
+            StatisticsService,
+            self.container.fileBroker,
+            self.container.workLoadAbleFilter,
+            self.container.remainingEffortHeuristic(1.0),
+            self.container.slackHeuristic,
+            mutation_coordinator=self.container.mutationCoordinator(),
+        )
 
         # Algorithm list
         self.container.algorithmList = providers.List(
@@ -338,9 +394,18 @@ class TelegramReportingServiceContainer():
 
         # Project Manager
         if obsidianMode:
-            self.container.projectManager = providers.Singleton(ObsidianProjectManager, self.container.taskProvider, self.container.fileBroker)
+            self.container.projectManager = providers.Singleton(
+                ObsidianProjectManager,
+                self.container.taskProvider,
+                self.container.fileBroker,
+                mutation_coordinator=self.container.mutationCoordinator(),
+            )
         else:
-            self.container.projectManager = providers.Singleton(JsonProjectManager, self.container.taskJsonProvider)
+            self.container.projectManager = providers.Singleton(
+                JsonProjectManager,
+                self.container.taskJsonProvider,
+                mutation_coordinator=self.container.mutationCoordinator(),
+            )
 
         self.container.taskApplicationService = providers.Singleton(
             TaskApplicationService,
@@ -350,6 +415,7 @@ class TelegramReportingServiceContainer():
             self.container.taskListManager(),
             self.container.categories,
             self.container.projectManager(),
+            mutation_coordinator=self.container.mutationCoordinator(),
         )
 
         # Message builder
@@ -360,4 +426,18 @@ class TelegramReportingServiceContainer():
 
         # Reporting service
         user: UserAgent = UserAgent(id=chatId, name="User", description="User Agent for Telegram Reporting Service")
-        self.container.telegramReportingService = providers.Singleton(TelegramReportingService, self.container.userCommService(), self.container.taskProvider(), self.container.heristicScheduling(), self.container.statisticsService(), self.container.taskListManager(), self.container.categories, self.container.projectManager, self.container.messageBuilder, user, self.container.logger, self.container.taskApplicationService())
+        self.container.telegramReportingService = providers.Singleton(
+            TelegramReportingService,
+            self.container.userCommService(),
+            self.container.taskProvider(),
+            self.container.heristicScheduling(),
+            self.container.statisticsService(),
+            self.container.taskListManager(),
+            self.container.categories,
+            self.container.projectManager,
+            self.container.messageBuilder,
+            user,
+            self.container.logger,
+            self.container.taskApplicationService(),
+            mutation_coordinator=self.container.mutationCoordinator(),
+        )

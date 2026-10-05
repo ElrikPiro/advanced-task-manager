@@ -40,6 +40,10 @@ The backend does not provide persistent, non-destructive notification history. H
 
 Task data, project files, and work statistics are saved one file at a time through a temporary file in the same directory, followed by an atomic replacement. Readers see the complete previous file or the complete replacement. If a write fails before replacement, that file is known to be unchanged; if durability fails after replacement, the saved state may be uncertain. Operations that touch several files stop at the first failure and report the confirmed changes for review. They do not roll back earlier files or retry automatically. External editors can still change a file between the backend's comparison and replacement.
 
+All writes initiated inside one running backend process enter a shared in-memory FIFO queue. A task operation that also updates statistics holds one queue turn across both files, and discovery, project changes, imports, and channel commands use the same queue. A caller that times out or disconnects stops waiting; an already admitted operation continues. The queue and its short-lived operation results are cleared when the backend restarts.
+
+Internal callers may identify an operation with a UUID, separate from any channel request ID. Reusing the UUID with the same intent waits for an unfinished operation or returns its known result; reusing it with a different intent is a conflict. The process retains up to 1024 completed results, excluding operations still in progress. Looking up a missing result never reruns the operation, and absence of a result does not prove that no effects occurred.
+
 Note: by now Markdown vault mode will only show tasks that have the following strings that start with '- [ ]' and contain '[track:: (category)]', '[start:: (date in YYYY-MM-DD format)]' and '[due:: (date in YYYY-MM-DD format)]'. It is projected to add some configurability on these matters to ease up it's use.
 
 #### Data files directory

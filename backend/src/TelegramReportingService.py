@@ -27,11 +27,12 @@ from .wrappers.TimeManagement import TimeAmount, TimePoint
 from .domain.TaskApplicationService import TaskApplicationService
 from .domain.errors import DomainError
 from .domain.models import AgendaQuery, OperationTarget, TaskView
+from .MutationCoordinator import MutationCoordinator
 
 
 class TelegramReportingService(IReportingService):
 
-    def __init__(self, bot: IUserCommService, taskProvider: ITaskProvider, scheduling: IScheduling, statiticsProvider: IStatisticsService, task_list_manager: ITaskListManager, categories: list[dict[str, str]], projectManager: IProjectManager, messageBuilder: IMessageBuilder, user: IAgent, logger: ILogger, application_service: TaskApplicationService | None = None):
+    def __init__(self, bot: IUserCommService, taskProvider: ITaskProvider, scheduling: IScheduling, statiticsProvider: IStatisticsService, task_list_manager: ITaskListManager, categories: list[dict[str, str]], projectManager: IProjectManager, messageBuilder: IMessageBuilder, user: IAgent, logger: ILogger, application_service: TaskApplicationService | None = None, mutation_coordinator: MutationCoordinator | None = None):
         # Private Attributes
         self.MAX_ERRORS = 30
         self.ERROR_TIMEOUT = 10
@@ -47,6 +48,7 @@ class TelegramReportingService(IReportingService):
         self.__projectManager = projectManager
         self.__messageBuilder = messageBuilder
         self._application_service = application_service
+        self.mutation_coordinator = mutation_coordinator
 
         self.__lastModelList: List[ITaskModel] = []
         self._updateFlag = False
@@ -89,8 +91,14 @@ class TelegramReportingService(IReportingService):
 
     def dispose(self) -> None:
         self.run = False
-        asyncio.run(self.bot.shutdown())
-        self.taskProvider.dispose()
+        try:
+            asyncio.run(self.bot.shutdown())
+        finally:
+            try:
+                self.taskProvider.dispose()
+            finally:
+                if self.mutation_coordinator is not None:
+                    self.mutation_coordinator.close(wait=True)
         pass
 
     def onTaskListUpdated(self) -> None:
@@ -404,8 +412,8 @@ class TelegramReportingService(IReportingService):
         arg = messageText.split(" ")[1:][0]
         if self._application_service is not None:
             try:
-                result = self._application_service.execute_operation(
-                    "raise-event", OperationTarget("event", arg), {}
+                result = await self._application_service.execute_operation_async(
+                    "raise-event", OperationTarget("event", arg), {}, operation_id=None
                 )
             except DomainError as error:
                 await self.__send_raw_text_message(error.message, reqId=reqId)
@@ -415,11 +423,15 @@ class TelegramReportingService(IReportingService):
             self._logger.debug(f"Raised event '{arg}' affecting {affected_count} tasks.")
             await self.__send_raw_text_message(f"{affected_count} task affected.", reqId=reqId)
             return
-        affected = self._taskListManager.raiseEvent(arg)
+
+        def raise_and_save() -> list[ITaskModel]:
+            affected = self._taskListManager.raiseEvent(arg)
+            for task in affected:
+                self.taskProvider.saveTask(task)
+            return affected
+
+        affected = await self._run_legacy_mutation(raise_and_save)
         self._logger.debug(f"Raised event '{arg}' affecting {len(affected)} tasks.")
-        
-        for task in affected:
-            self.taskProvider.saveTask(task)
 
         await self.__send_raw_text_message(f"{len(affected)} task affected.", reqId=reqId)
 
@@ -482,8 +494,8 @@ class TelegramReportingService(IReportingService):
             if self._application_service is not None:
                 task_id = selected_task.getTaskUID()
                 try:
-                    result = self._application_service.execute_operation(
-                        "complete-task", OperationTarget("task", task_id), {}
+                    result = await self._application_service.execute_operation_async(
+                        "complete-task", OperationTarget("task", task_id), {}, operation_id=None
                     )
                 except DomainError as error:
                     await self.__send_raw_text_message(error.message, reqId=reqId)
@@ -494,16 +506,18 @@ class TelegramReportingService(IReportingService):
                 if expectAnswer:
                     await self.sendTaskList(reqId=reqId)
                 return
-            task = selected_task
-            task.setStatus("x")
-            
-            event = task.getEventRaised()
-            if isinstance(event, str):
-                batch = self._taskListManager.raiseEvent(event)
-                for t in batch:
-                    self.taskProvider.saveTask(t)
-            
-            self.taskProvider.saveTask(task)
+
+            def complete_and_save() -> ITaskModel:
+                selected_task.setStatus("x")
+                event = selected_task.getEventRaised()
+                if isinstance(event, str):
+                    for affected_task in self._taskListManager.raiseEvent(event):
+                        if affected_task is not selected_task:
+                            self.taskProvider.saveTask(affected_task)
+                self.taskProvider.saveTask(selected_task)
+                return selected_task
+
+            task = await self._run_legacy_mutation(complete_and_save)
             self._logger.debug(f"Task '{task.getDescription()}' marked as done.")
             if expectAnswer:
                 await self.sendTaskList(reqId=reqId)
@@ -565,7 +579,9 @@ class TelegramReportingService(IReportingService):
                         field_value = value
                     parameters = {"changes": {field_name: field_value}}
                 try:
-                    result = self._application_service.execute_operation("edit-task", target, parameters)
+                    result = await self._application_service.execute_operation_async(
+                        "edit-task", target, parameters, operation_id=None
+                    )
                 except DomainError as error:
                     await self.__send_raw_text_message(error.message, reqId=reqId)
                     return
@@ -575,14 +591,37 @@ class TelegramReportingService(IReportingService):
                 if expectAnswer:
                     await self.sendTaskInformation(task, reqId=reqId)
                 return
-            task = selected_task
             params = messageText.split(" ")[1:]
             if len(params) < 2:
                 params[0] = "help"
                 params[1] = "me"
-            await self.processSetParam(task, params[0], " ".join(params[1:]) if len(params) > 2 else params[1], reqId=reqId)
-            self._logger.debug(f"Task '{task.getDescription()}' set parameter '{params[0]}' to '{' '.join(params[1:])}'.")
-            self.taskProvider.saveTask(task)
+            parameter = params[0]
+            value = " ".join(params[1:]) if len(params) > 2 else params[1]
+            field_names = (
+                "description", "context", "start", "due", "severity",
+                "total_cost", "effort_invested", "calm", "waited", "raised",
+            )
+            field_name = next((name for name in field_names if name.startswith(parameter)), None)
+            if field_name is None:
+                await self.processSetParam(selected_task, parameter, value, reqId=reqId)
+                return
+            if field_name == "context" and not any(
+                value.startswith(category["prefix"]) for category in self._categories
+            ):
+                error_message = (
+                    f"Invalid context {value}\nvalid contexts would be: "
+                    f"{', '.join([category['prefix'] for category in self._categories])}"
+                )
+                await self.__send_raw_text_message(error_message, reqId=reqId)
+                return
+
+            def set_and_save() -> ITaskModel:
+                self._apply_legacy_set_value(selected_task, field_name, value)
+                self.taskProvider.saveTask(selected_task)
+                return selected_task
+
+            task = await self._run_legacy_mutation(set_and_save)
+            self._logger.debug(f"Task '{task.getDescription()}' set parameter '{parameter}' to '{value}'.")
             if expectAnswer:
                 await self.sendTaskInformation(task, reqId=reqId)
         else:
@@ -610,8 +649,8 @@ class TelegramReportingService(IReportingService):
                 elif len(extendedParams) != 1:
                     operation_parameters["description"] = " ".join(params)
                 try:
-                    result = self._application_service.execute_operation(
-                        "create-task", OperationTarget("tasks"), operation_parameters
+                    result = await self._application_service.execute_operation_async(
+                        "create-task", OperationTarget("tasks"), operation_parameters, operation_id=None
                     )
                 except DomainError as error:
                     await self.__send_raw_text_message(error.message, reqId=reqId)
@@ -624,16 +663,18 @@ class TelegramReportingService(IReportingService):
                     await self.sendTaskInformation(selected_task, reqId=reqId)
                 return
 
-            if len(extendedParams) == 3:
-                self._taskListManager.selected_task = self.taskProvider.createDefaultTask(extendedParams[0])
-                selected_task = self._taskListManager.selected_task
-                selected_task.setContext(extendedParams[1])
-                selected_task.setTotalCost(TimeAmount(extendedParams[2]))
-            else:
-                self._taskListManager.selected_task = self.taskProvider.createDefaultTask(" ".join(params))
-                selected_task = self._taskListManager.selected_task
+            def create_and_save() -> ITaskModel:
+                if len(extendedParams) == 3:
+                    task = self.taskProvider.createDefaultTask(extendedParams[0])
+                    task.setContext(extendedParams[1])
+                    task.setTotalCost(TimeAmount(extendedParams[2]))
+                else:
+                    task = self.taskProvider.createDefaultTask(" ".join(params))
+                self.taskProvider.saveTask(task)
+                return task
 
-            self.taskProvider.saveTask(selected_task)
+            selected_task = await self._run_legacy_mutation(create_and_save)
+            self._taskListManager.selected_task = selected_task
             self._taskListManager.add_task(selected_task)
             self._logger.debug(f"Task '{selected_task.getDescription()}' created.")
             if expectAnswer:
@@ -657,8 +698,8 @@ class TelegramReportingService(IReportingService):
                 effort = params[-1] if params else ""
                 target = OperationTarget("task", selected_task.getTaskUID())
                 try:
-                    result = self._application_service.execute_operation(
-                        "schedule-task", target, {"effort_per_day": effort}
+                    result = await self._application_service.execute_operation_async(
+                        "schedule-task", target, {"effort_per_day": effort}, operation_id=None
                     )
                 except DomainError as error:
                     await self.__send_raw_text_message(error.message, reqId=reqId)
@@ -675,16 +716,19 @@ class TelegramReportingService(IReportingService):
                 if expectAnswer:
                     await self.sendTaskInformation(resulting_tasks[0], reqId=reqId)
                 return
-            # Enhanced scheduling returns list of tasks (may include splits)
-            resulting_tasks = self.scheduling.schedule(selected_task, params.pop() if len(params) > 0 else "")
-            
-            # Handle multiple tasks (task was split)
-            if len(resulting_tasks) > 1:
-                # Save all tasks
-                for task in resulting_tasks:
+            # Enhanced scheduling and all resulting writes share one business turn.
+            effort = params[-1] if params else ""
+
+            def schedule_and_save() -> list[ITaskModel]:
+                resulting = self.scheduling.schedule(selected_task, effort)
+                for task in resulting:
                     self.taskProvider.saveTask(task)
-                    # Add new tasks to task manager (except original which was modified)
-                    if task != selected_task:
+                return resulting
+
+            resulting_tasks = await self._run_legacy_mutation(schedule_and_save)
+            if len(resulting_tasks) > 1:
+                for task in resulting_tasks:
+                    if task is not selected_task:
                         self._taskListManager.add_task(task)
                 
                 if expectAnswer:
@@ -700,7 +744,6 @@ class TelegramReportingService(IReportingService):
                 self._logger.debug(f"Task '{selected_task.getDescription()}' was rescheduled and split into {len(resulting_tasks)} parts.")
             else:
                 # Normal single task scheduling
-                self.taskProvider.saveTask(resulting_tasks[0])
                 self._logger.debug(f"Task '{selected_task.getDescription()}' was rescheduled.")
                 if expectAnswer:
                     await self.sendTaskInformation(resulting_tasks[0], reqId=reqId)
@@ -722,10 +765,11 @@ class TelegramReportingService(IReportingService):
                     await self.__send_raw_text_message("A work duration is required.", reqId=reqId)
                     return
                 try:
-                    result = self._application_service.execute_operation(
+                    result = await self._application_service.execute_operation_async(
                         "record-work",
                         OperationTarget("task", selected_task.getTaskUID()),
                         {"duration": " ".join(params)},
+                        operation_id=None,
                     )
                 except DomainError as error:
                     await self.__send_raw_text_message(error.message, reqId=reqId)
@@ -736,12 +780,17 @@ class TelegramReportingService(IReportingService):
                 if expectAnswer:
                     await self.sendTaskInformation(task, reqId=reqId)
                 return
-            task = selected_task
             work_units = TimeAmount(" ".join(params[0:]))
-            await self.processSetParam(task, "effort_invested", f"{str(work_units.as_pomodoros())}p")
-            self.taskProvider.saveTask(task)
             date = datetime.datetime.now().date()
-            self.statiticsProvider.doWork(date, work_units, task)
+
+            def record_work_and_save() -> ITaskModel:
+                selected_task.setInvestedEffort(selected_task.getInvestedEffort() + work_units)
+                selected_task.setTotalCost(selected_task.getTotalCost() - work_units)
+                self.taskProvider.saveTask(selected_task)
+                self.statiticsProvider.doWork(date, work_units, selected_task)
+                return selected_task
+
+            task = await self._run_legacy_mutation(record_work_and_save)
             self._logger.debug(f"Added {str(work_units)} of work to task '{task.getDescription()}'.")
             if expectAnswer:
                 await self.sendTaskInformation(task, reqId=reqId)
@@ -802,10 +851,11 @@ class TelegramReportingService(IReportingService):
                 await self.__send_raw_text_message("no task selected.", reqId=reqId)
                 return
             try:
-                result = self._application_service.execute_operation(
+                result = await self._application_service.execute_operation_async(
                     "snooze-task",
                     OperationTarget("task", selected_task.getTaskUID()),
                     {"duration": params},
+                    operation_id=None,
                 )
             except DomainError as error:
                 await self.__send_raw_text_message(error.message, reqId=reqId)
@@ -877,7 +927,7 @@ class TelegramReportingService(IReportingService):
             selectedFormat = "json"
 
         # get the imported data
-        self.taskProvider.importTasks(selectedFormat)
+        await self._run_legacy_mutation(lambda: self.taskProvider.importTasks(selectedFormat))
         self._taskListManager.update_taskList(self.taskProvider.getTaskList())
         await self.__send_raw_text_message(f"{selectedFormat} file imported", parse_mode="Markdown")
         await self.listCommand(messageText, expectAnswer, reqId)
@@ -996,7 +1046,14 @@ class TelegramReportingService(IReportingService):
             await self.__send_raw_text_message("Invalid project command", reqId=reqId)
             return
 
-        response = self.__projectManager.process_command(command, messageArgs[2:])  # TODO: technical debt, this should be returning a dict with enought info to build a message
+        def project_command() -> str:
+            return self.__projectManager.process_command(command, messageArgs[2:])
+
+        if self.mutation_coordinator is None:
+            response = project_command()
+        else:
+            response = await self.mutation_coordinator.run_job_async(project_command)
+        # TODO: technical debt, this should be returning a dict with enough info to build a message
 
         await self.__send_raw_text_message(response, reqId=reqId)
 
@@ -1026,6 +1083,15 @@ class TelegramReportingService(IReportingService):
 
         # Execute the command
         await command_handler(message_text, isLastIteration, message.content.requestId)
+
+    async def _run_legacy_mutation(self, callback: Callable[[], Any]) -> Any:
+        """Run a synchronous legacy mutation without blocking the channel loop."""
+        if self.mutation_coordinator is None:
+            return callback()
+        run_async = getattr(self.mutation_coordinator, "run_job_async", None)
+        if callable(run_async):
+            return await run_async(callback)
+        return await asyncio.to_thread(self.mutation_coordinator.run_or_inline, callback)
 
     def processRelativeTimeSet(self, current: TimePoint, value: str) -> TimePoint:
         """
@@ -1165,6 +1231,38 @@ class TelegramReportingService(IReportingService):
         else:
             errorMessage = f"Invalid parameter {param}\nvalid parameters would be: description, context, start, due, severity, total_cost, effort_invested, calm"
             await self.__send_raw_text_message(errorMessage, reqId=reqId)
+
+    def _apply_legacy_set_value(self, task: ITaskModel, field_name: str, value: str) -> None:
+        """Apply one already validated fallback field update synchronously."""
+        if field_name == "description":
+            task.setDescription(value)
+        elif field_name == "context":
+            task.setContext(value)
+        elif field_name == "start":
+            if value.startswith(("+", "-", "now", "today", "tomorrow")) or (value.count(":") == 1 and "T" not in value):
+                task.setStart(self.processRelativeTimeSet(task.getStart(), value))
+            else:
+                task.setStart(TimePoint(datetime.datetime.strptime(value, "%Y-%m-%dT%H:%M")))
+        elif field_name == "due":
+            if value.startswith(("+", "-", "today", "tomorrow")) or value.count(":") == 1:
+                task.setDue(self.processRelativeTimeSet(task.getDue(), value))
+            else:
+                task.setDue(TimePoint(datetime.datetime.strptime(value, "%Y-%m-%d")))
+        elif field_name == "severity":
+            task.setSeverity(float(value))
+        elif field_name == "total_cost":
+            task.setTotalCost(TimeAmount(value))
+        elif field_name == "effort_invested":
+            task.setInvestedEffort(task.getInvestedEffort() + TimeAmount(value))
+            task.setTotalCost(task.getTotalCost() - TimeAmount(value))
+        elif field_name == "calm":
+            task.setCalm(value.upper().startswith("TRUE"))
+        elif field_name == "waited":
+            task.setEventWaited(value)
+        elif field_name == "raised":
+            task.setEventRaised(value)
+        else:
+            raise ValueError(f"Unsupported task field: {field_name}")
 
     async def sendTaskList(self, interactive: bool = True, reqId: int | None = None) -> None:
         self._taskListManager.clear_selected_task()
