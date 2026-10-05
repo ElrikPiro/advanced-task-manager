@@ -20,6 +20,7 @@ class ObsidianTaskProvider(ITaskProvider):
         self.lastJson: TaskJsonType = {}
         self.lastTaskList: List[ITaskModel] = []
         self.onTaskListUpdatedCallbacks: list[Callable[[], None]] = []
+        self.__discoveryLock = threading.Lock()
         self.__disableThreading = disableThreading
         if not self.__disableThreading:
             self.service = threading.Thread(target=self.__serviceThread)
@@ -32,38 +33,49 @@ class ObsidianTaskProvider(ITaskProvider):
 
     def __serviceThread(self) -> None:
         while self.serviceRunning:
-            newTaskList = self.__getTaskList()
-            if not self.compare(self.lastTaskList, newTaskList):
-                self.lastTaskList = newTaskList
-                for callback in self.onTaskListUpdatedCallbacks:
-                    callback()
+            previousTaskList = self.lastTaskList
+            try:
+                newTaskList = self.discoverTasks()
+            except Exception as error:
+                print(f"Task discovery failed: {error.__class__.__name__}: {error}")
+            else:
+                if not self.compare(previousTaskList, newTaskList):
+                    for callback in self.onTaskListUpdatedCallbacks:
+                        callback()
             threading.Event().wait(10)
 
-    def __getTaskList(self) -> List[ITaskModel]:
-        obsidianJson = self.TaskJsonProvider.getJson()
-        if obsidianJson == self.lastJson:
-            return self.lastTaskList
-        else:
-            self.lastJson = obsidianJson
-        taskListJson = obsidianJson["tasks"]
+    def __buildTaskList(self, obsidianJson: TaskJsonType, include_completed: bool = False) -> List[ITaskModel]:
+        taskListJson = obsidianJson.get("tasks", [])
         taskList: List[ITaskModel] = []
         for task in taskListJson:
-            try:
-                obsidianTask = ObsidianTaskModel(task["taskText"], task["track"], int(task["starts"]), int(task["due"]), float(task["severity"]), float(task["total_cost"]), float(task["effort_invested"]), task["status"], task["file"], int(task["line"]), task["calm"], task.get("raised"), task.get("waited"))
-                taskList.append(obsidianTask)
-            except Exception as e:
-                print(f"Error while reading task: {e}")
+            if not include_completed and task["status"] == "x":
                 continue
+            obsidianTask = ObsidianTaskModel(task["taskText"], task["track"], int(task["starts"]), int(task["due"]), float(task["severity"]), float(task["total_cost"]), float(task["effort_invested"]), task["status"], task["file"], int(task["line"]), task["calm"], task.get("raised"), task.get("waited"))
+            taskList.append(obsidianTask)
         return taskList
 
-    def getTaskList(self) -> List[ITaskModel]:
+    def getTaskList(self, include_completed: bool = False) -> List[ITaskModel]:
+        """Return a fresh parsed view without running discovery or writing."""
+        obsidianJson = self.TaskJsonProvider.getJson()
+        return self.__buildTaskList(obsidianJson, include_completed)
+
+    def discoverTasks(self) -> List[ITaskModel]:
+        """Run the explicit discovery hook and refresh its maintenance snapshot."""
+        with self.__discoveryLock:
+            discoveredJson = self.TaskJsonProvider.discover()
+            self.lastJson = discoveredJson
+            self.lastTaskList = self.__buildTaskList(discoveredJson)
         return self.lastTaskList
 
     def getTaskListAttribute(self, string: str) -> list[dict[str, str]]:
-        try:
-            return self.lastJson[string]
-        except Exception:
-            return self.TaskJsonProvider.getJson()[string]
+        value = self.TaskJsonProvider.getJson().get(string, [])
+        if not isinstance(value, list):
+            raise TypeError(f"Task data attribute '{string}' must be a list")
+        return value
+
+    def discardPendingTaskReservations(self) -> None:
+        """Obsidian task creation writes only when saveTask is called."""
+        return None
 
     def _getTaskLine(self, task: ITaskModel) -> str:
         context = task.getContext()
@@ -159,7 +171,8 @@ class ObsidianTaskProvider(ITaskProvider):
         return True
 
     def _exportJson(self) -> bytearray:
-        taskList = self.__getTaskList()
+        self.lastJson = self.TaskJsonProvider.getJson()
+        taskList = self.__buildTaskList(self.lastJson, include_completed=True)
         jsonStr = self.__generateExportJson(taskList)
         return bytearray(jsonStr, "utf-8")
 

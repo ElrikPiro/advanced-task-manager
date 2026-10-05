@@ -1,5 +1,6 @@
 # class interface
 
+from copy import deepcopy
 from typing import List
 
 from src.Utils import TaskJsonType
@@ -16,14 +17,22 @@ class TaskJsonProvider(ITaskJsonProvider):
 
     def getJson(self) -> TaskJsonType:
         """
-        Reads the tasks json file and injects tasks for projects without any task assigned.
+        Reads and parses the tasks JSON without reconciling or writing discoveries.
 
         Returns:
             dict: The tasks json.
         """
         taskJson: TaskJsonType = self.fileBroker.readFileContentJson(FileRegistry.STANDALONE_TASKS_JSON)
-        taskJson = self.__injectOpenProjectTasks(taskJson)
-        return taskJson
+        return deepcopy(taskJson)
+
+    def discover(self) -> TaskJsonType:
+        """Persist the default next action for every uncovered open project."""
+        taskJson = self.getJson()
+        original = deepcopy(taskJson)
+        reconciled = self.__injectOpenProjectTasks(taskJson)
+        if reconciled != original:
+            self.saveJson(reconciled)
+        return reconciled
 
     def saveJson(self, json: TaskJsonType) -> None:
         self.fileBroker.writeFileContentJson(FileRegistry.STANDALONE_TASKS_JSON, json)
@@ -64,4 +73,6 @@ class TaskJsonProvider(ITaskJsonProvider):
                     "status": " ",
                     "calm": "False"
                 })
+        if tasks and "tasks" not in taskJson:
+            taskJson["tasks"] = tasks
         return taskJson

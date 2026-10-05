@@ -34,6 +34,33 @@ class TestObsidianTaskProvider(unittest.TestCase):
         self.assertEqual(retval, self.fromObsidianToGenericJsonDumps(currentTaskJson))
         pass
 
+    def test_getTaskList_reads_fresh_parse_without_running_discovery(self):
+        task_json = self.GetCurrentTaskJson()
+        open_task = dict(task_json["tasks"][0])
+        open_task["taskText"] = "Open task"
+        open_task["status"] = " "
+        task_json["tasks"].append(open_task)
+        self.mockTaskJsonProvider.getJson.return_value = task_json
+
+        active = self.provider.getTaskList()
+        all_tasks = self.provider.getTaskList(include_completed=True)
+
+        self.assertEqual(len(active), 1)
+        self.assertEqual(active[0].getStatus(), " ")
+        self.assertEqual(len(all_tasks), 2)
+        self.assertEqual({task.getStatus() for task in all_tasks}, {" ", "x"})
+        self.assertEqual(self.mockTaskJsonProvider.getJson.call_count, 2)
+        self.mockTaskJsonProvider.discover.assert_not_called()
+
+    def test_getTaskList_propagates_read_errors(self):
+        self.mockTaskJsonProvider.getJson.side_effect = PermissionError("vault is unreadable")
+
+        with self.assertRaisesRegex(PermissionError, "vault is unreadable"):
+            self.provider.getTaskList()
+
+    def test_discard_pending_task_reservations_is_noop(self):
+        self.assertIsNone(self.provider.discardPendingTaskReservations())
+
     def test_saveTask_WhenTaskHasNoFiledata_CleanAndSave(self):
         # Arrange
         task = MagicMock(spec=ITaskModel)

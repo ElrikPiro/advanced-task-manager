@@ -7,7 +7,12 @@ from .ITaskModel import ITaskModel
 class ITaskProvider(ABC):
 
     @abstractmethod
-    def getTaskList(self) -> List[ITaskModel]:
+    def getTaskList(self, include_completed: bool = False) -> List[ITaskModel]:
+        pass
+
+    @abstractmethod
+    def discoverTasks(self) -> List[ITaskModel]:
+        """Run explicit discovery and refresh the provider's current task data."""
         pass
 
     @abstractmethod
@@ -20,6 +25,11 @@ class ITaskProvider(ABC):
 
     @abstractmethod
     def createDefaultTask(self, description: str) -> ITaskModel:
+        pass
+
+    @abstractmethod
+    def discardPendingTaskReservations(self) -> None:
+        """Release unpersisted positions reserved by deferred task creation."""
         pass
 
     @abstractmethod

@@ -23,8 +23,8 @@ class TestTaskJsonProvider(unittest.TestCase):
         self.mock_file_broker.readFileContentJson.assert_called_once_with(FileRegistry.STANDALONE_TASKS_JSON)
         self.assertEqual(result, mock_json)
 
-    def test_getJson_injects_tasks_for_open_projects(self):
-        """Test that getJson injects tasks for open projects without tasks."""
+    def test_getJson_is_pure_for_open_projects_without_tasks(self):
+        """A normal read must not reconcile or persist a project's next action."""
         # Arrange
         mock_json = {
             "tasks": [],
@@ -45,17 +45,38 @@ class TestTaskJsonProvider(unittest.TestCase):
             result = self.provider.getJson()
 
             # Assert
-            tasks = result.get("tasks", [])
-            self.assertEqual(len(tasks), 1)
-            self.assertEqual(tasks[0]["project"], "Project1")
-            self.assertEqual(tasks[0]["description"], "Define next action")
-            self.assertEqual(tasks[0]["status"], " ")
-            self.assertEqual(tasks[0]["context"], "alert")
-            self.assertEqual(tasks[0]["start"], "20230101")
-            self.assertEqual(tasks[0]["due"], "20230101")
+            self.assertEqual(result, mock_json)
+            self.mock_file_broker.writeFileContentJson.assert_not_called()
 
-    def test_getJson_with_existing_tasks(self):
-        """Test that getJson doesn't duplicate tasks for projects that already have active tasks."""
+    def test_discover_persists_tasks_for_open_projects_without_active_tasks(self):
+        mock_json = {
+            "tasks": [],
+            "projects": [
+                {"name": "Project1", "status": "open"},
+                {"name": "Project2", "status": "closed"}
+            ]
+        }
+        self.mock_file_broker.readFileContentJson.return_value = mock_json
+
+        with patch('src.wrappers.TimeManagement.TimePoint.today') as mock_today:
+            mock_time_point = MagicMock()
+            mock_time_point.as_int.return_value = 20230101
+            mock_today.return_value = mock_time_point
+
+            result = self.provider.discover()
+
+        tasks = result["tasks"]
+        self.assertEqual(len(tasks), 1)
+        self.assertEqual(tasks[0]["project"], "Project1")
+        self.assertEqual(tasks[0]["description"], "Define next action")
+        self.assertEqual(tasks[0]["status"], " ")
+        self.assertEqual(tasks[0]["context"], "alert")
+        self.assertEqual(tasks[0]["start"], "20230101")
+        self.assertEqual(tasks[0]["due"], "20230101")
+        self.mock_file_broker.writeFileContentJson.assert_called_once_with(FileRegistry.STANDALONE_TASKS_JSON, result)
+
+    def test_discover_with_existing_tasks(self):
+        """Discovery only adds actions for open projects without active tasks."""
         # Arrange
         mock_json = {
             "tasks": [
@@ -75,7 +96,7 @@ class TestTaskJsonProvider(unittest.TestCase):
             mock_today.return_value = mock_time_point
 
             # Act
-            result = self.provider.getJson()
+            result = self.provider.discover()
 
             # Assert
             tasks = result.get("tasks", [])
@@ -83,7 +104,7 @@ class TestTaskJsonProvider(unittest.TestCase):
             projects_with_tasks = set(task["project"] for task in tasks)
             self.assertEqual(projects_with_tasks, {"Project1", "Project2"})
 
-    def test_getJson_with_completed_tasks(self):
+    def test_discover_with_completed_tasks(self):
         """Test that getJson considers the status of tasks when determining if a project needs a task."""
         # Arrange
         mock_json = {
@@ -103,7 +124,7 @@ class TestTaskJsonProvider(unittest.TestCase):
             mock_today.return_value = mock_time_point
 
             # Act
-            result = self.provider.getJson()
+            result = self.provider.discover()
 
             # Assert
             tasks = result.get("tasks", [])

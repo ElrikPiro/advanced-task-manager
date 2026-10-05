@@ -1,10 +1,14 @@
 from typing import NoReturn
 import unittest
 import asyncio
-from unittest.mock import MagicMock, AsyncMock
+from unittest.mock import MagicMock, AsyncMock, call
+from types import SimpleNamespace
 from src.TelegramReportingService import TelegramReportingService
 from src.algorithms.Interfaces.IAlgorithm import IAlgorithm
 from src.Interfaces.ITaskModel import ITaskModel
+from src.domain.errors import ValidationError
+from src.domain.models import TaskView
+from src.Utils import TaskEntry, TaskInformation
 
 
 class TestTelegramReportingService(unittest.TestCase):
@@ -65,6 +69,8 @@ class TestTelegramReportingService(unittest.TestCase):
             self.telegramReportingService.run = False
 
         mockTaskList = [MagicMock(), MagicMock()]
+        discoveredTaskList = [MagicMock()]
+        self.taskProvider.discoverTasks.return_value = discoveredTaskList
         self.taskProvider.getTaskList.return_value = mockTaskList
         self.telegramReportingService._listenForEvents = AsyncMock(side_effect=stop_after_first_call)
 
@@ -72,8 +78,12 @@ class TestTelegramReportingService(unittest.TestCase):
         self.telegramReportingService.listenForEvents()
 
         # Assert
+        self.taskProvider.discoverTasks.assert_called_once_with()
         self.taskProvider.registerTaskListUpdatedCallback.assert_called_once_with(self.telegramReportingService.onTaskListUpdated)
-        self.task_list_manager.update_taskList.assert_called_once_with(mockTaskList)
+        self.assertEqual(
+            self.task_list_manager.update_taskList.call_args_list,
+            [call(discoveredTaskList), call(mockTaskList)],
+        )
         self.telegramReportingService._listenForEvents.assert_awaited_once()
 
     def test_listenForEvents_exception(self) -> None:
@@ -84,6 +94,8 @@ class TestTelegramReportingService(unittest.TestCase):
             raise Exception("Test Exception")
 
         mockTaskList = [MagicMock(), MagicMock()]
+        discoveredTaskList = [MagicMock()]
+        self.taskProvider.discoverTasks.return_value = discoveredTaskList
         self.taskProvider.getTaskList.return_value = mockTaskList
         self.telegramReportingService._listenForEvents = AsyncMock(side_effect=stop_after_first_call)
 
@@ -91,8 +103,12 @@ class TestTelegramReportingService(unittest.TestCase):
         self.telegramReportingService.listenForEvents()
 
         # Assert
+        self.taskProvider.discoverTasks.assert_called_once_with()
         self.taskProvider.registerTaskListUpdatedCallback.assert_called_once_with(self.telegramReportingService.onTaskListUpdated)
-        self.task_list_manager.update_taskList.assert_called_once_with(mockTaskList)
+        self.assertEqual(
+            self.task_list_manager.update_taskList.call_args_list,
+            [call(discoveredTaskList), call(mockTaskList)],
+        )
         self.telegramReportingService._listenForEvents.assert_awaited_once()
 
     def test_internalListenForEvents_normal(self) -> None:
@@ -1431,6 +1447,122 @@ class TestTelegramReportingService(unittest.TestCase):
         # Should not send any messages when expectAnswer=False
         self.telegramReportingService._TelegramReportingService__send_raw_text_message.assert_not_awaited()
         self.telegramReportingService.sendTaskInformation.assert_not_awaited()
+
+    def test_application_service_handles_task_list_agenda_and_detail_reads(self) -> None:
+        application = MagicMock()
+        application.query_tasks.return_value = SimpleNamespace(tasks=[])
+        application.read_agenda.return_value = MagicMock()
+        application.read_task_information.return_value = TaskInformation(
+            TaskEntry(
+                id="task-7",
+                description="Task 7",
+                context="work",
+                start="2026-10-04",
+                due="2026-10-05",
+                severity=1.0,
+                status=" ",
+                total_cost=2.0,
+                effort_invested=0.0,
+                heuristic_value=0.0,
+            ),
+            None,
+        )
+        self.telegramReportingService._application_service = application
+        self.task_list_manager.current_view.return_value = TaskView()
+        task = MagicMock()
+        task.getTaskUID.return_value = "task-7"
+
+        asyncio.run(self.telegramReportingService.sendTaskList(interactive=False, reqId=10))
+        asyncio.run(self.telegramReportingService.agendaCommand("/agenda", reqId=11))
+        asyncio.run(self.telegramReportingService.sendTaskInformation(task, extended=True, reqId=12))
+
+        application.query_tasks.assert_called_once_with(TaskView())
+        application.read_agenda.assert_called_once()
+        application.read_task_information.assert_called_once_with("task-7", extended=True)
+        self.task_list_manager.get_task_list_content.assert_not_called()
+        self.task_list_manager.get_day_agenda_content.assert_not_called()
+        self.task_list_manager.get_task_information.assert_not_called()
+        last_message_content = self.messageBuilder.createOutboundMessage.call_args.kwargs["content"]
+        self.assertEqual(last_message_content.taskInformation.task.id, "task-7")
+
+    def test_application_service_receives_all_supported_telegram_mutations(self) -> None:
+        application = MagicMock()
+        task = MagicMock()
+        task.getTaskUID.return_value = "task-7"
+        task.getDescription.return_value = "Updated task"
+        application.execute_operation.side_effect = [
+            SimpleNamespace(value=task),
+            SimpleNamespace(value=task),
+            SimpleNamespace(value=task),
+            SimpleNamespace(value=[task]),
+            SimpleNamespace(value=task),
+            SimpleNamespace(value=task),
+            SimpleNamespace(value=2),
+        ]
+        self.telegramReportingService._application_service = application
+        self.task_list_manager.selected_task = task
+        self.taskProvider.getTaskList.return_value = []
+
+        asyncio.run(self.telegramReportingService.doneCommand("/done", expectAnswer=False))
+        asyncio.run(self.telegramReportingService.setCommand("/set description Updated", expectAnswer=False))
+        asyncio.run(self.telegramReportingService.newCommand("/new Created", expectAnswer=False))
+        asyncio.run(self.telegramReportingService.scheduleCommand("/schedule 2p", expectAnswer=False))
+        asyncio.run(self.telegramReportingService.workCommand("/work 30m", expectAnswer=False))
+        asyncio.run(self.telegramReportingService.snoozeCommand("/snooze 5m", expectAnswer=False))
+        asyncio.run(self.telegramReportingService.raiseAlgorithmCommand("/raise ready", expectAnswer=False))
+
+        calls = application.execute_operation.call_args_list
+        self.assertEqual([entry.args[0] for entry in calls], [
+            "complete-task", "edit-task", "create-task", "schedule-task",
+            "record-work", "snooze-task", "raise-event",
+        ])
+        self.assertEqual(calls[0].args[1].id, "task-7")
+        self.assertEqual(calls[1].args[2], {"changes": {"description": "Updated"}})
+        self.assertEqual(calls[2].args[2], {"description": "Created"})
+        self.assertEqual(calls[3].args[2], {"effort_per_day": "2p"})
+        self.assertEqual(calls[4].args[2], {"duration": "30m"})
+        self.assertEqual(calls[5].args[2], {"duration": "5m"})
+        self.assertEqual(calls[6].args[1].id, "ready")
+        self.taskProvider.saveTask.assert_not_called()
+        self.task_list_manager.get_task_list_content.assert_not_called()
+
+    def test_application_domain_error_is_reported_without_success_response(self) -> None:
+        application = MagicMock()
+        application.execute_operation.side_effect = ValidationError("invalid field")
+        self.telegramReportingService._application_service = application
+        task = MagicMock()
+        task.getTaskUID.return_value = "task-7"
+        self.task_list_manager.selected_task = task
+
+        asyncio.run(self.telegramReportingService.doneCommand("/done", expectAnswer=True))
+
+        self.bot.sendMessage.assert_awaited_once()
+        self.assertEqual(
+            self.messageBuilder.createOutboundMessage.call_args.kwargs["content"].text,
+            "invalid field",
+        )
+        self.taskProvider.saveTask.assert_not_called()
+        self.task_list_manager.update_taskList.assert_not_called()
+
+    def test_startup_discovery_happens_before_communication_listener_initializes(self) -> None:
+        events: list[str] = []
+        application = MagicMock()
+        application.discover_initialize.side_effect = lambda: events.append("discover") or []
+        self.telegramReportingService._application_service = application
+        self.taskProvider.getTaskList.return_value = []
+
+        async def stop_after_initialize() -> None:
+            events.append("event-loop")
+            self.telegramReportingService.run = False
+
+        self.bot.initialize = AsyncMock(side_effect=lambda: events.append("initialize"))
+        self.telegramReportingService.runEventLoop = AsyncMock(side_effect=stop_after_initialize)
+
+        self.telegramReportingService.listenForEvents()
+
+        self.assertEqual(events, ["discover", "initialize", "event-loop"])
+        application.discover_initialize.assert_called_once_with()
+        self.taskProvider.discoverTasks.assert_not_called()
 
 
 if __name__ == '__main__':

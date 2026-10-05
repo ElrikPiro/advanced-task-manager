@@ -1,5 +1,7 @@
 import unittest
 import os
+import json
+import tempfile
 from unittest.mock import patch, mock_open
 from src.FileBroker import FileBroker
 from src.Interfaces.IFileBroker import FileRegistry, VaultRegistry
@@ -26,13 +28,11 @@ class TestFileBroker(unittest.TestCase):
             filePath = os.path.join(self.jsonPath, "tasks.json")
             mock_file.assert_called_once_with(filePath, "r", errors="ignore")
 
-    def test_readFileContent_WhenFileIsNotFound_ThenCreateFileAndReturnDefaultContent(self):
-        with patch.object(self.fileBroker, '_FileBroker__createFile', return_value=None):
-            with patch("builtins.open", side_effect=FileNotFoundError):
-                readcontent = self.fileBroker.readFileContent(
-                    FileRegistry.STANDALONE_TASKS_JSON
-                )
-                self.assertEqual(readcontent, '{"tasks": []}')
+    def test_readFileContent_WhenFileIsNotFound_ThenReturnDefaultWithoutCreating(self):
+        with patch("builtins.open", side_effect=FileNotFoundError) as mock_file:
+            readcontent = self.fileBroker.readFileContent(FileRegistry.STANDALONE_TASKS_JSON)
+        self.assertEqual(readcontent, '{"tasks": []}')
+        self.assertEqual(mock_file.call_count, 1)
 
     def test_readFileContentJson_WhenFileIsFound_ThenReturnFileContent(self):
         with patch("builtins.open", mock_open(read_data='{"key": "value"}')) as mock_file:
@@ -43,24 +43,85 @@ class TestFileBroker(unittest.TestCase):
             filePath = os.path.join(self.jsonPath, "tasks.json")
             mock_file.assert_called_once_with(filePath, "r", errors="ignore")
 
-    def test_readFileContentJson_WhenFileIsNotFound_ThenCreateFileAndReturnDefaultContent(self):
-        with patch.object(self.fileBroker, '_FileBroker__createFile', return_value=None):
-            with patch("builtins.open", side_effect=FileNotFoundError):
-                readcontent = self.fileBroker.readFileContentJson(
-                    FileRegistry.STANDALONE_TASKS_JSON
-                )
-                self.assertEqual(readcontent, {"tasks": []})
+    def test_readFileContentJson_WhenFileIsNotFound_ThenReturnDefaultWithoutCreating(self):
+        with patch("builtins.open", side_effect=FileNotFoundError) as mock_file:
+            readcontent = self.fileBroker.readFileContentJson(FileRegistry.STANDALONE_TASKS_JSON)
+        self.assertEqual(readcontent, {"tasks": []})
+        self.assertEqual(mock_file.call_count, 1)
 
-    def test___createFile_WhenFileIsCreated_ThenReturnNone(self):
-        with patch("builtins.open", mock_open()) as mock_file:
-            self.fileBroker._FileBroker__createFile(FileRegistry.STANDALONE_TASKS_JSON)
-            filePath = os.path.join(self.jsonPath, "tasks.json")
-            mock_file.assert_called_once_with(filePath, "w+")
+    def test_readStatisticsFileContentJson_WhenFileIsMissing_ThenReturnSafeDefaultWithoutCreating(self):
+        with patch("builtins.open", side_effect=FileNotFoundError):
+            result = self.fileBroker.readStatisticsFileContentJson()
+        self.assertEqual(result, {"log": []})
+
+    def test_initializeFileContent_createsDefaultExplicitlyAndIsIdempotent(self):
+        with tempfile.TemporaryDirectory() as directory:
+            broker = FileBroker(directory, os.path.join(directory, "app"), os.path.join(directory, "vault"))
+            broker.initializeFileContent(FileRegistry.OBSIDIAN_TASKS_JSON)
+            path = os.path.join(directory, "app", "obsidian", "tareas.json")
+            self.assertTrue(os.path.isfile(path))
+            with open(path, encoding="utf-8") as file:
+                self.assertEqual(file.read(), '{"tasks": []}')
+
+            with open(path, "w", encoding="utf-8") as file:
+                file.write('{"tasks": [{"description": "keep"}]}')
+            broker.initializeFileContent(FileRegistry.OBSIDIAN_TASKS_JSON)
+            with open(path, encoding="utf-8") as file:
+                self.assertEqual(file.read(), '{"tasks": [{"description": "keep"}]}')
+
+    def test_repeatedMissingReadsLeaveFilesystemUnchanged(self):
+        with tempfile.TemporaryDirectory() as directory:
+            json_path = os.path.join(directory, "json")
+            appdata = os.path.join(directory, "appdata")
+            vault_path = os.path.join(directory, "vault")
+            broker = FileBroker(json_path, appdata, vault_path)
+            before = sorted(
+                os.path.join(root, name)
+                for root, _, names in os.walk(directory)
+                for name in names
+            )
+
+            for _ in range(2):
+                self.assertEqual(broker.readFileContent(FileRegistry.STANDALONE_TASKS_JSON), '{"tasks": []}')
+                self.assertEqual(broker.readFileContentJson(FileRegistry.STANDALONE_TASKS_JSON), {"tasks": []})
+                self.assertEqual(broker.readFileContentJson(FileRegistry.OBSIDIAN_TASKS_JSON), {"tasks": []})
+                self.assertEqual(broker.readFileContentJson(FileRegistry.LAST_RECEIVED_FILE), {"tasks": []})
+                self.assertEqual(broker.readStatisticsFileContentJson(), {"log": []})
+                self.assertEqual(broker.getVaultFiles(VaultRegistry.OBSIDIAN), [])
+                with self.assertRaises(FileNotFoundError):
+                    broker.getVaultFileLines(VaultRegistry.OBSIDIAN, "absent.md")
+
+            after = sorted(
+                os.path.join(root, name)
+                for root, _, names in os.walk(directory)
+                for name in names
+            )
+            self.assertEqual(after, before)
+            self.assertFalse(os.path.exists(json_path))
+            self.assertFalse(os.path.exists(appdata))
+            self.assertFalse(os.path.exists(vault_path))
+
+    def test_invalidJsonIsRaisedAndNeverReplaced(self):
+        with tempfile.TemporaryDirectory() as directory:
+            broker = FileBroker(directory, directory, os.path.join(directory, "vault"))
+            path = os.path.join(directory, "tasks.json")
+            invalid_content = "{invalid-json"
+            with open(path, "w", encoding="utf-8") as file:
+                file.write(invalid_content)
+            with open(path, "rb") as file:
+                before = file.read()
+
+            for _ in range(2):
+                with self.assertRaises(json.JSONDecodeError):
+                    broker.readFileContentJson(FileRegistry.STANDALONE_TASKS_JSON)
+
+            with open(path, "rb") as file:
+                self.assertEqual(file.read(), before)
 
     @patch("os.walk")
     @patch("os.path.getmtime")
     def test_getVaultFiles_WhenFilesExist_ThenReturnFilePathsAndModificationTimes(self, mock_getmtime, mock_walk):
-        fakePath = os.path.join("fake", "vault", "path")
+        fakePath = self.vaultPath
         mock_walk.return_value = [
             (fakePath, ("subdir",), ("file1.txt", "file2.txt")),
             (os.path.join(fakePath, "subdir"), (), ("file3.txt",))

@@ -25,8 +25,14 @@ Available combinations:
 2. **JSON file (cmd)** - JSON storage with command line interface
 3. **JSON file (telegram)** - JSON storage with Telegram bot interface
 4. **Obsidian (telegram)** - Markdown vault with Telegram bot interface
-5. **JSON file (API)** - JSON storage with REST API interface
-6. **Obsidian (API)** - Markdown vault with REST API interface
+5. **JSON file (API)** - JSON storage with HTTP command interface
+6. **Obsidian (API)** - Markdown vault with HTTP command interface
+
+### HTTP API behavior and limits
+
+`APP_MODE` 5/6 selects the legacy HTTP command adapter. It maps paths such as `/list`, `/task_N`, `/set` and `/notifications` to commands, and the frontend sends these requests with GET. Some commands change the shared task-list view or task data; reading `/notifications` can drain the volatile notification queue. The configured `APP_MODE` creates one channel manager, so clients share its selection, page and filters rather than receiving independent views. The current interface is command-oriented; it does not provide a resource-oriented `/api/v1/` API.
+
+Task IDs are provisional. The JSON provider uses each task’s position in the full stored array, including completed tasks; reordering that array can change the ID. The Markdown vault provider derives IDs from task description, file path and line number, so editing or moving a task can change its ID. The backend does not provide persistent, non-destructive notification history. HTTPS is not enforced by the backend; do not send the Bearer token over an untrusted plain-HTTP connection.
 
 Note: by now Markdown vault mode will only show tasks that have the following strings that start with '- [ ]' and contain '[track:: (category)]', '[start:: (date in YYYY-MM-DD format)]' and '[due:: (date in YYYY-MM-DD format)]'. It is projected to add some configurability on these matters to ease up it's use.
 
@@ -46,9 +52,9 @@ If an API mode is selected, you will need to provide:
 - **Server bind address** - The IP address or hostname for the server to bind to (default: 0.0.0.0)
 - **Server port** - The port number for the server (default: 8080)
 - **Authentication token** - A secure token that clients must provide in the Authorization header
-- **Session chat ID** - A user identifier for the API session (default: 1)
+- **Chat ID** - The identifier used by the configured API interface (default: 1)
 
-The API uses Bearer token authentication. All requests must include `Authorization: Bearer <your-token>` in the header. HTTPS support for the extension integration is pending implementation.
+The legacy HTTP adapter accepts a Bearer token in the `Authorization` header. HTTPS support for the extension integration is pending implementation. API mode does not require HTTPS, and the legacy GET command paths retain the side effects described above.
 
 #### Markdown vault directory
 
@@ -100,12 +106,12 @@ Open `http://localhost:5173` and configure:
 - **Backend URL** (default `/api`, proxied by Vite)
 - **Bearer token** (from `HTTP_TOKEN` in your `config.json`)
 
-In development, Vite proxies `/api/*` to the configured backend target using `GET` passthrough.
+In development, Vite proxies `/api/*` to the configured backend target using `GET` passthrough to the legacy command adapter.
 This keeps requests same-origin in development so the browser does not need CORS preflight handling.
 If a cross-origin absolute URL is entered in the frontend, the client automatically routes through `/api` and sends the selected target to the Vite proxy.
 Use `ATM_BACKEND_TARGET` to select a configured backend endpoint in development.
 
-The frontend provides:
+The frontend currently exposes the legacy command flow:
 - Task list and task details
 - Heuristic, algorithm and filter selection
 - Task actions (`/set`, `/new`, `/work`, `/schedule`, `/snooze`, `/done`)

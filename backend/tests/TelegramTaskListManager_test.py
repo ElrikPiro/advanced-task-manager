@@ -107,17 +107,19 @@ class TestTelegramTaskListManager(unittest.TestCase):
         self.assertEqual(len(filtered), 1)
         self.assertEqual(filtered[0].getDescription(), "Task 1")
 
-    def test_filtered_task_list_with_no_active_filter(self):
-        # No filters enabled, should return all tasks (no filtering)
+    def test_filtered_task_list_with_no_active_filter_is_empty_union(self):
+        # No filters enabled is an empty union when a filter catalog exists.
         filters = [("Active", MagicMock(), False)]
         manager = TelegramTaskListManager(self.task_list, [], self.heuristics, filters, self.statistics_service)
-        # Heuristic sort will be called, so mock it to return tasks in reverse order
+        # This mock deliberately returns rows regardless of its input, so the
+        # empty-union behavior must exit before strategy application.
         heuristic_mock = MagicMock()
         heuristic_mock.sort.return_value = list(reversed([(t, 0) for t in self.task_list]))
         manager._TelegramTaskListManager__heuristicList = [("Priority", heuristic_mock)]
         manager._TelegramTaskListManager__selectedHeuristic = ("Priority", heuristic_mock)
         filtered = manager.filtered_task_list
-        self.assertEqual(filtered, list(reversed(self.task_list)))
+        self.assertEqual(filtered, [])
+        heuristic_mock.sort.assert_not_called()
 
 
 class TestTelegramTaskListManagerAdditional(unittest.TestCase):

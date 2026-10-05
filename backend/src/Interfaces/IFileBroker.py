@@ -31,6 +31,15 @@ class IFileBroker(ABC):
         pass
 
     @abstractmethod
+    def initializeFileContent(self, fileRegistry: FileRegistry) -> None:
+        """Create a registered file with its default content if it is absent.
+
+        Reads must remain non-mutating; callers that own startup initialization
+        can use this method to materialize a default explicitly.
+        """
+        pass
+
+    @abstractmethod
     def writeFileContent(self, fileRegistry: FileRegistry, content: FileContentString) -> None:
         pass
 

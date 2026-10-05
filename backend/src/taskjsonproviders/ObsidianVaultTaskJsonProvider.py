@@ -1,3 +1,5 @@
+import re
+
 from src.Utils import ProjectJsonListType, TaskDiscoveryPolicies, TaskJsonListType, TaskJsonType
 from ..wrappers.TimeManagement import TimePoint
 from ..Interfaces.ITaskJsonProvider import ITaskJsonProvider, VALID_PROJECT_STATUS
@@ -6,108 +8,129 @@ from ..Interfaces.IFileBroker import IFileBroker, VaultRegistry
 
 class ObsidianVaultTaskJsonProvider(ITaskJsonProvider):
 
+    _TASK_LINE = re.compile(r"^\s*-\s+\[([ xX])\]\s*(.*)$")
+    _TASK_METADATA = re.compile(r"\[([^\]:]+)::\s*([^\]]*)\]")
+
     def __init__(self, fileBroker: IFileBroker, policies: TaskDiscoveryPolicies):
         self.__fileBroker = fileBroker
-        self._lastJson: TaskJsonType = {"tasks": []}
-        self._lastJsonList: TaskJsonListType = []
-        self.__lastProjectList: ProjectJsonListType = []
-        self._lastMtime = 0.0
         self.__policies = policies
 
     def getJson(self) -> TaskJsonType:
-        vaultFiles = self.__fileBroker.getVaultFiles(VaultRegistry.OBSIDIAN)
-        if len(vaultFiles) == 0:
-            return {}
+        """Read and parse vault data without creating or changing task files."""
+        task_list: TaskJsonListType = []
+        project_list: ProjectJsonListType = []
 
-        # filter in all .md files in the vault
-        vaultFiles = [file for file in vaultFiles if file[0].endswith(".md")]
-
-        mtime = max([file[1] for file in vaultFiles], default=0)
-        if mtime <= self._lastMtime:
-            return self._lastJson
-
-        self._lastJson = {"tasks": []}
-        self._lastJsonList = []
-        self.__lastProjectList = []
-
-        # add all tasks from the modified files to the last json
+        vaultFiles = [
+            file for file in self.__fileBroker.getVaultFiles(VaultRegistry.OBSIDIAN)
+            if file[0].lower().endswith(".md")
+        ]
         for file in vaultFiles:
-            try:
-                self.__process_task_file(file)
-            except Exception as e:
-                print(f"Error while reading file {file[0]}: {e}")
-        self._lastMtime = mtime
-        self._lastJson["tasks"] = self._lastJsonList
-        self._lastJson["projects"] = self.__lastProjectList
-        return self._lastJson
+            self.__process_task_file(file, task_list, project_list)
 
-    def __process_task_file(self, file: tuple[str, float]) -> None:
+        return {
+            "tasks": task_list,
+            "projects": project_list
+        }
+
+    def discover(self) -> TaskJsonType:
+        """Persist a default next action in each uncovered open project."""
+        vaultFiles = [
+            file for file in self.__fileBroker.getVaultFiles(VaultRegistry.OBSIDIAN)
+            if file[0].lower().endswith(".md")
+        ]
+        for file in vaultFiles:
+            relative_path = file[0]
+            lines = self.__fileBroker.getVaultFileLines(VaultRegistry.OBSIDIAN, relative_path)
+            header = self.__getFileHeader(lines)
+            if header.get("project") != "open":
+                continue
+
+            # Preserve the existing rule: an open checkbox prevents automatic
+            # generation even when its task metadata is invalid. Completed
+            # checkboxes do not count as a next action.
+            if any(self.__is_open_task_line(line) for line in lines):
+                continue
+
+            fallback_context = self.__getFallbackPolicy()
+            task_line = f"- [ ] Define next action [track::{fallback_context}]\n"
+            candidate = self.__getTaskDictFromLine(task_line, relative_path, len(lines), header)
+            if candidate["valid"] != "True":
+                continue
+
+            if lines and not lines[-1].endswith(("\n", "\r")):
+                lines[-1] += "\n"
+            lines.append(task_line)
+            self.__fileBroker.writeVaultFileLines(VaultRegistry.OBSIDIAN, relative_path, lines)
+
+        # Always parse again so the returned view reflects the persisted
+        # Markdown and receives the physical line number used by the model.
+        return self.getJson()
+
+    def __process_task_file(
+        self,
+        file: tuple[str, float],
+        task_list: TaskJsonListType,
+        project_list: ProjectJsonListType,
+    ) -> None:
         fileContent = self.__fileBroker.getVaultFileLines(VaultRegistry.OBSIDIAN, file[0])
         fileHeader = self.__getFileHeader(fileContent)
         taskLines = self.__getFileTaskLines(fileContent, fileHeader)
 
         if "project" in fileHeader and fileHeader["project"] in VALID_PROJECT_STATUS:
-            fileName = file[0].replace("\\", "/").split("/")[-1].split(".md")[0]
+            fileName = file[0].replace("\\", "/").split("/")[-1].rsplit(".md", 1)[0]
             status = fileHeader["project"]
-            element = {
+            project_list.append({
                 "name": fileName,
                 "status": status,
                 "path": file[0]
-            }
-            self.__lastProjectList.append(element)
-
-            if len(taskLines) == 0 and status == "open":
-                taskDict = self.__getTaskDictFromLine(
-                    f"- [ ] Define next action [track::{self.__getFallbackPolicy()}]",
-                    file[0], len(fileContent),
-                    fileHeader
-                )
-                self.__update_or_append_task(taskDict)
+            })
 
         for lineNum, line in taskLines:
             taskDict = self.__getTaskDictFromLine(line, file[0], lineNum, fileHeader)
             if taskDict["valid"] == "False":
                 continue
-            self.__update_or_append_task(taskDict)
+            self.__update_or_append_task(taskDict, task_list)
 
-    def __update_or_append_task(self, taskDict: dict[str, str]) -> None:
+    def __is_open_task_line(self, line: str) -> bool:
+        match = self._TASK_LINE.match(line)
+        return match is not None and match.group(1) == " "
+
+    def __update_or_append_task(self, taskDict: dict[str, str], task_list: TaskJsonListType) -> None:
         found = False
-        for i in range(len(self._lastJsonList)):
-            if self._lastJsonList[i]["file"] == taskDict["file"] and self._lastJsonList[i]["line"] == taskDict["line"]:
-                self._lastJsonList[i] = taskDict
+        for i in range(len(task_list)):
+            if task_list[i]["file"] == taskDict["file"] and task_list[i]["line"] == taskDict["line"]:
+                task_list[i] = taskDict
                 found = True
                 break
         if not found:
-            self._lastJsonList.append(taskDict)
+            task_list.append(taskDict)
 
     def saveJson(self, json: TaskJsonType) -> None:
-        # do nothing
+        # Markdown is edited through task/project operations, not bulk JSON.
         pass
 
     def __getFileHeader(self, file: list[str]) -> dict[str, str]:
         header: dict[str, str] = {}
         inHeader = False
         for line in file:
-            if line.split('\n')[0].strip() == "---":
+            if line.strip() == "---":
                 if inHeader:
                     break
-                else:
-                    inHeader = True
-                    continue
+                inHeader = True
+                continue
 
             if inHeader:
-                splittedLine = line.split(":")
-                key = splittedLine[0].strip()
-                value = splittedLine[-1].strip()
-                header[key] = value
+                key, separator, value = line.partition(":")
+                if separator:
+                    header[key.strip()] = value.strip()
         return header
 
     def __getFileTaskLines(self, file: list[str], fileHeader: dict[str, str]) -> list[tuple[int, str]]:
-        taskLines: list[tuple[int, str]] = []
-        for i in range(len(file)):
-            if file[i].strip().startswith("- [ ]"):
-                taskLines.append((i, file[i]))
-        return taskLines
+        return [
+            (line_number, line)
+            for line_number, line in enumerate(file)
+            if self._TASK_LINE.match(line) is not None
+        ]
 
     def __getDefaultTaskDict(self) -> dict[str, str]:
         return {
@@ -122,53 +145,40 @@ class ObsidianVaultTaskJsonProvider(ITaskJsonProvider):
             "line": "0",
             "calm": "false"
         }
-        # track is ommited so that the task is invalid by default
 
     def __getTaskDictFromLine(self, line: str, file: str, lineNum: int, fileHeader: dict[str, str]) -> dict[str, str]:
         taskDict = self.__getDefaultTaskDict()
         taskDict["file"] = file
         taskDict["line"] = str(lineNum)
 
-        # if file == "\\".join("SecondBrain/PARA/2. Areas/Legal/202304290908-DNI Renovacion.md".split("/")):
-        #     print("here")
+        checkbox = self._TASK_LINE.match(line)
+        if checkbox is None:
+            taskDict["valid"] = "False"
+            return taskDict
 
-        # get task text
-        # task text is everything after "- [ ]" and before any [] containing a "::"
-        lineMod = line + "[eol:: here]"
-        textAfterCheckbox = lineMod.split("- [ ]")[1]
-        textBeforeFirstDualColon = textAfterCheckbox.split("::")[0]
-        splittedByCorchetes = textBeforeFirstDualColon.split("[")
-        allButLast = splittedByCorchetes[:-1]
-        taskDict["taskText"] = "[".join(allButLast).strip()
+        taskDict["status"] = "x" if checkbox.group(1).lower() == "x" else " "
+        textAfterCheckbox = checkbox.group(2)
+        firstMetadata = self._TASK_METADATA.search(textAfterCheckbox)
+        taskDict["taskText"] = textAfterCheckbox[:firstMetadata.start()].strip() if firstMetadata else textAfterCheckbox.strip()
 
-        # override default values with values from the file header
-        for key in fileHeader:
-            taskDict[key] = fileHeader[key]
+        # Frontmatter supplies defaults; explicit task metadata then overrides it.
+        for key, value in fileHeader.items():
+            taskDict[key] = value
 
-        lineData = line.split("- [ ]")[1].split("[")
-        # keyvalue are in the format "[key:: value]"
-        for keyValueRegion in lineData[1:]:
-            try:
-                keyValue = keyValueRegion.split("::")
-                key = keyValue[0].strip()
-                value = keyValue[1].split("]")[0].strip()
-                taskDict[key] = value
-            except Exception:
-                pass
+        for match in self._TASK_METADATA.finditer(textAfterCheckbox):
+            taskDict[match.group(1).strip()] = match.group(2).strip()
 
-        # special case for starts and due that should be converted to int
         try:
             taskDict["starts"] = self.__apply_date_policy(taskDict["starts"])
             taskDict["due"] = self.__apply_date_policy(taskDict["due"])
-            taskDict["track"] = self.__apply_track_policy(taskDict.get("track", None))
+            taskDict["track"] = self.__apply_track_policy(taskDict.get("track"))
             taskDict["severity"] = str(float(taskDict["severity"]))
             taskDict["total_cost"] = str(float(taskDict["remaining_cost"]) - float(taskDict["invested"]))
             taskDict["effort_invested"] = taskDict["invested"]
             taskDict["valid"] = "True"
-        except Exception as ex:
-            print(f"Error while processing task {taskDict['taskText']} in file {file} at line {lineNum}: {ex}")
+        except ValueError as error:
+            print(f"Error while processing task {taskDict['taskText']} in file {file} at line {lineNum}: {error}")
             taskDict["valid"] = "False"
-            pass
 
         return taskDict
 
@@ -182,12 +192,7 @@ class ObsidianVaultTaskJsonProvider(ITaskJsonProvider):
 
     def __apply_track_policy(self, track: str | None) -> str:
         def is_prefix_of(prefix: str | None) -> bool:
-            isPrefix = False
-            for context in self.__policies.categories_prefixes:
-                if isinstance(prefix, str) and prefix.startswith(context):
-                    isPrefix = True
-                    break
-            return isPrefix
+            return any(isinstance(prefix, str) and prefix.startswith(context) for context in self.__policies.categories_prefixes)
 
         if not is_prefix_of(track):
             if self.__policies.context_missing_policy == "1":
@@ -195,7 +200,6 @@ class ObsidianVaultTaskJsonProvider(ITaskJsonProvider):
             raise ValueError("Track tag is missing and no default value is set.")
 
         assert isinstance(track, str)
-
         return track
 
     def __getFallbackPolicy(self) -> str | None:

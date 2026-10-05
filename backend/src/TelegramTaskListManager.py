@@ -1,3 +1,4 @@
+import copy
 from typing import List, Tuple
 
 from src.Utils import EventsContent
@@ -13,6 +14,7 @@ from .Interfaces.IHeuristic import IHeuristic
 from .Interfaces.ITaskModel import ITaskModel
 from .Interfaces.ITaskListManager import ITaskListManager
 from .algorithms.Interfaces.IAlgorithm import IAlgorithm
+from .domain.models import TaskView
 
 
 class TelegramTaskListManager(ITaskListManager):
@@ -32,6 +34,7 @@ class TelegramTaskListManager(ITaskListManager):
         self.__selectedAlgorithm = algorithms[0] if len(algorithms) > 0 else None
 
         self.__statistics_service = statistics_service
+        self.__search_terms: tuple[str, ...] = ()
 
         self.reset_pagination(tasksPerPage)
 
@@ -58,8 +61,31 @@ class TelegramTaskListManager(ITaskListManager):
 
         newTaskList: List[ITaskModel] = []
 
-        for task in self.__taskModelList:
-            for filterr in self.__filterList:
+        if self.__search_terms:
+            search_terms = tuple(term.casefold() for term in self.__search_terms)
+            # Q-011 search is its own view over every non-completed task. It
+            # deliberately ignores category/activity filters, event waits and
+            # the list's ordering strategies.
+            return [
+                task
+                for task in self.__taskModelList
+                if task.getStatus() != "x" and any(
+                    term in task.getDescription().casefold() for term in search_terms
+                )
+            ]
+
+        source_tasks = self.__taskModelList
+
+        active_filters = [filterr for filterr in self.__filterList if filterr[2]]
+        if self.__filterList and not active_filters:
+            # A configured filter catalog with no selection is the empty union.
+            return []
+        for task in source_tasks:
+            if not self.__filterList:
+                if task.getStatus() != "x" and not isinstance(task.getEventWaited(), str):
+                    newTaskList.append(task)
+                continue
+            for filterr in active_filters:
                 if filterr[2] and filterr[1].filter([task]) and not isinstance(task.getEventWaited(), str):
                     newTaskList.append(task)
                     break
@@ -116,6 +142,95 @@ class TelegramTaskListManager(ITaskListManager):
 
         deactivatedFilters = [(name, filt, True) for name, filt, _ in self.__filterList]
         return TelegramTaskListManager(taskListSearched, [], [], deactivatedFilters, self.__statistics_service, self.__tasksPerPage)
+
+    def current_view(self) -> TaskView:
+        """Return this channel's current view as explicit query parameters."""
+        return TaskView(
+            filters=tuple(name for name, _, enabled in self.__filterList if enabled),
+            page=self.__taskListPage + 1,
+            page_size=self.__tasksPerPage,
+            algorithm=self.__selectedAlgorithm[0] if self.__selectedAlgorithm else "",
+            heuristic=self.__selectedHeuristic[0] if self.__selectedHeuristic else "",
+            search=self.__search_terms,
+        )
+
+    def clone_for_view(self, tasks: List[ITaskModel], view: TaskView) -> "TelegramTaskListManager":
+        """Build a fresh manager for a view without changing this channel's state.
+
+        Algorithms such as GTD, EDF, and SJF keep a mutable explanation string.
+        Each query gets distinct strategy instances so interleaved clients cannot
+        overwrite one another's descriptions.
+        """
+        filter_by_name = {name: (name, filterr, False) for name, filterr, _ in self.__filterList}
+        if len(view.filters) != len(set(view.filters)):
+            raise ValueError("A filter may be selected only once")
+        unknown_filters = [name for name in view.filters if name not in filter_by_name]
+        if unknown_filters:
+            raise ValueError(f"Unknown filter: {unknown_filters[0]}")
+        selected_filter_names = set(view.filters)
+        selected_filters = [
+            (name, filter_obj, name in selected_filter_names)
+            for name, filter_obj, _ in self.__filterList
+        ]
+
+        heuristic_by_name = {name: heuristic for name, heuristic in self.__heuristicList}
+        selected_heuristic = None
+        if view.heuristic:
+            if view.heuristic not in heuristic_by_name:
+                raise ValueError(f"Unknown heuristic: {view.heuristic}")
+            selected_heuristic = (view.heuristic, copy.copy(heuristic_by_name[view.heuristic]))
+        cloned_heuristics = [(name, copy.copy(heuristic)) for name, heuristic in self.__heuristicList]
+        if selected_heuristic is not None:
+            selected_heuristic = next(item for item in cloned_heuristics if item[0] == view.heuristic)
+
+        algorithm_by_name = {name: algorithm for name, algorithm in self.__algorithmList}
+        selected_algorithm = None
+        if view.algorithm:
+            if view.algorithm not in algorithm_by_name:
+                raise ValueError(f"Unknown algorithm: {view.algorithm}")
+            selected_algorithm = (view.algorithm, self._clone_algorithm(algorithm_by_name[view.algorithm]))
+        cloned_algorithms = [
+            (name, self._clone_algorithm(algorithm))
+            for name, algorithm in self.__algorithmList
+        ]
+        if selected_algorithm is not None:
+            selected_algorithm = next(item for item in cloned_algorithms if item[0] == view.algorithm)
+
+        manager = TelegramTaskListManager(
+            tasks,
+            cloned_algorithms,
+            cloned_heuristics,
+            selected_filters,
+            self.__statistics_service,
+            view.page_size,
+        )
+        manager.__selectedAlgorithm = selected_algorithm
+        manager.__selectedHeuristic = selected_heuristic
+        manager.__taskListPage = view.page - 1
+        manager.__search_terms = view.search
+        if view.search:
+            manager.__selectedAlgorithm = None
+            manager.__selectedHeuristic = None
+        return manager
+
+    @staticmethod
+    def _clone_algorithm(algorithm: IAlgorithm) -> IAlgorithm:
+        cloned = copy.copy(algorithm)
+        if hasattr(cloned, "description") and hasattr(cloned, "baseDescription"):
+            cloned.description = cloned.baseDescription
+        if hasattr(cloned, "category"):
+            cloned.category = "all"
+        if hasattr(cloned, "orderedHeuristics"):
+            cloned.orderedHeuristics = [
+                (copy.copy(heuristic), threshold)
+                for heuristic, threshold in cloned.orderedHeuristics
+            ]
+        if hasattr(cloned, "defaultHeuristic"):
+            heuristic, threshold = cloned.defaultHeuristic
+            cloned.defaultHeuristic = (copy.copy(heuristic), threshold)
+        if hasattr(cloned, "calmHeuristic"):
+            cloned.calmHeuristic = copy.copy(cloned.calmHeuristic)
+        return cloned
 
     def render_filter_summary(self, taskListString: str) -> str:
         isOnlyFirstFilterActive = len([f for f in self.__filterList if f[2]]) == 1 and self.__filterList[0][2]
@@ -243,7 +358,11 @@ class TelegramTaskListManager(ITaskListManager):
         
         # Get algorithm information
         algorithm_name = self.__selectedAlgorithm[0] if len(self.__algorithmList) > 0 and isinstance(self.__selectedAlgorithm, tuple) else "None"
-        algorithm_desc = self.__selectedAlgorithm[1].getDescription() if len(self.__algorithmList) > 0 and isinstance(self.__selectedAlgorithm, tuple) else "No algorithm selected"
+        if len(self.__algorithmList) > 0 and isinstance(self.__selectedAlgorithm, tuple):
+            selected_algorithm = self.__selectedAlgorithm[1]
+            algorithm_desc = getattr(selected_algorithm, "description", selected_algorithm.getDescription())
+        else:
+            algorithm_desc = "No algorithm selected"
         
         # Get heuristic information
         sort_heuristic = self.__selectedHeuristic[0] if len(self.__heuristicList) > 0 and isinstance(self.__selectedHeuristic, tuple) else "None"
@@ -439,8 +558,9 @@ class TelegramTaskListManager(ITaskListManager):
         Returns:
             A dictionary containing the task information data
         """
-        # Get task ID safely
-        task_id = getattr(task, "getId", lambda: "unknown")()
+        # Use the same current provider identity as task-list queries and
+        # direct reads. These provider identifiers are currently provisional.
+        task_id = task.getTaskUID()
         
         # Calculate task costs
         remaining_cost = max(task.getTotalCost().as_pomodoros(), 0.0)

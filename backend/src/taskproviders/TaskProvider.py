@@ -7,6 +7,7 @@ from ..Interfaces.IFileBroker import IFileBroker, FileRegistry
 from ..taskmodels.TaskModel import TaskModel
 from typing import Callable, List
 import json
+from copy import deepcopy
 
 
 class TaskProvider(ITaskProvider):
@@ -16,6 +17,8 @@ class TaskProvider(ITaskProvider):
         self.fileBroker = fileBroker
         self.dict_task_list = self.taskJsonProvider.getJson()
         self.onTaskListUpdatedCallbacks: list[Callable[[], None]] = []
+        self.__discoveryLock = threading.Lock()
+        self.__pendingNewTasks: dict[int, dict[str, str]] = {}
         self.__disableThreading = disableThreading
         if not self.__disableThreading:
             self.serviceRunning = True
@@ -38,11 +41,16 @@ class TaskProvider(ITaskProvider):
         The service thread that will notify the registered callbacks every 10 seconds.
         """
         while self.serviceRunning:
-            for callback in self.onTaskListUpdatedCallbacks:
-                callback()
+            try:
+                self.discoverTasks()
+            except Exception as error:
+                print(f"Task discovery failed: {error.__class__.__name__}: {error}")
+            else:
+                for callback in self.onTaskListUpdatedCallbacks:
+                    callback()
             threading.Event().wait(10)
 
-    def getTaskList(self) -> List[ITaskModel]:
+    def getTaskList(self, include_completed: bool = False) -> List[ITaskModel]:
         """
         Gets the task list.
 
@@ -52,16 +60,25 @@ class TaskProvider(ITaskProvider):
             List[ITaskModel]: The task list."""
         newTaskJson = self.taskJsonProvider.getJson()
         self.dict_task_list = dict(newTaskJson)
-        self.dict_task_list["tasks"] = []
+        task_data = list(newTaskJson.get("tasks", []))
+        self.dict_task_list["tasks"] = task_data if include_completed else []
         task_list: List[ITaskModel] = []
-        index = 0
-        for task in newTaskJson["tasks"]:
-            if task["status"] == "x":
+        for raw_index, task in enumerate(task_data):
+            status = task["status"]
+            if not include_completed and status == "x":
                 continue
-            task_list.append(self.createTaskFromDict(task, index))
-            self.dict_task_list["tasks"].append(task)
-            index += 1
+            # The provisional JSON UID is the physical array position. Apply
+            # it before filtering so the same UID resolves in every view.
+            task_list.append(self.createTaskFromDict(task, raw_index))
+            if not include_completed:
+                self.dict_task_list["tasks"].append(task)
         return task_list
+
+    def discoverTasks(self) -> List[ITaskModel]:
+        """Explicitly reconcile provider discoveries, then return a fresh view."""
+        with self.__discoveryLock:
+            self.taskJsonProvider.discover()
+        return self.getTaskList()
 
     def createTaskFromDict(self, dict_task: dict[str, str], index: int) -> ITaskModel:
         """
@@ -90,10 +107,10 @@ class TaskProvider(ITaskProvider):
         )
 
     def getTaskListAttribute(self, string: str) -> list[dict[str, str]]:
-        try:
-            return self.dict_task_list[string]
-        except Exception:
-            return []
+        value = self.taskJsonProvider.getJson().get(string, [])
+        if not isinstance(value, list):
+            raise TypeError(f"Task data attribute '{string}' must be a list")
+        return value
 
     def saveTask(self, task: ITaskModel) -> None:
         """
@@ -104,31 +121,54 @@ class TaskProvider(ITaskProvider):
         Params:
             task: The task to be saved.
         """
-        task_list = self.getTaskList()
-        for index in range(len(task_list)):
-            if task_list[index] == task:
-                self.dict_task_list["tasks"][index] = dict[str, str](
-                    description=task.getDescription().split(" @ ")[0].strip(),
-                    context=task.getContext(),
-                    start=str(task.getStart().as_int()),
-                    due=str(task.getDue().as_int()),
-                    severity=str(task.getSeverity()),
-                    totalCost=str(task.getTotalCost().as_pomodoros()),
-                    investedEffort=str(task.getInvestedEffort().as_pomodoros()),
-                    status=task.getStatus(),
-                    calm="True" if task.getCalm() else "False",
-                    project=task.getProject(),
-                )
+        taskJson = deepcopy(self.taskJsonProvider.getJson())
+        task_records = taskJson.get("tasks", [])
+        index = int(task.getTaskUID())
+        if index < 0:
+            raise IndexError(f"Task position {index} no longer exists")
 
-                raises = task.getEventRaised()
-                waits = task.getEventWaited()
-                if isinstance(raises, str):
-                    self.dict_task_list["tasks"][index]["raised"] = raises
-                if isinstance(waits, str):
-                    self.dict_task_list["tasks"][index]["waited"] = waits
-                break
+        # JSON's current provisional UID is its physical task-array position.
+        # Update that record in the full document so preceding completed tasks
+        # and unknown fields survive a save.
+        updated_fields = {
+            "description": task.getDescription().split(" @ ")[0].strip(),
+            "context": task.getContext(),
+            "start": str(task.getStart().as_int()),
+            "due": str(task.getDue().as_int()),
+            "severity": str(task.getSeverity()),
+            "totalCost": str(task.getTotalCost().as_pomodoros()),
+            "investedEffort": str(task.getInvestedEffort().as_pomodoros()),
+            "status": task.getStatus(),
+            "calm": "True" if task.getCalm() else "False",
+            "project": task.getProject(),
+        }
+        if index == len(task_records) and index in self.__pendingNewTasks:
+            task_records.append(dict(updated_fields))
+            record = task_records[index]
+        elif index < len(task_records) and isinstance(task_records[index], dict):
+            record = task_records[index]
+            record.update(updated_fields)
+        else:
+            raise IndexError(f"Task position {index} no longer exists")
 
-        self.taskJsonProvider.saveJson(self.dict_task_list)
+        raises = task.getEventRaised()
+        waits = task.getEventWaited()
+        if isinstance(raises, str):
+            record["raised"] = raises
+        else:
+            record.pop("raised", None)
+        if isinstance(waits, str):
+            record["waited"] = waits
+        else:
+            record.pop("waited", None)
+
+        try:
+            self.taskJsonProvider.saveJson(taskJson)
+        except Exception:
+            self.discardPendingTaskReservations()
+            raise
+        self.dict_task_list = taskJson
+        self.__pendingNewTasks.pop(index, None)
 
     def createDefaultTask(self, description: str) -> ITaskModel:
         """
@@ -162,10 +202,29 @@ class TaskProvider(ITaskProvider):
             project=""
         )
 
-        task = self.createTaskFromDict(default_task, len(self.dict_task_list["tasks"]))
-        self.dict_task_list["tasks"].append(default_task)
+        taskJson = deepcopy(self.taskJsonProvider.getJson())
+        task_records = list(taskJson.get("tasks", []))
+        pending_indexes = sorted(self.__pendingNewTasks)
+        expected_indexes = list(range(len(task_records), len(task_records) + len(pending_indexes)))
+        if pending_indexes != expected_indexes:
+            # An external write or an abandoned reservation invalidated the
+            # provisional positions; never leave a hole or overwrite a row.
+            self.discardPendingTaskReservations()
+            pending_indexes = []
+        else:
+            task_records.extend(self.__pendingNewTasks[index] for index in pending_indexes)
+        task_index = len(task_records)
+        task = self.createTaskFromDict(default_task, task_index)
+        task_records.append(default_task)
+        taskJson["tasks"] = task_records
+        self.dict_task_list = taskJson
+        self.__pendingNewTasks[task_index] = default_task
 
         return task
+
+    def discardPendingTaskReservations(self) -> None:
+        """Drop unpersisted new-task positions after an abandoned operation."""
+        self.__pendingNewTasks.clear()
 
     def getTaskMetadata(self, task: ITaskModel) -> str:
         """

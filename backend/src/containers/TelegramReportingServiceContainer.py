@@ -18,6 +18,7 @@ from src.taskjsonproviders.TaskJsonProvider import TaskJsonProvider
 from src.HeuristicScheduling import HeuristicScheduling
 from src.filters.ActiveTaskFilter import ActiveTaskFilter
 from src.TelegramReportingService import TelegramReportingService
+from src.domain.TaskApplicationService import TaskApplicationService
 from src.taskproviders.ObsidianTaskProvider import ObsidianTaskProvider
 from src.heuristics.SlackHeuristic import SlackHeuristic
 from src.heuristics.RemainingEffortHeuristic import RemainingEffortHeuristic
@@ -337,6 +338,16 @@ class TelegramReportingServiceContainer():
         else:
             self.container.projectManager = providers.Singleton(JsonProjectManager, self.container.taskJsonProvider)
 
+        self.container.taskApplicationService = providers.Singleton(
+            TaskApplicationService,
+            self.container.taskProvider(),
+            self.container.heristicScheduling(),
+            self.container.statisticsService(),
+            self.container.taskListManager(),
+            self.container.categories,
+            self.container.projectManager(),
+        )
+
         # Message builder
         self.container.messageBuilder = providers.Singleton(MessageBuilder)
 
@@ -345,4 +356,4 @@ class TelegramReportingServiceContainer():
 
         # Reporting service
         user: UserAgent = UserAgent(id=chatId, name="User", description="User Agent for Telegram Reporting Service")
-        self.container.telegramReportingService = providers.Singleton(TelegramReportingService, self.container.userCommService(), self.container.taskProvider(), self.container.heristicScheduling(), self.container.statisticsService(), self.container.taskListManager(), self.container.categories, self.container.projectManager, self.container.messageBuilder, user, self.container.logger)
+        self.container.telegramReportingService = providers.Singleton(TelegramReportingService, self.container.userCommService(), self.container.taskProvider(), self.container.heristicScheduling(), self.container.statisticsService(), self.container.taskListManager(), self.container.categories, self.container.projectManager, self.container.messageBuilder, user, self.container.logger, self.container.taskApplicationService())

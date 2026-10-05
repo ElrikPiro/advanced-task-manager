@@ -1,5 +1,6 @@
-.PHONY: test .venv run run-frontend
+.PHONY: test run run-frontend
 
+# Keep .venv as a real directory target so existing virtual environments are reused.
 RUN_IN_VENV = . .venv/bin/activate &&
 
 .venv:

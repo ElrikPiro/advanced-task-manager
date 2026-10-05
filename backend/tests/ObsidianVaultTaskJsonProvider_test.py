@@ -18,24 +18,20 @@ class TestObsidianVaultTaskJsonProvider(unittest.TestCase):
         )
         self.provider = ObsidianVaultTaskJsonProvider(self.mock_file_broker, self.policies)
 
-    def test_empty_vault_returns_empty_dict(self):
+    def test_empty_vault_returns_empty_task_and_project_lists(self):
         self.mock_file_broker.getVaultFiles.return_value = []
         result = self.provider.getJson()
-        self.assertEqual(result, {})
+        self.assertEqual(result, {"tasks": [], "projects": []})
         self.mock_file_broker.getVaultFiles.assert_called_once_with(VaultRegistry.OBSIDIAN)
 
-    def test_no_changes_returns_cached_json(self):
-        # First call to set up cache
+    def test_getJson_re_reads_vault_without_discovery(self):
         self.mock_file_broker.getVaultFiles.return_value = [("test.md", 100.0)]
         self.mock_file_broker.getVaultFileLines.return_value = ["---", "---"]
         self.provider.getJson()
 
-        # Second call with same mtime should use cache
-        self.mock_file_broker.getVaultFiles.return_value = [("test.md", 100.0)]
         self.mock_file_broker.getVaultFileLines.reset_mock()
-
         self.provider.getJson()
-        self.mock_file_broker.getVaultFileLines.assert_not_called()
+        self.mock_file_broker.getVaultFileLines.assert_called_once_with(VaultRegistry.OBSIDIAN, "test.md")
 
     def test_process_task_file_with_project_header(self):
         self.mock_file_broker.getVaultFiles.return_value = [("project.md", 100.0)]
@@ -52,9 +48,28 @@ class TestObsidianVaultTaskJsonProvider(unittest.TestCase):
         self.assertEqual(result["projects"][0]["status"], "open")
         self.assertEqual(result["projects"][0]["path"], "project.md")
 
-        # Should create a default "Define next action" task for open projects
+        # Reading parses the project but leaves next-action reconciliation to discover().
+        self.assertEqual(len(result["tasks"]), 0)
+        self.mock_file_broker.writeVaultFileLines.assert_not_called()
+
+    def test_discover_persists_next_action_for_open_empty_project(self):
+        files = [("project.md", 100.0)]
+        contents = {"project.md": ["---\n", "project: open\n", "---\n", "# Project Title\n"]}
+        self.mock_file_broker.getVaultFiles.return_value = files
+        self.mock_file_broker.getVaultFileLines.side_effect = lambda registry, path: list(contents[path])
+
+        def write_file(registry, path, lines):
+            contents[path] = list(lines)
+
+        self.mock_file_broker.writeVaultFileLines.side_effect = write_file
+
+        result = self.provider.discover()
+
         self.assertEqual(len(result["tasks"]), 1)
         self.assertEqual(result["tasks"][0]["taskText"], "Define next action")
+        self.assertEqual(result["tasks"][0]["track"], "work")
+        self.assertIn("Define next action", "".join(contents["project.md"]))
+        self.mock_file_broker.writeVaultFileLines.assert_called_once()
 
     def test_process_task_with_metadata(self):
         self.mock_file_broker.getVaultFiles.return_value = [("tasks.md", 100.0)]
@@ -100,6 +115,33 @@ class TestObsidianVaultTaskJsonProvider(unittest.TestCase):
         self.assertEqual(task["severity"], "5.0")
         self.assertEqual(task["starts"], str(TimePoint.from_string("2023-01-01").as_int()))
 
+    def test_frontmatter_datetime_keeps_hour_and_minute_colons(self):
+        self.mock_file_broker.getVaultFiles.return_value = [("tasks.md", 100.0)]
+        self.mock_file_broker.getVaultFileLines.return_value = [
+            "---\n",
+            "project: open\n",
+            "starts: 2023-12-31T23:45\n",
+            "due: 2024-01-01T01:15\n",
+            "---\n",
+            "- [ ] Task [track::work]\n"
+        ]
+
+        task = self.provider.getJson()["tasks"][0]
+        self.assertEqual(task["starts"], str(TimePoint.from_string("2023-12-31T23:45").as_int()))
+        self.assertEqual(task["due"], str(TimePoint.from_string("2024-01-01T01:15").as_int()))
+
+    def test_completed_checkbox_is_parsed_for_complete_task_queries(self):
+        self.mock_file_broker.getVaultFiles.return_value = [("tasks.md", 100.0)]
+        self.mock_file_broker.getVaultFileLines.return_value = [
+            "---\n",
+            "---\n",
+            "- [x] Finished [track::work]\n"
+        ]
+
+        result = self.provider.getJson()
+        self.assertEqual(len(result["tasks"]), 1)
+        self.assertEqual(result["tasks"][0]["status"], "x")
+
     def test_update_existing_task(self):
         # First call to add a task
         self.mock_file_broker.getVaultFiles.return_value = [("tasks.md", 100.0)]
@@ -118,7 +160,7 @@ class TestObsidianVaultTaskJsonProvider(unittest.TestCase):
         self.assertEqual(len(result["tasks"]), 1)
         self.assertEqual(result["tasks"][0]["taskText"], "Task 1 updated")
 
-    def test_error_handling_during_file_processing(self):
+    def test_read_failure_during_file_processing_is_propagated(self):
         self.mock_file_broker.getVaultFiles.return_value = [("valid.md", 100.0), ("invalid.md", 200.0)]
 
         def mock_get_file_lines(registry, path):
@@ -129,9 +171,9 @@ class TestObsidianVaultTaskJsonProvider(unittest.TestCase):
 
         self.mock_file_broker.getVaultFileLines.side_effect = mock_get_file_lines
 
-        # Should process the valid file and catch the exception for the invalid file
-        result = self.provider.getJson()
-        self.assertEqual(len(result["tasks"]), 1)
+        # A failed read must not be reported as a successful partial/empty view.
+        with self.assertRaisesRegex(Exception, "Test error"):
+            self.provider.getJson()
 
     def test_saveJson_does_nothing(self):
         # saveJson should be a no-op

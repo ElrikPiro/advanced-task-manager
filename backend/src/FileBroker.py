@@ -42,13 +42,13 @@ class FileBroker(IFileBroker):
             with open(str(self.filePaths[fileRegistry]["path"]), "r", errors="ignore") as file:
                 return file.read()
         except FileNotFoundError:
-            print(f"File not found: {self.filePaths[fileRegistry]['path']}")
-            self.__createFile(fileRegistry)
             return str(self.filePaths[fileRegistry]["default"])
 
     def writeFileContent(self,
                          fileRegistry: FileRegistry, content: str) -> None:
-        with open(str(self.filePaths[fileRegistry]["path"]), 'w+') as file:
+        file_path = str(self.filePaths[fileRegistry]["path"])
+        self.__ensureParentDirectory(file_path)
+        with open(file_path, 'w+') as file:
             file.write(content)
 
     def readFileContentJson(self, fileRegistry: FileRegistry) -> FileContentJson:
@@ -56,8 +56,6 @@ class FileBroker(IFileBroker):
             with open(str(self.filePaths[fileRegistry]["path"]), "r", errors="ignore") as file:
                 return dict(json.load(file))
         except FileNotFoundError:
-            print(f"File not found: {self.filePaths[fileRegistry]['path']}")
-            self.__createFile(fileRegistry)
             retval: FileContentJson = json.loads(str(self.filePaths[fileRegistry]["default"]))
             return retval
         
@@ -65,27 +63,37 @@ class FileBroker(IFileBroker):
         try:
             with open(str(self.filePaths[FileRegistry.STATISTICS_JSON]["path"]), "r", errors="ignore") as file:
                 value = dict(json.load(file))
-                log: list[dict[str, str]] = value["log"]
+                log: list[dict[str, str]] = value.get("log", [])
                 proper_log: list[WorkLogEntry] = []
                 for _, entry in enumerate(log):
                     proper_log.append(WorkLogEntry(timestamp=int(entry["timestamp"]), work_units=float(entry["work_units"]), task=entry["task"]))
                 value["log"] = proper_log
                 return value
         except FileNotFoundError:
-            print(f"File not found: {self.filePaths[FileRegistry.STATISTICS_JSON]['path']}")
-            self.__createFile(FileRegistry.STATISTICS_JSON)
             retval: StatisticsFileContentJson = json.loads(str(self.filePaths[FileRegistry.STATISTICS_JSON]["default"]))
+            # Make the in-memory statistics shape safe for read-only queries.
+            # The missing file remains absent until explicit initialization or a write.
+            retval.setdefault("log", [])
             return retval
 
-    def __createFile(self, fileRegistry: FileRegistry) -> None:
-        with open(str(self.filePaths[fileRegistry]["path"]), 'w+') as file:
-            file.write(str(self.filePaths[fileRegistry]["default"]))
+    def initializeFileContent(self, fileRegistry: FileRegistry) -> None:
+        """Create a registered file with its default content if it is absent."""
+        file_path = str(self.filePaths[fileRegistry]["path"])
+        self.__ensureParentDirectory(file_path)
+        try:
+            with open(file_path, "x") as file:
+                file.write(str(self.filePaths[fileRegistry]["default"]))
+        except FileExistsError:
+            # Initialization is idempotent and never repairs/replaces data.
+            return
 
     @typing.no_type_check
     def writeFileContentJson(self,
                              fileRegistry: FileRegistry,
                              content: FileContent | StatisticsFileContentJson) -> None:
-        with open(str(self.filePaths[fileRegistry]["path"]), 'w+') as file:
+        file_path = str(self.filePaths[fileRegistry]["path"])
+        self.__ensureParentDirectory(file_path)
+        with open(file_path, 'w+') as file:
             # Convert WorkLogEntry objects to dictionaries for JSON serialization
             serializable_content = dict(content)
             if "log" in serializable_content and isinstance(serializable_content["log"], list):
@@ -110,16 +118,23 @@ class FileBroker(IFileBroker):
                             relativePath: str,
                             lines: list[str]) -> None:
         filePath = os.path.join(self.vaultPaths[vaultRegistry], relativePath)
+        self.__ensureParentDirectory(filePath)
         with open(filePath, "w") as file:
             file.writelines(lines)
+
+    def __ensureParentDirectory(self, file_path: str) -> None:
+        parent_dir = os.path.dirname(file_path)
+        if parent_dir:
+            os.makedirs(parent_dir, exist_ok=True)
 
     # Get all files in vauld directory and subdirectories, returns a tuple with the path and the last modification time
     def getVaultFiles(self, vaultRegistry: VaultRegistry) -> list[tuple[str, float]]:
         files = []
+        vault_path = self.vaultPaths[vaultRegistry]
         for root, _, filenames in os.walk(self.vaultPaths[vaultRegistry]):
             for filename in filenames:
                 full_file_path = os.path.join(root, filename)
-                file_path = full_file_path[len(self.vaultPaths[vaultRegistry]):]
+                file_path = os.path.relpath(full_file_path, vault_path)
                 last_mod_time = os.path.getmtime(full_file_path)
                 files.append((file_path, last_mod_time))
         return files

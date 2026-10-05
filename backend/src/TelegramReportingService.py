@@ -5,6 +5,7 @@ TelegramReportingService
 import asyncio
 import threading
 import datetime
+from dataclasses import replace
 
 from time import sleep as sleepSync
 from typing import Callable, List, Coroutine, Any, Tuple
@@ -23,11 +24,14 @@ from .Interfaces.IStatisticsService import IStatisticsService
 from .Interfaces.ILogger import ILogger
 from .wrappers.interfaces.IUserCommService import IUserCommService
 from .wrappers.TimeManagement import TimeAmount, TimePoint
+from .domain.TaskApplicationService import TaskApplicationService
+from .domain.errors import DomainError
+from .domain.models import AgendaQuery, OperationTarget, TaskView
 
 
 class TelegramReportingService(IReportingService):
 
-    def __init__(self, bot: IUserCommService, taskProvider: ITaskProvider, scheduling: IScheduling, statiticsProvider: IStatisticsService, task_list_manager: ITaskListManager, categories: list[dict[str, str]], projectManager: IProjectManager, messageBuilder: IMessageBuilder, user: IAgent, logger: ILogger):
+    def __init__(self, bot: IUserCommService, taskProvider: ITaskProvider, scheduling: IScheduling, statiticsProvider: IStatisticsService, task_list_manager: ITaskListManager, categories: list[dict[str, str]], projectManager: IProjectManager, messageBuilder: IMessageBuilder, user: IAgent, logger: ILogger, application_service: TaskApplicationService | None = None):
         # Private Attributes
         self.MAX_ERRORS = 30
         self.ERROR_TIMEOUT = 10
@@ -42,6 +46,7 @@ class TelegramReportingService(IReportingService):
         self.statiticsProvider = statiticsProvider
         self.__projectManager = projectManager
         self.__messageBuilder = messageBuilder
+        self._application_service = application_service
 
         self.__lastModelList: List[ITaskModel] = []
         self._updateFlag = False
@@ -94,6 +99,15 @@ class TelegramReportingService(IReportingService):
             self._taskListManager.update_taskList(self.taskProvider.getTaskList())
 
     def listenForEvents(self) -> None:
+        # Discovery and its permitted writes happen before the communication
+        # service can start an HTTP listener or receive Telegram messages.
+        if self._application_service is not None:
+            initial_tasks = self._application_service.discover_initialize()
+            self._taskListManager.update_taskList(initial_tasks)
+        else:
+            discover = getattr(self.taskProvider, "discoverTasks", None)
+            if callable(discover):
+                self._taskListManager.update_taskList(list(discover()))
         self.taskProvider.registerTaskListUpdatedCallback(self.onTaskListUpdated)
         self._taskListManager.update_taskList(self.taskProvider.getTaskList())
         errCount = 0
@@ -127,6 +141,13 @@ class TelegramReportingService(IReportingService):
                     raise
 
     def hasFilteredListChanged(self) -> bool:
+        if self._application_service is not None:
+            content = self._application_service.query_tasks(self._current_view())
+            tasks = [self._application_service.read_task(entry.id) for entry in content.tasks]
+            if self.taskProvider.compare(tasks, self.__lastModelList):
+                return False
+            self.__lastModelList = tasks
+            return True
         filteredList = self._taskListManager.filtered_task_list
         if self.taskProvider.compare(filteredList, self.__lastModelList):
             return False
@@ -136,19 +157,25 @@ class TelegramReportingService(IReportingService):
     async def checkFilteredListChanges(self) -> None:
         if self.chatId != 0 and self.hasFilteredListChanged():
             # Send the updated list
-            filteredList = self._taskListManager.filtered_task_list
-            task: ITaskModel
-            if len(filteredList) == 0:
-                return
-
-            task = filteredList[0]
-            algorithm = self._taskListManager.selected_algorithm
-            assert isinstance(algorithm, IAlgorithm)
+            if self._application_service is not None:
+                content = self._application_service.query_tasks(self._current_view())
+                if not content.tasks:
+                    return
+                task = self._application_service.read_task(content.tasks[0].id)
+                algorithm_description = content.algorithm_desc
+            else:
+                filteredList = self._taskListManager.filtered_task_list
+                if len(filteredList) == 0:
+                    return
+                task = filteredList[0]
+                algorithm = self._taskListManager.selected_algorithm
+                assert isinstance(algorithm, IAlgorithm)
+                algorithm_description = algorithm.getDescription()
             self._taskListManager.reset_pagination()
             message = self.__messageBuilder.createOutboundMessage(
                 source=self.bot.getBotAgent(),
                 destination=self.user,
-                content=MessageContent(text=algorithm.getDescription(), task=task),
+                content=MessageContent(text=algorithm_description, task=task),
                 render_mode=RenderMode.LIST_UPDATED
             )
             await self.bot.sendMessage(message)
@@ -375,6 +402,19 @@ class TelegramReportingService(IReportingService):
 
     async def raiseAlgorithmCommand(self, messageText: str = "", expectAnswer: bool = True, reqId: int | None = None) -> None:
         arg = messageText.split(" ")[1:][0]
+        if self._application_service is not None:
+            try:
+                result = self._application_service.execute_operation(
+                    "raise-event", OperationTarget("event", arg), {}
+                )
+            except DomainError as error:
+                await self.__send_raw_text_message(error.message, reqId=reqId)
+                return
+            self._taskListManager.update_taskList(self.taskProvider.getTaskList())
+            affected_count = int(result.value or 0)
+            self._logger.debug(f"Raised event '{arg}' affecting {affected_count} tasks.")
+            await self.__send_raw_text_message(f"{affected_count} task affected.", reqId=reqId)
+            return
         affected = self._taskListManager.raiseEvent(arg)
         self._logger.debug(f"Raised event '{arg}' affecting {len(affected)} tasks.")
         
@@ -439,6 +479,21 @@ class TelegramReportingService(IReportingService):
         """
         selected_task = self._taskListManager.selected_task
         if selected_task is not None:
+            if self._application_service is not None:
+                task_id = selected_task.getTaskUID()
+                try:
+                    result = self._application_service.execute_operation(
+                        "complete-task", OperationTarget("task", task_id), {}
+                    )
+                except DomainError as error:
+                    await self.__send_raw_text_message(error.message, reqId=reqId)
+                    return
+                self._taskListManager.update_taskList(self.taskProvider.getTaskList())
+                task = result.value
+                self._logger.debug(f"Task '{task.getDescription()}' marked as done.")
+                if expectAnswer:
+                    await self.sendTaskList(reqId=reqId)
+                return
             task = selected_task
             task.setStatus("x")
             
@@ -478,6 +533,48 @@ class TelegramReportingService(IReportingService):
         """
         selected_task = self._taskListManager.selected_task
         if selected_task is not None:
+            if self._application_service is not None:
+                parts = messageText.split(" ", 2)
+                if len(parts) < 3:
+                    await self.__send_raw_text_message("A parameter and value are required.", reqId=reqId)
+                    return
+                supplied_name, value = parts[1], parts[2]
+                field_names = (
+                    "description", "context", "start", "due", "severity",
+                    "total_cost", "effort_invested", "calm", "waited", "raised",
+                )
+                field_name = next((name for name in field_names if name.startswith(supplied_name)), None)
+                if field_name is None:
+                    await self.__send_raw_text_message(
+                        "Invalid task field.", reqId=reqId
+                    )
+                    return
+                target = OperationTarget("task", selected_task.getTaskUID())
+                parameters: dict[str, Any]
+                if field_name == "effort_invested":
+                    parameters = {"effort_delta": value}
+                else:
+                    if field_name == "calm":
+                        if value.casefold() not in ("true", "false"):
+                            await self.__send_raw_text_message("calm must be true or false.", reqId=reqId)
+                            return
+                        field_value: Any = value.casefold() == "true"
+                    elif field_name in ("waited", "raised") and value.casefold() == "null":
+                        field_value = None
+                    else:
+                        field_value = value
+                    parameters = {"changes": {field_name: field_value}}
+                try:
+                    result = self._application_service.execute_operation("edit-task", target, parameters)
+                except DomainError as error:
+                    await self.__send_raw_text_message(error.message, reqId=reqId)
+                    return
+                task = result.value
+                self._taskListManager.update_taskList(self.taskProvider.getTaskList())
+                self._logger.debug(f"Task '{task.getDescription()}' updated through domain service.")
+                if expectAnswer:
+                    await self.sendTaskInformation(task, reqId=reqId)
+                return
             task = selected_task
             params = messageText.split(" ")[1:]
             if len(params) < 2:
@@ -504,6 +601,28 @@ class TelegramReportingService(IReportingService):
         params = messageText.split(" ")[1:]
         if len(params) > 0:
             extendedParams = " ".join(params).split(";")
+
+            if self._application_service is not None:
+                operation_parameters: dict[str, Any] = {"description": extendedParams[0]}
+                if len(extendedParams) == 3:
+                    operation_parameters["context"] = extendedParams[1]
+                    operation_parameters["total_cost"] = extendedParams[2]
+                elif len(extendedParams) != 1:
+                    operation_parameters["description"] = " ".join(params)
+                try:
+                    result = self._application_service.execute_operation(
+                        "create-task", OperationTarget("tasks"), operation_parameters
+                    )
+                except DomainError as error:
+                    await self.__send_raw_text_message(error.message, reqId=reqId)
+                    return
+                selected_task = result.value
+                self._taskListManager.selected_task = selected_task
+                self._taskListManager.update_taskList(self.taskProvider.getTaskList())
+                self._logger.debug(f"Task '{selected_task.getDescription()}' created.")
+                if expectAnswer:
+                    await self.sendTaskInformation(selected_task, reqId=reqId)
+                return
 
             if len(extendedParams) == 3:
                 self._taskListManager.selected_task = self.taskProvider.createDefaultTask(extendedParams[0])
@@ -534,6 +653,28 @@ class TelegramReportingService(IReportingService):
         selected_task = self._taskListManager.selected_task
         params = messageText.split(" ")[1:]
         if selected_task is not None:
+            if self._application_service is not None:
+                effort = params[-1] if params else ""
+                target = OperationTarget("task", selected_task.getTaskUID())
+                try:
+                    result = self._application_service.execute_operation(
+                        "schedule-task", target, {"effort_per_day": effort}
+                    )
+                except DomainError as error:
+                    await self.__send_raw_text_message(error.message, reqId=reqId)
+                    return
+                resulting_tasks = list(result.value)
+                self._taskListManager.update_taskList(self.taskProvider.getTaskList())
+                if len(resulting_tasks) > 1 and expectAnswer:
+                    split_count = len(resulting_tasks)
+                    original_description = resulting_tasks[0].getDescription().replace(f" 1/{split_count}", "")
+                    await self.__send_raw_text_message(
+                        f"Task '{original_description}' was split into {split_count} parts due to high effort per day."
+                    )
+                self._logger.debug(f"Task '{selected_task.getDescription()}' was rescheduled.")
+                if expectAnswer:
+                    await self.sendTaskInformation(resulting_tasks[0], reqId=reqId)
+                return
             # Enhanced scheduling returns list of tasks (may include splits)
             resulting_tasks = self.scheduling.schedule(selected_task, params.pop() if len(params) > 0 else "")
             
@@ -576,6 +717,25 @@ class TelegramReportingService(IReportingService):
         selected_task = self._taskListManager.selected_task
         params = messageText.split(" ")[1:]
         if selected_task is not None:
+            if self._application_service is not None:
+                if not params:
+                    await self.__send_raw_text_message("A work duration is required.", reqId=reqId)
+                    return
+                try:
+                    result = self._application_service.execute_operation(
+                        "record-work",
+                        OperationTarget("task", selected_task.getTaskUID()),
+                        {"duration": " ".join(params)},
+                    )
+                except DomainError as error:
+                    await self.__send_raw_text_message(error.message, reqId=reqId)
+                    return
+                task = result.value
+                self._taskListManager.update_taskList(self.taskProvider.getTaskList())
+                self._logger.debug(f"Recorded work on task '{task.getDescription()}'.")
+                if expectAnswer:
+                    await self.sendTaskInformation(task, reqId=reqId)
+                return
             task = selected_task
             work_units = TimeAmount(" ".join(params[0:]))
             await self.processSetParam(task, "effort_invested", f"{str(work_units.as_pomodoros())}p")
@@ -635,6 +795,26 @@ class TelegramReportingService(IReportingService):
             params = params[0]
         else:
             params = "5m"
+
+        selected_task = self._taskListManager.selected_task
+        if self._application_service is not None:
+            if selected_task is None:
+                await self.__send_raw_text_message("no task selected.", reqId=reqId)
+                return
+            try:
+                result = self._application_service.execute_operation(
+                    "snooze-task",
+                    OperationTarget("task", selected_task.getTaskUID()),
+                    {"duration": params},
+                )
+            except DomainError as error:
+                await self.__send_raw_text_message(error.message, reqId=reqId)
+                return
+            task = result.value
+            self._taskListManager.update_taskList(self.taskProvider.getTaskList())
+            if expectAnswer:
+                await self.sendTaskInformation(task, reqId=reqId)
+            return
 
         startParams = f"/set start now;+{params}"
         self._logger.debug(f"Snoozing task with params: {startParams}")
@@ -712,6 +892,43 @@ class TelegramReportingService(IReportingService):
         """
         # getting results
         searchTerms = messageText.split(" ")[1:]
+        if self._application_service is not None:
+            if not searchTerms:
+                await self.__send_raw_text_message("No results found", reqId=reqId)
+                return
+            view = replace(
+                self._current_view(),
+                page=1,
+                search=tuple(searchTerms),
+            )
+            try:
+                result_content = self._application_service.query_tasks(view)
+            except DomainError as error:
+                await self.__send_raw_text_message(error.message, reqId=reqId)
+                return
+            search_results = result_content.tasks
+            if len(search_results) == 1:
+                try:
+                    task = self._application_service.read_task(search_results[0].id)
+                except DomainError as error:
+                    await self.__send_raw_text_message(error.message, reqId=reqId)
+                    return
+                self._taskListManager.selected_task = task
+                self._logger.debug(f"Search found one result, selecting task: {task.getDescription()}")
+                await self.sendTaskInformation(task, reqId=reqId)
+            elif search_results:
+                result_content.interactive = False
+                message = self.__messageBuilder.createOutboundMessage(
+                    source=self.bot.getBotAgent(),
+                    destination=self.user,
+                    content=MessageContent(taskListContent=result_content),
+                    render_mode=RenderMode.TASK_LIST,
+                )
+                message.content.requestId = reqId
+                await self.bot.sendMessage(message=message)
+            else:
+                await self.__send_raw_text_message("No results found", reqId=reqId)
+            return
         searchResultsManager = self._taskListManager.search_tasks(searchTerms)
         searchResults = searchResultsManager.filtered_task_list
 
@@ -744,7 +961,14 @@ class TelegramReportingService(IReportingService):
         It will show the times they are available
         Finally it will show which non-urgent tasks are available next
         """
-        agenda_content = self._taskListManager.get_day_agenda_content(TimePoint.today(), self._categories)
+        if self._application_service is not None:
+            try:
+                agenda_content = self._application_service.read_agenda(AgendaQuery(TimePoint.today()))
+            except DomainError as error:
+                await self.__send_raw_text_message(error.message, reqId=reqId)
+                return
+        else:
+            agenda_content = self._taskListManager.get_day_agenda_content(TimePoint.today(), self._categories)
         message = self.__messageBuilder.createOutboundMessage(
             source=self.bot.getBotAgent(),
             destination=self.user,
@@ -946,7 +1170,14 @@ class TelegramReportingService(IReportingService):
         self._taskListManager.clear_selected_task()
 
         # Get structured task list content
-        task_list_content = self._taskListManager.get_task_list_content()
+        if self._application_service is not None:
+            try:
+                task_list_content = self._application_service.query_tasks(self._current_view())
+            except DomainError as error:
+                await self.__send_raw_text_message(error.message, reqId=reqId)
+                return
+        else:
+            task_list_content = self._taskListManager.get_task_list_content()
         task_list_content.interactive = interactive
 
         # Create a structured message
@@ -963,7 +1194,14 @@ class TelegramReportingService(IReportingService):
 
     async def sendTaskInformation(self, task: ITaskModel, extended: bool = False, reqId: int | None = None) -> None:
         # Get structured task information
-        task_info = self._taskListManager.get_task_information(task, self.taskProvider, extended)
+        if self._application_service is not None:
+            try:
+                task_info = self._application_service.read_task_information(task.getTaskUID(), extended=extended)
+            except DomainError as error:
+                await self.__send_raw_text_message(error.message, reqId=reqId)
+                return
+        else:
+            task_info = self._taskListManager.get_task_information(task, self.taskProvider, extended)
 
         # Create a structured message with the TASK_INFORMATION render mode
         message = self.__messageBuilder.createOutboundMessage(
@@ -994,3 +1232,10 @@ class TelegramReportingService(IReportingService):
 
         message.content.requestId = reqId
         await self.bot.sendMessage(message=message)
+
+    def _current_view(self) -> TaskView:
+        current_view = getattr(self._taskListManager, "current_view", None)
+        if callable(current_view):
+            view = current_view()
+            return view if isinstance(view, TaskView) else TaskView()
+        return TaskView()
