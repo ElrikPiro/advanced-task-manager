@@ -25,16 +25,22 @@ Available combinations:
 2. **JSON file (cmd)** - JSON storage with command line interface
 3. **JSON file (telegram)** - JSON storage with Telegram bot interface
 4. **Obsidian (telegram)** - Markdown vault with Telegram bot interface
-5. **JSON file (API)** - JSON storage with HTTP command interface
-6. **Obsidian (API)** - Markdown vault with HTTP command interface
+5. **JSON file (API)** - JSON storage with the resource-oriented HTTP API
+6. **Obsidian (API)** - Markdown vault with the resource-oriented HTTP API
 
 ### HTTP API behavior and limits
 
-`APP_MODE` 5/6 selects the legacy HTTP command adapter. It maps paths such as `/list`, `/task_N`, `/set` and `/notifications` to commands, and the frontend sends these requests with GET. Some commands change the shared task-list view or task data; reading `/notifications` can drain the volatile notification queue. The configured `APP_MODE` creates one channel manager, so clients share its selection, page and filters rather than receiving independent views. The current interface is command-oriented; it does not provide a resource-oriented `/api/v1/` API.
+`APP_MODE` 5/6 exposes the versioned resource API. `HTTP_API_PREFIX` sets its base path and defaults to `/api/v1`; a mount prefix such as `/manager/api/v1` is supported. It provides task, agenda, statistics, event, strategy, project and operation resources using HAL JSON (`application/hal+json`). Reads use explicit query parameters and do not change a shared task-list selection. Task changes use `PATCH` with `application/merge-patch+json`; task and project actions use typed `POST /operations` requests. Arbitrary command names and unknown fields are rejected. Errors use `application/problem+json`. Bearer authentication is required, and responses are marked `Cache-Control: no-store`.
+
+Task-list queries default to page 1, five items per page, the `All active task filter`, the `GTD Algorithm`, and `Remaining Effort(1)`. `filters` and `search` can be repeated; page and page size must be positive integers. Each `POST /operations` request must carry a client-generated UUID in `id` before it is first sent. The server returns the final result; the same UUID and intent return the original in-process outcome, while a different intent conflicts. Receipts are held in memory, disappear after restart, and are never replayed when absent; a missing receipt does not prove that no write happened.
+
+Older command-style GET paths that could change task data or shared view state are retired and return `404` with the `legacy-route-retired` problem code. The old volatile `/notifications` endpoint is also unavailable; persistent notification history is not part of the current API.
+
+The API accepts a configured Bearer token, but the backend does not enforce HTTPS. Validation for this version used a local loopback test server; HTTPS behavior has not been verified and HTTPS enforcement remains unimplemented. Do not expose the token over an untrusted network.
 
 Task IDs are opaque strings stored with each task: JSON records use `id`, and Markdown task lines can declare `[id:: value]`. When an older task has no ID, the backend derives a compatibility ID from its description and current storage location. JSON uses the configured task-file path and the task's zero-based position in the full array; Markdown uses the file path and line number. Reading does not write a derived ID. The first real task update stores it, and later edits or moves keep that value. Resolution includes completed tasks. A lookup for an ID with no matching task reports absence, while duplicate IDs report ambiguity and block writes to that ID. MD5 fallback IDs can collide, so the backend does not guarantee mathematical uniqueness.
 
-The backend does not provide persistent, non-destructive notification history. HTTPS is not enforced by the backend; do not send the Bearer token over an untrusted plain-HTTP connection.
+The backend does not provide persistent, non-destructive notification history.
 
 ### File save behavior
 
@@ -61,10 +67,11 @@ It will also ask you for a telegram chat Id, you can get it by following this tu
 If an API mode is selected, you will need to provide:
 - **Server bind address** - The IP address or hostname for the server to bind to (default: 0.0.0.0)
 - **Server port** - The port number for the server (default: 8080)
+- **API prefix** - The resource API base path (`HTTP_API_PREFIX`, default: `/api/v1`; for example, `/manager/api/v1`)
 - **Authentication token** - A secure token that clients must provide in the Authorization header
 - **Chat ID** - The identifier used by the configured API interface (default: 1)
 
-The legacy HTTP adapter accepts a Bearer token in the `Authorization` header. HTTPS support for the extension integration is pending implementation. API mode does not require HTTPS, and the legacy GET command paths retain the side effects described above.
+The resource API accepts a Bearer token in the `Authorization` header. Each response includes a generated `X-Request-ID`; problem responses repeat it as `requestId` and report the request's effects when known. HTTPS enforcement is not implemented in this backend version.
 
 #### Markdown vault directory
 
@@ -83,7 +90,7 @@ run `python backend.py` in the backend folder
 
 ## Web Frontend (React + TypeScript)
 
-The project now includes a browser frontend in `frontend/` that connects to the API mode.
+The browser frontend in `frontend/` still uses the earlier command-style interface. The backend has retired the mutating GET routes, so the frontend has not yet been adapted to the current resource API and its task-changing actions will not work against this backend version.
 
 ### Frontend prerequisites
 
@@ -116,17 +123,7 @@ Open `http://localhost:5173` and configure:
 - **Backend URL** (default `/api`, proxied by Vite)
 - **Bearer token** (from `HTTP_TOKEN` in your `config.json`)
 
-In development, Vite proxies `/api/*` to the configured backend target using `GET` passthrough to the legacy command adapter.
-This keeps requests same-origin in development so the browser does not need CORS preflight handling.
-If a cross-origin absolute URL is entered in the frontend, the client automatically routes through `/api` and sends the selected target to the Vite proxy.
-Use `ATM_BACKEND_TARGET` to select a configured backend endpoint in development.
-
-The frontend currently exposes the legacy command flow:
-- Task list and task details
-- Heuristic, algorithm and filter selection
-- Task actions (`/set`, `/new`, `/work`, `/schedule`, `/snooze`, `/done`)
-- Agenda, stats and events dashboards
-- Notification polling (`/notifications`)
+The current frontend development proxy and client still issue GET requests to command paths. They need a resource-API client before they can be used with the backend described here. The frontend currently contains task lists, dashboards and legacy task actions, but the backend no longer accepts those mutating GET routes. Notification polling is unavailable until a persistent notification resource is provided.
 
 ### Build frontend
 
@@ -137,8 +134,8 @@ npm run build
 
 ### Frontend caveats
 
-- In API mode, `/export` is currently not implemented in the backend wrapper and is intentionally not exposed as a file download action.
-- Backend command responses can be JSON or plain text; the frontend handles both.
+- The frontend has not migrated to HAL resources, typed operations or the current authentication and error contract.
+- In API mode, `/export` is not implemented as a file download action.
 
 ## Usage (Win64 Binaries)
 
@@ -258,6 +255,7 @@ config.json
     "JSON_PATH": ".",
     "HTTP_URL": "0.0.0.0",
     "HTTP_PORT": "8080",
+    "HTTP_API_PREFIX": "/api/v1",
     "HTTP_TOKEN": "<Your secure authentication token>",
     "HTTP_CHAT_ID": "1"
 }

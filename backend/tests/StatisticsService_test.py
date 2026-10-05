@@ -91,6 +91,22 @@ class TestStatisticsService(unittest.TestCase):
         # Assert
         self.assertEqual(result, [WorkLogEntry(**entry) for entry in log_entries])
 
+    def test_read_workload_stats_uses_fresh_file_snapshot_without_changing_cache(self):
+        self.service.workDone = {"2026-10-04": 1.0}
+        fresh_log = [{"timestamp": 1791115200000, "work_units": 2.5, "task": "Fresh task"}]
+        self.mock_file_broker.readStatisticsFileContentJson.return_value = {
+            "2026-10-05": 4.25,
+            "log": fresh_log,
+        }
+        self.mock_workload_filter.filter.return_value = []
+
+        result = self.service.readWorkloadStats([])
+
+        self.assertEqual(result.workDone, {"2026-10-05": 4.25})
+        self.assertEqual(result.workDoneLog, [WorkLogEntry(**fresh_log[0])])
+        self.assertEqual(self.service.workDone, {"2026-10-04": 1.0})
+        self.mock_file_broker.readStatisticsFileContentJson.assert_called_once_with()
+
     def test_do_work_preserves_unknown_statistics_and_log_fields(self):
         test_date = datetime.date(2023, 1, 1)
         self.stats_document = {
@@ -125,12 +141,6 @@ class TestStatisticsService(unittest.TestCase):
 
         self.assertEqual(self.service.workDone, published_before)
         self.mock_file_broker.writeFileContentJson.assert_not_called()
-
-    def test_initialize_propagates_invalid_statistics_instead_of_using_empty_cache(self):
-        self.mock_file_broker.readStatisticsFileContentJson.side_effect = ValueError("invalid statistics")
-
-        with self.assertRaisesRegex(ValueError, "invalid statistics"):
-            self.service.initialize()
 
     def test_initialize_propagates_invalid_statistics_instead_of_using_empty_cache(self):
         self.mock_file_broker.readStatisticsFileContentJson.side_effect = ValueError("invalid statistics")

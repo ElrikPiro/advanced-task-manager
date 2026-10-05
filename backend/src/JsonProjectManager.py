@@ -12,6 +12,7 @@ from src.domain.errors import (
     AmbiguousResourceError,
     InvalidResourceDataError,
     OperationFailedError,
+    ResourceReadError,
     ResourceNotFoundError,
     ValidationError,
 )
@@ -234,6 +235,65 @@ class JsonProjectManager(IProjectManager):
             description=description,
             created=created,
         )
+
+    def read_projects(self, status: str = "open") -> list[dict[str, Any]]:
+        """Return validated project summaries for a requested lifecycle status."""
+        if status not in VALID_PROJECT_STATUS:
+            raise ValidationError("Invalid project status", details={"field": "status"})
+        try:
+            document = self.__taskListProvider.getJson()
+            projects = self._typed_projects(document)
+            names: set[str] = set()
+            results: list[dict[str, Any]] = []
+            for project in projects:
+                name = project.get("name")
+                if not isinstance(name, str) or not name:
+                    raise InvalidResourceDataError("Project data has an invalid shape")
+                if name in names:
+                    raise AmbiguousResourceError("More than one project has this name")
+                names.add(name)
+                result = self._project_result(document, name)
+                if result.status == status:
+                    results.append({
+                        "name": result.name,
+                        "status": result.status,
+                        "description": result.description,
+                    })
+            return results
+        except (ValidationError, AmbiguousResourceError, InvalidResourceDataError):
+            raise
+        except Exception as error:
+            raise ResourceReadError("Project data could not be read") from error
+
+    def read_project(self, project_name: str) -> dict[str, Any]:
+        """Read one project's saved description without exposing storage details."""
+        try:
+            document = self.__taskListProvider.getJson()
+            result = self._project_result(document, project_name)
+            return {
+                "name": result.name,
+                "status": result.status,
+                "description": result.description,
+            }
+        except (AmbiguousResourceError, InvalidResourceDataError, ResourceNotFoundError):
+            raise
+        except Exception as error:
+            raise ResourceReadError("Project data could not be read") from error
+
+    @staticmethod
+    def get_operation_capabilities() -> dict[str, dict[str, Any]]:
+        """Describe fields supported by the JSON project store."""
+        return {
+            "open-project": {
+                "target.id": {"type": "string", "required": True, "minLength": 1},
+                "description": {"type": "string", "required": False},
+            },
+            "close-project": {},
+            "hold-project": {},
+            "edit-project-content": {
+                "description": {"type": "string", "required": True},
+            },
+        }
 
     @classmethod
     def _typed_projects(cls, document: TaskJsonType) -> list[dict[str, object]]:

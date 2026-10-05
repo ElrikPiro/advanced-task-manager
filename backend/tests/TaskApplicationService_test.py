@@ -1,4 +1,7 @@
 import copy
+import datetime
+import os
+import time
 import unittest
 from typing import List
 from unittest.mock import MagicMock
@@ -499,6 +502,54 @@ class TaskApplicationServiceTest(unittest.TestCase):
             provider.createDefaultTask("Next part").getTaskUID(),
             fallback_task_id("Next part", "/configured/tasks.json", 1),
         )
+
+    def test_offset_iso_times_keep_the_instant_across_dst_and_relative_edits(self) -> None:
+        previous_timezone = os.environ.get("TZ")
+        os.environ["TZ"] = "America/New_York"
+        time.tzset()
+        try:
+            task = make_task(10, "DST task")
+            before_fallback = self.application._parse_time(
+                task,
+                "start",
+                "2026-11-01T01:30:00-04:00",
+            )
+            after_fallback = self.application._parse_time(
+                task,
+                "start",
+                "2026-11-01T01:30:00-05:00",
+            )
+            utc_after_fallback = self.application._parse_time(
+                task,
+                "start",
+                "2026-11-01T06:30:00Z",
+            )
+
+            self.assertIsNone(before_fallback.datetime_representation.tzinfo)
+            self.assertIsNone(after_fallback.datetime_representation.tzinfo)
+            self.assertEqual(after_fallback.as_int() - before_fallback.as_int(), 60 * 60 * 1000)
+            self.assertEqual(utc_after_fallback.as_int(), after_fallback.as_int())
+
+            local_due = self.application._parse_time(
+                task,
+                "due",
+                "2026-11-01T01:30",
+            )
+            self.assertEqual(
+                local_due.datetime_representation,
+                datetime.datetime(2026, 11, 1, 1, 30),
+            )
+
+            task.setStart(after_fallback)
+            relative = self.application._parse_time(task, "start", "+5m")
+            self.assertIsNone(relative.datetime_representation.tzinfo)
+            self.assertEqual(relative.as_int() - after_fallback.as_int(), 5 * 60 * 1000)
+        finally:
+            if previous_timezone is None:
+                os.environ.pop("TZ", None)
+            else:
+                os.environ["TZ"] = previous_timezone
+            time.tzset()
 
 
 if __name__ == "__main__":

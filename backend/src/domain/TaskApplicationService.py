@@ -5,8 +5,10 @@ import copy
 import datetime
 import json
 import math
+import os
 import uuid
 from typing import Any, Literal, Mapping, cast
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from src.AtomicFileStore import AtomicWriteError
 from src.Interfaces.ITaskModel import ITaskModel
@@ -17,7 +19,7 @@ from src.MutationCoordinator import (
     OperationResultUnavailable,
 )
 from src.TelegramTaskListManager import TelegramTaskListManager
-from src.Utils import AgendaContent, TaskInformation, TaskListContent
+from src.Utils import AgendaContent, TaskInformation, TaskListContent, WorkloadStats
 from src.wrappers.TimeManagement import TimeAmount, TimePoint
 from src.taskproviders.TaskIdentityErrors import (
     AmbiguousTaskIdentityError,
@@ -212,6 +214,10 @@ class TaskApplicationService:
             raise AmbiguousResourceError("More than one task matches the requested identifier")
         return matches[0]
 
+    def read_task_models(self, *, include_completed: bool = True) -> list[ITaskModel]:
+        """Return a fresh, read-only model snapshot for resource projection."""
+        return self._all_tasks(include_completed=include_completed)
+
     def query_tasks(self, view: TaskView) -> TaskListContent:
         """Run a task query with its filters, strategies and page supplied inline."""
         self._validate_view(view)
@@ -258,12 +264,134 @@ class TaskApplicationService:
         """Return typed detail data for a task, independent of list selection."""
         task = self.read_task(task_id)
         try:
-            return self._task_list_manager.get_task_information(task, self._task_provider, extended)
+            return self._task_list_manager.get_task_information(
+                task,
+                self._task_provider,
+                extended,
+            )
         except DomainError:
             raise
         except Exception as error:
             self._raise_task_identity_error(error)
             raise ResourceReadError("Task detail could not be read") from error
+
+    def read_task_information_for(
+        self,
+        task: ITaskModel,
+        *,
+        extended: bool = False,
+    ) -> TaskInformation:
+        """Project typed detail data for an already-resolved model snapshot."""
+        try:
+            clone_for_view = getattr(self._task_list_manager, "clone_for_view", None)
+            if callable(clone_for_view):
+                manager = clone_for_view(
+                    self._all_tasks(include_completed=True),
+                    TaskView(filters=(), algorithm="", heuristic=""),
+                )
+            else:
+                manager = self._task_list_manager
+            return cast(
+                TaskInformation,
+                manager.get_task_information(task, self._task_provider, extended),
+            )
+        except DomainError:
+            raise
+        except Exception as error:
+            self._raise_task_identity_error(error)
+            raise ResourceReadError("Task detail could not be read") from error
+
+    def read_statistics(self, view: TaskView) -> WorkloadStats:
+        """Calculate live work statistics for an explicit, unpaged task view."""
+        self._validate_view(view)
+        try:
+            tasks = self._all_tasks(include_completed=False)
+            manager = self._task_list_manager.clone_for_view(tasks, view)
+            read_stats = getattr(self._statistics_service, "readWorkloadStats", None)
+            if callable(read_stats):
+                return cast(WorkloadStats, read_stats(manager.filtered_task_list))
+            get_stats = getattr(self._statistics_service, "getWorkloadStats", None)
+            if not callable(get_stats):
+                raise ResourceReadError("Statistics are unavailable")
+            return cast(WorkloadStats, get_stats(manager.filtered_task_list))
+        except DomainError:
+            raise
+        except ValueError as error:
+            self._raise_task_identity_error(error)
+            raise ValidationError(str(error), details={"field": "view"}) from error
+        except Exception as error:
+            self._raise_task_identity_error(error)
+            raise DomainCalculationError("Statistics could not be calculated") from error
+
+    def read_events(self) -> Any:
+        """Read event counts across open and completed tasks without changing them."""
+        try:
+            read_events = getattr(self._statistics_service, "getEventStatistics", None)
+            if not callable(read_events):
+                raise ResourceReadError("Event statistics are unavailable")
+            return read_events(self._all_tasks(include_completed=True))
+        except DomainError:
+            raise
+        except Exception as error:
+            self._raise_task_identity_error(error)
+            raise DomainCalculationError("Event statistics could not be calculated") from error
+
+    def read_strategies(self) -> dict[str, Any]:
+        """Read strategy descriptions without changing the selected channel view."""
+        try:
+            filters = self._task_list_manager.get_filter_list().get("filterList", [])
+            return {
+                "filters": list(filters),
+                "algorithms": list(self._task_list_manager.get_algorithm_list()),
+                "heuristics": list(self._task_list_manager.get_heuristic_list()),
+            }
+        except Exception as error:
+            raise ResourceReadError("Strategy catalog could not be read") from error
+
+    def read_projects(self, status: str = "open") -> list[dict[str, Any]]:
+        """Read projects by status through the configured storage manager."""
+        manager = self._project_manager
+        reader = getattr(manager, "read_projects", None)
+        if not callable(reader):
+            raise UnsupportedOperationError("Projects are unavailable for this storage mode")
+        try:
+            return cast(list[dict[str, Any]], reader(status))
+        except DomainError:
+            raise
+        except Exception as error:
+            raise ResourceReadError("Project data could not be read") from error
+
+    def read_project(self, name: str) -> dict[str, Any]:
+        """Read one project without exposing provider paths or command text."""
+        manager = self._project_manager
+        reader = getattr(manager, "read_project", None)
+        if not callable(reader):
+            raise UnsupportedOperationError("Projects are unavailable for this storage mode")
+        try:
+            return cast(dict[str, Any], reader(name))
+        except DomainError:
+            raise
+        except Exception as error:
+            raise ResourceReadError("Project data could not be read") from error
+
+    def project_operation_capabilities(self) -> dict[str, dict[str, Any]]:
+        """Return only the project operations and fields supported by storage."""
+        manager = self._project_manager
+        capabilities = getattr(manager, "get_operation_capabilities", None)
+        if not callable(capabilities):
+            return {}
+        try:
+            return cast(dict[str, dict[str, Any]], capabilities())
+        except Exception as error:
+            raise ResourceReadError("Project capabilities could not be read") from error
+
+    def task_context_prefixes(self) -> tuple[str, ...]:
+        """Return the accepted context prefixes without changing application state."""
+        return tuple(
+            category["prefix"]
+            for category in self._categories
+            if isinstance(category, dict) and isinstance(category.get("prefix"), str)
+        )
 
     def edit_task(self, task_id: str, changes: Mapping[str, Any]) -> ITaskModel:
         """Retain the original edit entry point while admitting it through the FIFO."""
@@ -274,6 +402,10 @@ class TaskApplicationService:
             {"changes": changes},
         )
         return cast(ITaskModel, result.value)
+
+    def patch_task(self, task_id: str, changes: Mapping[str, Any]) -> ITaskModel:
+        """Apply one validated set of replacement fields as a single queued edit."""
+        return self.edit_task(task_id, changes)
 
     def execute_operation(
         self,
@@ -1199,6 +1331,21 @@ class TaskApplicationService:
     @staticmethod
     def _parse_time(task: ITaskModel, field: str, value: str) -> TimePoint:
         try:
+            iso_value = value[:-1] + "+00:00" if value.endswith("Z") else value
+            try:
+                iso_datetime = datetime.datetime.fromisoformat(iso_value)
+            except ValueError:
+                iso_datetime = None
+            if iso_datetime is not None and iso_datetime.tzinfo is not None:
+                # TimePoint and the stored task model use naive local datetimes.
+                # Convert the supplied instant first so later comparisons never
+                # mix aware and naive values and the configured local zone stays
+                # authoritative for civil dates and relative expressions.
+                local_datetime = iso_datetime.astimezone(
+                    TaskApplicationService._manager_timezone()
+                ).replace(tzinfo=None)
+                return TimePoint(local_datetime)
+
             if field == "start":
                 is_relative = value.startswith(("+", "-", "now", "today", "tomorrow"))
                 if not is_relative:
@@ -1206,6 +1353,8 @@ class TaskApplicationService:
                 if not is_relative:
                     return TimePoint(datetime.datetime.strptime(value, "%Y-%m-%dT%H:%M"))
             else:
+                if "T" in value:
+                    return TimePoint(datetime.datetime.strptime(value, "%Y-%m-%dT%H:%M"))
                 is_relative = value.startswith(("+", "-", "today", "tomorrow")) or value.count(":") == 1
                 if not is_relative:
                     return TimePoint(datetime.datetime.strptime(value, "%Y-%m-%d"))
@@ -1227,6 +1376,26 @@ class TaskApplicationService:
             return current
         except Exception as error:
             raise ValidationError("Invalid time expression", details={"field": field}) from error
+
+    @staticmethod
+    def _manager_timezone() -> datetime.tzinfo:
+        configured = os.environ.get("TZ")
+        if configured:
+            try:
+                return ZoneInfo(configured.removeprefix(":"))
+            except ZoneInfoNotFoundError:
+                pass
+        localtime_path = os.path.realpath("/etc/localtime")
+        zoneinfo_marker = f"{os.sep}zoneinfo{os.sep}"
+        zoneinfo_index = localtime_path.rfind(zoneinfo_marker)
+        if zoneinfo_index >= 0:
+            zone_name = localtime_path[zoneinfo_index + len(zoneinfo_marker):]
+            try:
+                return ZoneInfo(zone_name)
+            except ZoneInfoNotFoundError:
+                pass
+        timezone = datetime.datetime.now().astimezone().tzinfo
+        return timezone if timezone is not None else datetime.timezone.utc
 
     def _validate_view(self, view: TaskView) -> None:
         if not isinstance(view, TaskView):

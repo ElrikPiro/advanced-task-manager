@@ -338,6 +338,60 @@ class ObsidianProjectManager(IProjectManager):
             raise InvalidResourceDataError("Project data has an invalid shape")
         return projects
 
+    def read_projects(self, status: str = "open") -> list[dict[str, Any]]:
+        """Return validated project summaries for a requested lifecycle status."""
+        if status not in VALID_PROJECT_STATUS:
+            raise ValidationError("Invalid project status", details={"field": "status"})
+        projects = self._load_typed_projects()
+        names: set[str] = set()
+        result: list[dict[str, Any]] = []
+        for project in projects:
+            name = project.get("name")
+            if not isinstance(name, str) or not name:
+                raise InvalidResourceDataError("Project data has an invalid shape")
+            if name in names:
+                raise AmbiguousResourceError("More than one project has this name")
+            names.add(name)
+            validated = self._validate_typed_project(project, name)
+            if validated["status"] == status:
+                result.append({"name": name, "status": validated["status"]})
+        return result
+
+    def read_project(self, project_name: str) -> dict[str, Any]:
+        """Read one project's saved content without returning its storage path."""
+        project = self._find_typed_project(project_name)
+        try:
+            lines = self.__fileBroker.getVaultFileLines(
+                VaultRegistry.OBSIDIAN,
+                str(project["path"]),
+            )
+        except DomainError:
+            raise
+        except Exception as error:
+            raise ResourceReadError("Project content could not be read") from error
+        return {
+            "name": project_name,
+            "status": project["status"],
+            "content": "".join(lines),
+        }
+
+    @staticmethod
+    def get_operation_capabilities() -> dict[str, dict[str, Any]]:
+        """Describe fields supported by the Markdown project store."""
+        return {
+            "open-project": {
+                "target.id": {"type": "string", "required": True, "minLength": 1},
+                "description": {"type": "string", "required": False},
+            },
+            "close-project": {},
+            "hold-project": {},
+            "edit-project-content": {
+                "action": {"type": "string", "required": True, "enum": ["replace", "insert", "delete"]},
+                "line": {"type": "integer", "required": True, "minimum": 1},
+                "content": {"type": "string", "required": False, "requiredWhen": ["replace", "insert"]},
+            },
+        }
+
     def _replace_project_status(self, lines: list[str], project_name: str, status: str) -> list[str]:
         updated = list(lines)
         status_line = self.__validate_project_file(updated, project_name)

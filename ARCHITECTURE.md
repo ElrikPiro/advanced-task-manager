@@ -2,7 +2,7 @@
 
 ## Overview
 
-A Python-based task management application with multiple interfaces (Telegram bot, command line, and a command-oriented HTTP API) that helps users manage, schedule, and track tasks efficiently.
+A Python-based task management application with Telegram, command-line and resource-oriented HTTP interfaces for managing, scheduling and tracking tasks.
 
 ### Architecture Overview
 
@@ -11,7 +11,7 @@ graph TB
     subgraph "User Interfaces"
         A[Telegram Bot]
         B[Command Line Shell]
-        C[Legacy HTTP command adapter]
+        C[HTTP resource API]
         M[React Web Frontend]
     end
 
@@ -61,7 +61,7 @@ graph TB
 | Feature | Description |
 |---------|-------------|
 | **Multiple Storage Modes** | JSON file storage or Markdown vault (Obsidian/Logseq compatible) |
-| **Multiple Interfaces** | Telegram bot, command-line shell, or command-oriented HTTP API |
+| **Multiple Interfaces** | Telegram bot, command-line shell, or resource-oriented HTTP API |
 | **Task Scheduling** | Heuristic-based task prioritization with automatic splitting |
 | **Categories/Contexts** | Organize tasks by context (indoor, outdoor, workstation, etc.) |
 | **Statistics Tracking** | Track work done and productivity metrics |
@@ -83,7 +83,7 @@ graph TB
 advanced-task-manager/
 ├── frontend/
 │   ├── src/
-│   │   ├── api/                # Typed HTTP client and command wrappers
+│   │   ├── api/                # HTTP client and request wrappers
 │   │   ├── components/         # Reusable UI components
 │   │   ├── hooks/              # Local storage and polling hooks
 │   │   ├── types/              # API response type definitions
@@ -109,7 +109,7 @@ advanced-task-manager/
 └── compose.yaml
 ```
 
-## Available Commands
+## Command-line and Telegram Commands
 
 | Command | Description |
 |---------|-------------|
@@ -151,10 +151,10 @@ Each task contains:
 | JSON file (cmd) | JSON file | Command line | 2 |
 | JSON file (telegram) | JSON file | Telegram bot | 3 |
 | Obsidian (telegram) | Markdown vault | Telegram bot | 4 |
-| JSON file (API) | JSON file | HTTP command adapter | 5 |
-| Obsidian (API) | Markdown vault | HTTP command adapter | 6 |
+| JSON file (API) | JSON file | Resource HTTP API | 5 |
+| Obsidian (API) | Markdown vault | Resource HTTP API | 6 |
 
-Modes 5/6 use the legacy command-style HTTP adapter described below. They do not provide a resource-oriented `/api/v1/` interface, require HTTPS, or isolate task-list views by client.
+Modes 5/6 expose the versioned resource API. `HTTP_API_PREFIX` configures its base path and defaults to `/api/v1`; a value such as `/manager/api/v1` mounts it below a path prefix. HTTP task queries supply their filter, sort and page inputs per request, so clients do not share a mutable task-list selection.
 
 ## Heuristics for Task Prioritization
 
@@ -170,7 +170,7 @@ The application uses several heuristics to prioritize tasks:
 
 ### TaskApplicationService
 
-`TaskApplicationService` provides task reads and queries from the configured data providers. Query methods accept explicit task-view inputs and use a temporary manager with copies of the filter, heuristic and algorithm settings, leaving the configured manager's page, selection and view unchanged. This keeps an individual query from changing the current view; it does not give HTTP clients independent managers. `APP_MODE` selects one interface and one channel manager, whose view state is shared by requests.
+`TaskApplicationService` provides task reads and queries from the configured data providers. Query methods accept explicit task-view inputs and use a temporary manager with copies of the filter, heuristic and algorithm settings, leaving the configured manager's page, selection and view unchanged. HTTP queries therefore do not modify or depend on a shared channel selection; Telegram and command-line channels retain their configured manager behavior.
 
 Task IDs are opaque values stored with their tasks: JSON uses the `id` field, and Markdown uses `[id:: value]` on the task line. For older tasks without a declared ID, JSON derives an MD5 fallback from the description, configured file path and zero-based position in the full task array; Markdown derives it from the description, file path and line number. Reads calculate the fallback without writing it. The first actual write stores that value, which then remains stable across edits and moves. Resolution scans completed as well as open tasks: a lookup for an ID with no matching task reports absence, while duplicate IDs are ambiguous and block writes to that ID. MD5 can collide, so the fallback is not guaranteed to be unique.
 
@@ -190,17 +190,33 @@ Internal callers can identify an operation with a UUID, separate from a channel 
 
 The main service that handles user interactions through the configured interface. It processes commands, manages task lists, and coordinates between different components.
 
-### HttpUserCommService (legacy)
+### HttpUserCommService and the HTTP resource API
 
-`HttpUserCommService` exposes command-style paths where each URL path maps to a `TelegramReportingService` command (`/list`, `/stats`, `/agenda`, and others), with an optional query argument string (`args`). The frontend uses GET requests. These requests are not all read-only: commands may change task-list selection or view, write task or project data, initialize statistics state, or drain volatile notifications. The application service is not exposed as a resource-oriented HTTP API.
+`HttpUserCommService` hosts the versioned API under the configured prefix (default `/api/v1`). It exposes HAL JSON resources for the root, task collections and details, agenda, statistics, events, strategies and projects. Task changes use `PATCH /tasks/{id}` with `application/merge-patch+json` or typed `POST /operations` actions; project changes use the supported typed project operations. Responses use `application/hal+json`, errors use `application/problem+json`, and all responses are `no-store`. Errors carry a generated request ID in both `X-Request-ID` and `requestId`. Query parameters and request bodies are validated strictly, including unknown fields and non-finite numbers.
+
+Task-list defaults are page 1, page size 5, the `All active task filter`, the `GTD Algorithm` and `Remaining Effort(1)`. `filters` and `search` are repeatable query parameters. Every `POST /operations` request requires a client-generated UUID in `id`, assigned before the first send; the other required members are `type`, `target` and `parameters`. Creating a task targets the `tasks` collection.
+
+| Resource path | Methods | Purpose |
+| --- | --- | --- |
+| `/api/v1/` | GET | API version, time zone and collection links. |
+| `/api/v1/tasks` | GET | Live task page with per-request filters, search and ordering. |
+| `/api/v1/tasks/{id}` | GET, PATCH | Task detail or a validated partial task update. |
+| `/api/v1/agenda` | GET | Tasks grouped for a requested civil day. |
+| `/api/v1/statistics` | GET | Current workload and recorded work. |
+| `/api/v1/events`, `/api/v1/strategies` | GET | Event summary and available query strategies. |
+| `/api/v1/projects`, `/api/v1/projects/{name}` | GET | Project summaries and stored project content. |
+| `/api/v1/operations` | POST | Submit a task or project action with its required client-generated UUID and typed target. Creating a task uses target kind `tasks`. |
+| `/api/v1/operations/{id}` | GET | Read an available in-process operation receipt without replaying it. |
+
+Task and project links include the configured mount prefix and encode opaque identifiers as path segments. Task instants use ISO 8601 values with a UTC offset, and effort values use finite decimal text with the `pomodoro` unit. Project details expose a JSON description or Markdown content according to the configured storage mode.
+
+Every request requires a Bearer token. Authenticated successes and errors use `Cache-Control: no-store`; errors use `application/problem+json` and carry a generated request ID in both the body and `X-Request-ID`. Mutating command-style GET paths are retired with an explicit `legacy-route-retired` response. The old volatile notifications endpoint is unavailable; no notification history is exposed by this API version.
+
+Operation UUIDs make retries with the same intent return the original in-process outcome; using an existing UUID with different intent is a conflict. Receipts are held in memory and are lost on restart. An absent receipt is reported without replaying the operation and does not establish whether previous effects occurred.
 
 ### React Frontend
 
-The `frontend/` application consumes the API with a typed client layer:
-- Handles bearer authentication and backend timeout/error mapping.
-- Supports mixed backend payloads (JSON and plain text fallback).
-- Uses a Vite `/api` development proxy to avoid backend CORS changes.
-- Provides task operations and dashboards for agenda, stats, and event analysis.
+The current `frontend/` client still uses the earlier command-style GET interface. It has not been adapted to HAL resources, typed operations or the current problem response format. Since task-changing GET paths have been retired, task mutations in this frontend are not compatible with the backend API described above. A compatible resource client is future work.
 
 ### TaskListManager
 
@@ -218,6 +234,6 @@ Tracks work done on tasks, calculates productivity metrics, and provides statist
 
 The application uses `dependency-injector` to manage component lifecycle and dependencies. See `backend/src/containers/TelegramReportingServiceContainer.py` for the full container configuration.
 
-## Transport scope for extension integration
+## Transport and notifications
 
-HTTPS support for the extension integration is pending implementation, and the backend does not require HTTPS for API mode. The backend also has no persistent, non-destructive notification history: notifications live in a volatile shared queue, and a read may drain it. Treat only one client as the notification consumer while this queue is used. GET commands that access other services can also have side effects, as described above.
+The backend API authenticates requests but does not enforce HTTPS. Its API validation for this version used a local loopback test server; HTTPS behavior has not been verified and HTTPS enforcement remains unimplemented. Do not expose a Bearer token over an untrusted network. The API does not expose notifications yet, and it has no persistent notification-history resource. Mutating legacy GET paths are retired, so HTTP GET requests do not perform task or project actions.

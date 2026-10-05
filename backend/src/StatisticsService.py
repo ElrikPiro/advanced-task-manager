@@ -141,6 +141,18 @@ class StatisticsService(IStatisticsService):
         return TimeAmount(work_done)
 
     def getWorkloadStats(self, taskList: list[ITaskModel]) -> WorkloadStats:
+        return self._buildWorkloadStats(taskList, self.workDone)
+
+    def readWorkloadStats(self, taskList: list[ITaskModel]) -> WorkloadStats:
+        """Calculate statistics from the latest file snapshot without refreshing cache."""
+        fresh_work_done = self.fileBroker.readStatisticsFileContentJson()
+        return self._buildWorkloadStats(taskList, fresh_work_done)
+
+    def _buildWorkloadStats(
+        self,
+        taskList: list[ITaskModel],
+        work_done: dict[str, Any],
+    ) -> WorkloadStats:
         filteredTasks = self.workLoadAbleFilter.filter(taskList)
 
         workload: TimeAmount = TimeAmount("0.0p")
@@ -164,7 +176,7 @@ class StatisticsService(IStatisticsService):
                 offender = task.getDescription()
 
         filtered_work_done: dict[str, float] = {}
-        for key, value in self.workDone.items():
+        for key, value in work_done.items():
             if key == "log":
                 continue
             try:
@@ -177,7 +189,7 @@ class StatisticsService(IStatisticsService):
                 raise ValueError(f"Statistics value for {key} must be finite")
             filtered_work_done[key] = float(value)
 
-        log_list = self.__as_work_log_entries(self.workDone.get("log", []))
+        log_list = self.__as_work_log_entries(work_done.get("log", []))
 
         return WorkloadStats(
             workload=workload,

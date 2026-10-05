@@ -137,6 +137,9 @@ class TelegramReportingServiceContainer():
             httpToken = input("Please enter the HTTP authentication token: ")
             defaultConfig["HTTP_TOKEN"] = httpToken
 
+            httpApiPrefix = input("Please enter the HTTP API prefix (default: /api/v1): ") or "/api/v1"
+            defaultConfig["HTTP_API_PREFIX"] = httpApiPrefix
+
             httpChatId = input("Please enter the HTTP chat ID (default: 1): ") or "1"
             defaultConfig["HTTP_CHAT_ID"] = httpChatId
 
@@ -242,6 +245,7 @@ class TelegramReportingServiceContainer():
         httpUrl = self.tryGetConfig("HTTP_URL", httpMode, default="0.0.0.0")
         httpPort = int(self.tryGetConfig("HTTP_PORT", httpMode, default="8080") or "8080")
         httpToken = self.tryGetConfig("HTTP_TOKEN", httpMode, default="NULL_HTTP_TOKEN")
+        httpApiPrefix = self.tryGetConfig("HTTP_API_PREFIX", httpMode, default="/api/v1")
         httpChatId = int(self.tryGetConfig("HTTP_CHAT_ID", httpMode, default="1") or "1")
 
         appdata = self.tryGetConfig("APPDATA", obsidianMode, default="NULL_APPDATA")
@@ -287,14 +291,10 @@ class TelegramReportingServiceContainer():
             botId,
             authorized_chat_id=chatId,
         )
-        self.container.httpUserCommService = providers.Singleton(HttpUserCommService, httpUrl, httpPort, httpToken, httpChatId, botId)
-
         # Select the appropriate user communication service based on mode
         if telegramMode:
             self.container.userCommService = self.container.telegramUserCommService
-        elif httpMode:
-            self.container.userCommService = self.container.httpUserCommService
-        else:
+        elif not httpMode:
             self.container.userCommService = self.container.shellUserCommService
 
         if obsidianMode:
@@ -417,6 +417,22 @@ class TelegramReportingServiceContainer():
             self.container.projectManager(),
             mutation_coordinator=self.container.mutationCoordinator(),
         )
+
+        # Construct the HTTP adapter only after its application service exists.
+        # The provider dependency keeps the HTTP listener and operation service
+        # as singletons without introducing a back-reference cycle.
+        if httpMode:
+            self.container.httpUserCommService = providers.Singleton(
+                HttpUserCommService,
+                httpUrl,
+                httpPort,
+                httpToken,
+                httpChatId,
+                botId,
+                application_service=self.container.taskApplicationService,
+                api_prefix=httpApiPrefix,
+            )
+            self.container.userCommService = self.container.httpUserCommService
 
         # Message builder
         self.container.messageBuilder = providers.Singleton(MessageBuilder)
