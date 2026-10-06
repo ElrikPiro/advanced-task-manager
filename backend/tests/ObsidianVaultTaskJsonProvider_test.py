@@ -144,6 +144,33 @@ class TestObsidianVaultTaskJsonProvider(unittest.TestCase):
         self.assertEqual(task["severity"], "5.0")
         self.assertEqual(task["starts"], str(TimePoint.from_string("2023-01-01").as_int()))
 
+    def test_file_header_accepts_double_colon_and_preserves_value_colons(self):
+        self.mock_file_broker.getVaultFiles.return_value = [("tasks.md", 100.0)]
+        self.mock_file_broker.getVaultFileLines.return_value = [
+            "---\n",
+            "project:: open\n",
+            "track:: work\n",
+            "severity:: 2\n",
+            "remaining_cost:: 4\n",
+            "invested:: 1\n",
+            "starts: 2023-12-31T23:45\n",
+            "source: https://example.test/a:b\n",
+            "---\n",
+            "- [ ] Task [due::2024-01-01]\n",
+        ]
+
+        result = self.provider.getJson()
+        task = result["tasks"][0]
+
+        self.assertEqual(task["track"], "work")
+        self.assertEqual(task["severity"], "2.0")
+        self.assertEqual(task["remaining_cost"], "4")
+        self.assertEqual(task["invested"], "1")
+        self.assertEqual(task["total_cost"], "3.0")
+        self.assertEqual(task["starts"], str(TimePoint.from_string("2023-12-31T23:45").as_int()))
+        self.assertEqual(task["source"], "https://example.test/a:b")
+        self.assertEqual(result["projects"], [{"name": "tasks", "status": "open", "path": "tasks.md"}])
+
     def test_frontmatter_datetime_keeps_hour_and_minute_colons(self):
         self.mock_file_broker.getVaultFiles.return_value = [("tasks.md", 100.0)]
         self.mock_file_broker.getVaultFileLines.return_value = [

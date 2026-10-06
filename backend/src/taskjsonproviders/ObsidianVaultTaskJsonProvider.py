@@ -221,6 +221,8 @@ class ObsidianVaultTaskJsonProvider(ITaskJsonProvider):
             if inHeader:
                 key, separator, value = line.partition(":")
                 if separator:
+                    if value.startswith(":"):
+                        value = value[1:]
                     header[key.strip()] = value.strip()
         return header
 

@@ -147,6 +147,8 @@ Clients rely on their native certificate verifier's revocation policy; the liste
 
 If a Markdown vault mode is selected, the application will need a directory (and subdirectory) to scan markdown (.md) files to. 
 
+Markdown frontmatter values may use either `key: value` or `key:: value`. The parser removes only the delimiter and preserves later colons in values such as timestamps and URLs.
+
 > [!note]
 > Several markdown editors like Logseq or Obsidian allow users to create templates that combined with this functionability, would create a consistent TODO-list for tasks with any given periodicity.
 
