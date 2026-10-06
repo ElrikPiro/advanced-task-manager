@@ -1,8 +1,12 @@
+import json
+import os
+import tempfile
 import unittest
 from unittest.mock import Mock, patch
 import datetime
 from copy import deepcopy
 
+from src.FileBroker import FileBroker
 from src.StatisticsService import StatisticsService, StatisticsUpdateError
 from src.Interfaces.IFileBroker import FileRegistry
 from src.Utils import WorkLogEntry
@@ -147,6 +151,72 @@ class TestStatisticsService(unittest.TestCase):
 
         with self.assertRaisesRegex(ValueError, "invalid statistics"):
             self.service.initialize()
+
+    def test_work_log_entry_deepcopy_preserves_fields_and_legacy_serialization(self):
+        entry = WorkLogEntry(timestamp=1672531200000, work_units=2.25, task="Original task")
+
+        copied = deepcopy(entry)
+        copied.task = "Changed copy"
+
+        self.assertIsNot(copied, entry)
+        self.assertEqual(copied.__dict__(), {
+            "timestamp": 1672531200000,
+            "work_units": 2.25,
+            "task": "Changed copy",
+        })
+        self.assertEqual(entry.__dict__(), {
+            "timestamp": 1672531200000,
+            "work_units": 2.25,
+            "task": "Original task",
+        })
+
+    def test_initialize_copies_real_file_broker_log_and_keeps_json_serialization(self):
+        with tempfile.TemporaryDirectory() as directory:
+            broker = FileBroker(directory, directory, os.path.join(directory, "vault"))
+            stats_path = os.path.join(directory, "statistics.json")
+            source_document = {
+                "2026-10-06": 1.5,
+                "future_metric": {"keep": True},
+                "log": [{
+                    "timestamp": 1791288000000,
+                    "work_units": 2.25,
+                    "task": "Original task",
+                }],
+            }
+            with open(stats_path, "w", encoding="utf-8") as stats_file:
+                json.dump(source_document, stats_file)
+
+            source_data = broker.readStatisticsFileContentJson()
+            service = StatisticsService(
+                broker,
+                self.mock_workload_filter,
+                self.mock_remaining_effort_heuristic,
+                self.mock_main_heuristic,
+            )
+            with patch.object(broker, "readStatisticsFileContentJson", return_value=source_data):
+                service.initialize()
+
+            self.assertIsInstance(source_data["log"][0], WorkLogEntry)
+            self.assertIsInstance(service.workDone["log"][0], WorkLogEntry)
+            self.assertIsNot(service.workDone, source_data)
+            self.assertIsNot(service.workDone["log"], source_data["log"])
+            self.assertIsNot(service.workDone["log"][0], source_data["log"][0])
+            service.workDone["log"][0].task = "Updated task"
+            self.assertEqual(source_data["log"][0].task, "Original task")
+
+            broker.writeFileContentJson(FileRegistry.STATISTICS_JSON, service.workDone)
+            with open(stats_path, "r", encoding="utf-8") as stats_file:
+                saved_document = json.load(stats_file)
+
+            self.assertEqual(saved_document, {
+                "2026-10-06": 1.5,
+                "future_metric": {"keep": True},
+                "log": [{
+                    "timestamp": 1791288000000,
+                    "work_units": 2.25,
+                    "task": "Updated task",
+                }],
+            })
 
     def test_getEventStatistics_empty_task_list(self):
         # Arrange

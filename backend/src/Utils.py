@@ -74,6 +74,15 @@ class WorkLogEntry:
     timestamp: int
     work_units: float
     task: str
+
+    def __deepcopy__(self, memo: dict[int, typing.Any]) -> "WorkLogEntry":
+        copied = WorkLogEntry(
+            timestamp=self.timestamp,
+            work_units=self.work_units,
+            task=self.task,
+        )
+        memo[id(self)] = copied
+        return copied
     
     @typing.no_type_check
     def __dict__(self) -> dict:
