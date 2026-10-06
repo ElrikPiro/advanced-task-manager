@@ -56,6 +56,10 @@ Available combinations:
 5. **JSON file (API)** - JSON storage with the resource-oriented HTTP API
 6. **Obsidian (API)** - Markdown vault with the resource-oriented HTTP API
 
+### Markdown vault reads and service diagnostics
+
+The Markdown provider checks the vault inventory on reads and reuses parsed data for files whose paths and modification times are unchanged. New, changed, renamed, and deleted notes are reflected in the next read; callers receive detached snapshots. After a successful discovery pass, the periodic task-list check avoids rereading unchanged notes. Service failure logs include bounded exception types and source file/line details, while omitting exception messages and local paths.
+
 ### HTTP API behavior and limits
 
 `APP_MODE` 5/6 exposes the versioned resource API. `HTTP_API_PREFIX` sets its base path and defaults to `/api/v1`; a mount prefix such as `/manager/api/v1` is supported. It provides task, agenda, statistics, event, strategy, project, operation and notification-history resources using HAL JSON (`application/hal+json`). Reads use explicit query parameters and do not change a shared task-list selection. Task changes use `PATCH` with `application/merge-patch+json`; task and project actions use typed `POST /operations` requests. Arbitrary command names and unknown fields are rejected. Errors use `application/problem+json`. Bearer authentication is required, and responses are marked `Cache-Control: no-store`.

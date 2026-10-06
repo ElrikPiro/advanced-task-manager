@@ -1,5 +1,7 @@
+from copy import deepcopy
 import re
 import math
+from threading import RLock
 
 from src.Utils import ProjectJsonListType, TaskDiscoveryPolicies, TaskJsonListType, TaskJsonType
 from ..wrappers.TimeManagement import TimePoint
@@ -23,6 +25,14 @@ class ObsidianVaultTaskJsonProvider(ITaskJsonProvider):
     ):
         self.__fileBroker = fileBroker
         self.__policies = policies
+        self.__snapshot_lock = RLock()
+        self.__request_sequence = 0
+        self.__last_inventory: tuple[tuple[str, float], ...] | None = None
+        self.__last_cache_day: str | None = None
+        self.__last_json: TaskJsonType | None = None
+        self.__file_snapshots: dict[str, tuple[float, TaskJsonType]] = {}
+        self.__last_reconciled_inventory: tuple[tuple[str, float], ...] | None = None
+        self.__last_reconciled_day: str | None = None
         self.mutation_coordinator = mutation_coordinator
         if self.mutation_coordinator is None:
             inherited_coordinator = getattr(fileBroker, "mutation_coordinator", None)
@@ -31,20 +41,76 @@ class ObsidianVaultTaskJsonProvider(ITaskJsonProvider):
 
     def getJson(self) -> TaskJsonType:
         """Read and parse vault data without creating or changing task files."""
-        task_list: TaskJsonListType = []
-        project_list: ProjectJsonListType = []
+        snapshot, _, _ = self.__getJsonSnapshot()
+        return snapshot
 
+    def __getJsonSnapshot(
+        self,
+    ) -> tuple[TaskJsonType, tuple[tuple[str, float], ...], str]:
+        with self.__snapshot_lock:
+            self.__request_sequence += 1
+            request_sequence = self.__request_sequence
+
+        cache_day = str(TimePoint.today())
         vaultFiles = [
             file for file in self.__fileBroker.getVaultFiles(VaultRegistry.OBSIDIAN)
             if file[0].lower().endswith(".md")
         ]
-        for file in vaultFiles:
-            self.__process_task_file(file, task_list, project_list)
+        inventory = tuple(vaultFiles)
+        cached_snapshot: TaskJsonType | None = None
+        with self.__snapshot_lock:
+            inventory_matches = inventory == self.__last_inventory
+            day_matches = cache_day == self.__last_cache_day
+            if inventory_matches and day_matches and self.__last_json is not None:
+                cached_snapshot = self.__last_json
+            reusable_file_snapshots = (
+                dict(self.__file_snapshots)
+                if cache_day == self.__last_cache_day
+                else {}
+            )
 
-        return {
-            "tasks": task_list,
-            "projects": project_list
-        }
+        if cached_snapshot is not None:
+            return deepcopy(cached_snapshot), inventory, cache_day
+
+        next_file_snapshots: dict[str, tuple[float, TaskJsonType]] = {}
+        task_list: TaskJsonListType = []
+        project_list: ProjectJsonListType = []
+
+        for file in vaultFiles:
+            relative_path, mtime = file
+            cached = reusable_file_snapshots.get(relative_path)
+            if cached is not None and cached[0] == mtime:
+                file_snapshot = cached[1]
+            else:
+                file_tasks: TaskJsonListType = []
+                file_projects: ProjectJsonListType = []
+                self.__process_task_file(file, file_tasks, file_projects)
+                file_snapshot = {"tasks": file_tasks, "projects": file_projects}
+
+            next_file_snapshots[relative_path] = (mtime, file_snapshot)
+            task_list.extend(file_snapshot["tasks"])
+            project_list.extend(file_snapshot["projects"])
+
+        snapshot: TaskJsonType = {"tasks": task_list, "projects": project_list}
+        # Commit only after every changed file was read and parsed. A partial
+        # read must never become the cached vault view. A newer concurrent
+        # request owns publication so an older, slower read cannot roll it back.
+        with self.__snapshot_lock:
+            if request_sequence == self.__request_sequence:
+                self.__file_snapshots = next_file_snapshots
+                self.__last_inventory = inventory
+                self.__last_cache_day = cache_day
+                self.__last_json = snapshot
+        return deepcopy(snapshot), inventory, cache_day
+
+    def __invalidate_cached_file(self, relative_path: str) -> None:
+        with self.__snapshot_lock:
+            self.__request_sequence += 1
+            self.__file_snapshots.pop(relative_path, None)
+            self.__last_inventory = None
+            self.__last_json = None
+            self.__last_reconciled_inventory = None
+            self.__last_reconciled_day = None
 
     def parseTaskFile(self, relative_path: str, lines: list[str]) -> list[dict[str, str]]:
         """Parse one supplied Markdown snapshot without performing file I/O."""
@@ -63,22 +129,38 @@ class ObsidianVaultTaskJsonProvider(ITaskJsonProvider):
 
     def __discover(self) -> TaskJsonType:
         """Persist a default next action in each uncovered open project."""
+        cache_day = str(TimePoint.today())
         vaultFiles = [
             file for file in self.__fileBroker.getVaultFiles(VaultRegistry.OBSIDIAN)
             if file[0].lower().endswith(".md")
         ]
+        inventory = tuple(vaultFiles)
+        reconciled_snapshot: TaskJsonType | None = None
+        with self.__snapshot_lock:
+            inventory_matches = inventory == self.__last_reconciled_inventory
+            day_matches = cache_day == self.__last_reconciled_day
+            snapshot_inventory_matches = inventory == self.__last_inventory
+            snapshot_day_matches = cache_day == self.__last_cache_day
+            if all((
+                inventory_matches,
+                day_matches,
+                snapshot_inventory_matches,
+                snapshot_day_matches,
+            )):
+                reconciled_snapshot = self.__last_json
+        if reconciled_snapshot is not None:
+            return deepcopy(reconciled_snapshot)
+
+        lines_by_path: dict[str, list[str]] = {}
         known_task_ids: set[str] = set()
         for initial_path, _ in vaultFiles:
-            known_task_ids.update(
-                self.__task_ids_from_lines(
-                    self.__fileBroker.getVaultFileLines(VaultRegistry.OBSIDIAN, initial_path),
-                    initial_path,
-                )
-            )
+            lines = self.__fileBroker.getVaultFileLines(VaultRegistry.OBSIDIAN, initial_path)
+            lines_by_path[initial_path] = lines
+            known_task_ids.update(self.__task_ids_from_lines(lines, initial_path))
 
         for vault_file in vaultFiles:
             relative_path = vault_file[0]
-            lines = self.__fileBroker.getVaultFileLines(VaultRegistry.OBSIDIAN, relative_path)
+            lines = lines_by_path[relative_path]
             header = self.__getFileHeader(lines)
             if header.get("project") != "open":
                 continue
@@ -124,16 +206,26 @@ class ObsidianVaultTaskJsonProvider(ITaskJsonProvider):
                 updated.append(task_line)
                 return updated
 
+            self.__invalidate_cached_file(relative_path)
             committed_lines = self.__fileBroker.updateVaultFileLines(
                 VaultRegistry.OBSIDIAN,
                 relative_path,
                 prepare,
             )
+            self.__invalidate_cached_file(relative_path)
             known_task_ids.update(self.__task_ids_from_lines(committed_lines, relative_path))
 
         # Always parse again so the returned view reflects the persisted
         # Markdown and receives the physical line number used by the model.
-        return self.getJson()
+        snapshot, _, final_day = self.__getJsonSnapshot()
+        # Record only the inventory checked at the beginning of this pass.
+        # Writes or external changes produce a different next inventory and
+        # force one more reconciliation before the fast path can be used.
+        if cache_day == final_day:
+            with self.__snapshot_lock:
+                self.__last_reconciled_inventory = inventory
+                self.__last_reconciled_day = cache_day
+        return snapshot
 
     def __task_ids_from_lines(self, lines: list[str], relative_path: str) -> set[str]:
         identities: set[str] = set()

@@ -111,6 +111,26 @@ class TestTelegramReportingService(unittest.TestCase):
         )
         self.telegramReportingService._listenForEvents.assert_awaited_once()
 
+    def test_listenForEvents_logs_safe_diagnostic_for_http_failure(self) -> None:
+        self.bot.api = object()
+        self.telegramReportingService.MAX_ERRORS = 0
+        self.telegramReportingService.ERROR_TIMEOUT = 0
+        self.telegramReportingService._listenForEvents = AsyncMock(
+            side_effect=RuntimeError("/private/path and secret token")
+        )
+
+        self.telegramReportingService.listenForEvents()
+
+        self.assertEqual(
+            self.telegramReportingService._lastError,
+            "HTTP service failed; diagnostic details are suppressed.",
+        )
+        logged_error = str(self.logger.error.call_args.args[0])
+        self.assertIn("exception_chain=RuntimeError", logged_error)
+        self.assertIn("TelegramReportingService.py:", logged_error)
+        self.assertNotIn("/private/path", logged_error)
+        self.assertNotIn("secret token", logged_error)
+
     def test_internalListenForEvents_normal(self) -> None:
         # Arrange
         def _stop_after_first_call() -> None:
@@ -181,6 +201,40 @@ class TestTelegramReportingService(unittest.TestCase):
         self.assertTrue(result)
         self.taskProvider.compare.assert_called_once_with(mockTaskList2, mockTaskList1)
         self.assertEqual(self.telegramReportingService._TelegramReportingService__lastModelList, mockTaskList2)
+
+    def test_hasFilteredListChanged_uses_channel_snapshot_with_application_service(self) -> None:
+        application_service = MagicMock()
+        self.telegramReportingService._application_service = application_service
+        channel_tasks = [MagicMock()]
+        self.task_list_manager.filtered_task_list = channel_tasks
+        self.taskProvider.compare.return_value = False
+
+        changed = self.telegramReportingService.hasFilteredListChanged()
+
+        self.assertTrue(changed)
+        self.taskProvider.compare.assert_called_once_with(channel_tasks, [])
+        application_service.query_tasks.assert_not_called()
+        application_service.read_task.assert_not_called()
+
+    def test_hasFilteredListChanged_preserves_application_view_page(self) -> None:
+        application_service = MagicMock()
+        self.telegramReportingService._application_service = application_service
+        channel_tasks = [MagicMock() for _ in range(5)]
+        self.task_list_manager.filtered_task_list = channel_tasks
+        self.task_list_manager.current_view.return_value = TaskView(page=2, page_size=2)
+        self.taskProvider.compare.return_value = False
+
+        changed = self.telegramReportingService.hasFilteredListChanged()
+
+        visible_page = channel_tasks[2:4]
+        self.assertTrue(changed)
+        self.taskProvider.compare.assert_called_once_with(visible_page, [])
+        self.assertEqual(
+            self.telegramReportingService._TelegramReportingService__lastModelList,
+            visible_page,
+        )
+        application_service.query_tasks.assert_not_called()
+        application_service.read_task.assert_not_called()
 
     def test_listCommand(self) -> None:
         # Arrange
@@ -256,6 +310,7 @@ class TestTelegramReportingService(unittest.TestCase):
         
         filtered_list = [mock_task]
         self.task_list_manager.filtered_task_list = filtered_list
+        self.telegramReportingService._TelegramReportingService__lastModelList = filtered_list
         self.telegramReportingService.hasFilteredListChanged = MagicMock(return_value=True)
         self.messageBuilder.createOutboundMessage = MagicMock(return_value=MagicMock())
 
@@ -267,6 +322,42 @@ class TestTelegramReportingService(unittest.TestCase):
         self.task_list_manager.reset_pagination.assert_called_once()
         self.messageBuilder.createOutboundMessage.assert_called_once()
         self.bot.sendMessage.assert_awaited_once()
+
+    def test_checkFilteredListChanges_does_not_rescan_application_service_tasks(self) -> None:
+        application_service = MagicMock()
+        self.telegramReportingService._application_service = application_service
+        self.telegramReportingService.chatId = 123
+        channel_task = MagicMock()
+        self.task_list_manager.filtered_task_list = [channel_task]
+        self.telegramReportingService._TelegramReportingService__lastModelList = [channel_task]
+        algorithm = MagicMock(spec=IAlgorithm)
+        algorithm.getDescription.return_value = "Current algorithm"
+        self.task_list_manager.selected_algorithm = algorithm
+        self.telegramReportingService.hasFilteredListChanged = MagicMock(return_value=True)
+        self.messageBuilder.createOutboundMessage.return_value = MagicMock()
+
+        asyncio.run(self.telegramReportingService.checkFilteredListChanges())
+
+        application_service.query_tasks.assert_not_called()
+        application_service.read_task.assert_not_called()
+        self.messageBuilder.createOutboundMessage.assert_called_once()
+        self.bot.sendMessage.assert_awaited_once()
+
+    def test_checkFilteredListChanges_supports_channel_without_algorithm(self) -> None:
+        self.telegramReportingService.chatId = 123
+        task = MagicMock()
+        self.telegramReportingService._TelegramReportingService__lastModelList = [task]
+        self.task_list_manager.selected_algorithm = None
+        self.telegramReportingService.hasFilteredListChanged = MagicMock(return_value=True)
+        self.messageBuilder.createOutboundMessage.return_value = MagicMock()
+
+        asyncio.run(self.telegramReportingService.checkFilteredListChanges())
+
+        self.messageBuilder.createOutboundMessage.assert_called_once()
+        self.assertEqual(
+            self.messageBuilder.createOutboundMessage.call_args.kwargs["content"].text,
+            "No algorithm selected",
+        )
 
     def test_checkFilteredListChanges_chat_id_zero(self) -> None:
         # Arrange

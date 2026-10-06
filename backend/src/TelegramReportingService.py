@@ -28,6 +28,7 @@ from .domain.TaskApplicationService import TaskApplicationService
 from .domain.errors import DomainError
 from .domain.models import AgendaQuery, OperationTarget, TaskView
 from .MutationCoordinator import MutationCoordinator
+from .SafeDiagnostics import format_safe_exception_diagnostic
 
 
 class TelegramReportingService(IReportingService):
@@ -124,11 +125,12 @@ class TelegramReportingService(IReportingService):
                 asyncio.run(self._listenForEvents())
                 errCount = 0
             except Exception as e:
+                diagnostic = format_safe_exception_diagnostic(e)
                 if getattr(self.bot, "api", None) is not None:
                     self._lastError = "HTTP service failed; diagnostic details are suppressed."
-                    self._logger.error(self._lastError)
+                    self._logger.error(f"{self._lastError} {diagnostic}")
                 else:
-                    self._lastError = f"Error: {repr(e)}"
+                    self._lastError = f"Error: {diagnostic}"
                     self._logger.error(self._lastError)
                 sleepSync(self.ERROR_TIMEOUT)
                 errCount += 1
@@ -147,47 +149,47 @@ class TelegramReportingService(IReportingService):
                 try:
                     await self.bot.shutdown()
                 except Exception as e:
+                    diagnostic = format_safe_exception_diagnostic(e)
                     if getattr(self.bot, "api", None) is not None:
                         self._logger.critical(
-                            "HTTP service shutdown failed; diagnostic details are suppressed."
+                            "HTTP service shutdown failed; diagnostic details are suppressed. "
+                            f"{diagnostic}"
                         )
                     else:
-                        self._logger.critical(f"Fatal error: {repr(e)} shutting down.")
+                        self._logger.critical(f"Fatal error: {diagnostic} shutting down.")
                     self.run = False
                 finally:
                     raise
 
     def hasFilteredListChanged(self) -> bool:
+        # The provider callback keeps the channel's model snapshot current.
+        # Re-querying the application service here would reread the whole vault
+        # once for the list and again for every task on every polling turn.
+        filteredList = list(self._taskListManager.filtered_task_list)
         if self._application_service is not None:
-            content = self._application_service.query_tasks(self._current_view())
-            tasks = [self._application_service.read_task(entry.id) for entry in content.tasks]
-            if self.taskProvider.compare(tasks, self.__lastModelList):
-                return False
-            self.__lastModelList = tasks
-            return True
-        filteredList = self._taskListManager.filtered_task_list
+            view = self._current_view()
+            start = max(view.page - 1, 0) * view.page_size
+            filteredList = filteredList[start:start + view.page_size]
         if self.taskProvider.compare(filteredList, self.__lastModelList):
             return False
-        self.__lastModelList = filteredList
+        self.__lastModelList = list(filteredList)
         return True
 
     async def checkFilteredListChanges(self) -> None:
         if self.chatId != 0 and self.hasFilteredListChanged():
-            # Send the updated list
-            if self._application_service is not None:
-                content = self._application_service.query_tasks(self._current_view())
-                if not content.tasks:
-                    return
-                task = self._application_service.read_task(content.tasks[0].id)
-                algorithm_description = content.algorithm_desc
-            else:
-                filteredList = self._taskListManager.filtered_task_list
-                if len(filteredList) == 0:
-                    return
-                task = filteredList[0]
-                algorithm = self._taskListManager.selected_algorithm
-                assert isinstance(algorithm, IAlgorithm)
-                algorithm_description = algorithm.getDescription()
+            # Send from the same channel snapshot compared above. Explicit user
+            # queries still go through the application service and read current
+            # files; notification polling does not need a second vault scan.
+            filteredList = list(self.__lastModelList)
+            if len(filteredList) == 0:
+                return
+            task = filteredList[0]
+            algorithm = getattr(self._taskListManager, "selected_algorithm", None)
+            algorithm_description = (
+                algorithm.getDescription()
+                if isinstance(algorithm, IAlgorithm)
+                else "No algorithm selected"
+            )
             self._taskListManager.reset_pagination()
             message = self.__messageBuilder.createOutboundMessage(
                 source=self.bot.getBotAgent(),

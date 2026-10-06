@@ -1,5 +1,7 @@
 import unittest
-from unittest.mock import MagicMock
+from concurrent.futures import ThreadPoolExecutor
+from threading import Event
+from unittest.mock import MagicMock, call, patch
 from src.taskjsonproviders.ObsidianVaultTaskJsonProvider import ObsidianVaultTaskJsonProvider
 from src.Interfaces.IFileBroker import IFileBroker, VaultRegistry
 from src.wrappers.TimeManagement import TimePoint
@@ -35,14 +37,250 @@ class TestObsidianVaultTaskJsonProvider(unittest.TestCase):
         self.assertEqual(result, {"tasks": [], "projects": []})
         self.mock_file_broker.getVaultFiles.assert_called_once_with(VaultRegistry.OBSIDIAN)
 
-    def test_getJson_re_reads_vault_without_discovery(self):
+    def test_getJson_reuses_unchanged_file_parse_without_discovery(self):
         self.mock_file_broker.getVaultFiles.return_value = [("test.md", 100.0)]
         self.mock_file_broker.getVaultFileLines.return_value = ["---", "---"]
         self.provider.getJson()
 
         self.mock_file_broker.getVaultFileLines.reset_mock()
         self.provider.getJson()
-        self.mock_file_broker.getVaultFileLines.assert_called_once_with(VaultRegistry.OBSIDIAN, "test.md")
+        self.mock_file_broker.getVaultFileLines.assert_not_called()
+
+    def test_getJson_cache_tracks_inventory_mtime_and_returns_detached_results(self):
+        files = [("one.md", 100.0), ("two.md", 100.0)]
+        contents = {
+            "one.md": ["---", "project: open", "---", "- [ ] One [track::work]"],
+            "two.md": ["---", "project: open", "---", "- [x] Two [track::work]"],
+            "three.md": ["- [ ] Three [track::work]"],
+        }
+        self.mock_file_broker.getVaultFiles.side_effect = lambda _: list(files)
+        self.mock_file_broker.getVaultFileLines.side_effect = lambda _, path: list(contents[path])
+
+        first = self.provider.getJson()
+        self.assertEqual(self.mock_file_broker.getVaultFileLines.call_count, 2)
+        self.assertEqual([task["taskText"] for task in first["tasks"]], ["One", "Two"])
+        self.assertEqual(first["tasks"][1]["status"], "x")
+        self.assertEqual([project["path"] for project in first["projects"]], ["one.md", "two.md"])
+        first["tasks"][0]["taskText"] = "poisoned caller result"
+        first["projects"][0]["status"] = "held"
+
+        self.mock_file_broker.getVaultFileLines.reset_mock()
+        self.mock_file_broker.getVaultFiles.reset_mock()
+        unchanged = self.provider.getJson()
+        self.mock_file_broker.getVaultFiles.assert_called_once_with(VaultRegistry.OBSIDIAN)
+        self.mock_file_broker.getVaultFileLines.assert_not_called()
+        self.assertEqual(unchanged["tasks"][0]["taskText"], "One")
+        self.assertEqual(unchanged["projects"][0]["status"], "open")
+
+        contents["one.md"] = ["---", "project: closed", "---", "- [x] One [track::work]"]
+        files = [("one.md", 101.0), ("three.md", 100.0)]
+        self.mock_file_broker.getVaultFiles.reset_mock()
+        changed = self.provider.getJson()
+        self.assertEqual(
+            [call.args[1] for call in self.mock_file_broker.getVaultFileLines.call_args_list],
+            ["one.md", "three.md"],
+        )
+        self.mock_file_broker.getVaultFiles.assert_called_once_with(VaultRegistry.OBSIDIAN)
+        self.assertEqual([task["taskText"] for task in changed["tasks"]], ["One", "Three"])
+        self.assertEqual(changed["tasks"][0]["status"], "x")
+        self.assertEqual(changed["projects"], [{"name": "one", "status": "closed", "path": "one.md"}])
+
+        # A rename is a new path even when the replacement has the old mtime;
+        # deleted paths disappear from the snapshot and unchanged paths reuse
+        # their parsed values.
+        contents["renamed.md"] = ["---", "project: open", "---", "- [x] Renamed [track::work]"]
+        files = [("one.md", 101.0), ("renamed.md", 100.0)]
+        self.mock_file_broker.getVaultFileLines.reset_mock()
+        self.mock_file_broker.getVaultFiles.reset_mock()
+        renamed = self.provider.getJson()
+        self.assertEqual(
+            [call.args[1] for call in self.mock_file_broker.getVaultFileLines.call_args_list],
+            ["renamed.md"],
+        )
+        self.mock_file_broker.getVaultFiles.assert_called_once_with(VaultRegistry.OBSIDIAN)
+        self.assertEqual([task["taskText"] for task in renamed["tasks"]], ["One", "Renamed"])
+        self.assertEqual(renamed["tasks"][1]["status"], "x")
+        self.assertEqual(
+            [(project["path"], project["status"]) for project in renamed["projects"]],
+            [("one.md", "closed"), ("renamed.md", "open")],
+        )
+
+    def test_getJson_refreshes_default_dates_when_local_day_changes(self):
+        self.mock_file_broker.getVaultFiles.return_value = [("today.md", 100.0)]
+        self.mock_file_broker.getVaultFileLines.return_value = ["- [ ] Today [track::work]"]
+        first_day = TimePoint.from_string("2026-10-06")
+        next_day = TimePoint.from_string("2026-10-07")
+
+        with patch.object(TimePoint, "today", return_value=first_day):
+            first = self.provider.getJson()
+        with patch.object(TimePoint, "today", return_value=next_day):
+            next_snapshot = self.provider.getJson()
+
+        self.assertEqual(self.mock_file_broker.getVaultFileLines.call_count, 2)
+        self.assertEqual(first["tasks"][0]["starts"], str(first_day.as_int()))
+        self.assertEqual(first["tasks"][0]["due"], str(first_day.as_int()))
+        self.assertEqual(next_snapshot["tasks"][0]["starts"], str(next_day.as_int()))
+        self.assertEqual(next_snapshot["tasks"][0]["due"], str(next_day.as_int()))
+
+    def test_failed_changed_file_read_does_not_publish_partial_snapshot(self):
+        files = [("tasks.md", 100.0)]
+        contents = ["- [ ] Original [track::work]"]
+        fail_read = False
+        self.mock_file_broker.getVaultFiles.side_effect = lambda _: list(files)
+
+        def read_lines(_, path):
+            if fail_read:
+                raise OSError("temporary read failure")
+            return list(contents)
+
+        self.mock_file_broker.getVaultFileLines.side_effect = read_lines
+        original = self.provider.getJson()
+        self.assertEqual(original["tasks"][0]["taskText"], "Original")
+
+        files = [("tasks.md", 101.0)]
+        contents[:] = ["- [ ] Updated [track::work]"]
+        fail_read = True
+        with self.assertRaisesRegex(OSError, "temporary read failure"):
+            self.provider.getJson()
+
+        fail_read = False
+        recovered = self.provider.getJson()
+        self.assertEqual(recovered["tasks"][0]["taskText"], "Updated")
+        self.assertEqual(self.mock_file_broker.getVaultFileLines.call_count, 3)
+
+    def test_file_invalidation_prevents_pending_old_read_from_publishing(self):
+        contents = ["- [ ] Before [track::work]"]
+        read_started = Event()
+        release_read = Event()
+        self.mock_file_broker.getVaultFiles.return_value = [("tasks.md", 100.0)]
+
+        def read_lines(_, __):
+            snapshot = list(contents)
+            read_started.set()
+            if not release_read.wait(timeout=5):
+                raise TimeoutError("test read barrier timed out")
+            return snapshot
+
+        self.mock_file_broker.getVaultFileLines.side_effect = read_lines
+        with ThreadPoolExecutor(max_workers=1) as executor:
+            pending_read = executor.submit(self.provider.getJson)
+            self.assertTrue(read_started.wait(timeout=5))
+            self.provider._ObsidianVaultTaskJsonProvider__invalidate_cached_file("tasks.md")
+            contents[:] = ["- [ ] After [track::work]"]
+            release_read.set()
+            old_result = pending_read.result(timeout=5)
+
+        self.assertEqual(old_result["tasks"][0]["taskText"], "Before")
+        fresh_result = self.provider.getJson()
+        self.assertEqual(fresh_result["tasks"][0]["taskText"], "After")
+        self.assertEqual(self.mock_file_broker.getVaultFileLines.call_count, 2)
+
+    def test_discovery_generates_initial_action_then_reuses_warm_snapshot(self):
+        files = [("project.md", 100.0)]
+        contents = {"project.md": ["---", "project: open", "track: work", "---", "# Project"]}
+        self.mock_file_broker.getVaultFiles.side_effect = lambda _: list(files)
+        self.mock_file_broker.getVaultFileLines.side_effect = lambda _, path: list(contents[path])
+
+        def update_lines(_, path, updater):
+            updated = updater(list(contents[path]))
+            contents[path] = list(updated)
+            files[:] = [(current_path, mtime + 1.0 if current_path == path else mtime) for current_path, mtime in files]
+            return list(updated)
+
+        self.mock_file_broker.updateVaultFileLines.side_effect = update_lines
+
+        first = self.provider.discover()
+        self.assertEqual(
+            [task["taskText"] for task in first["tasks"]],
+            ["Define next action"],
+        )
+        self.assertEqual(self.mock_file_broker.getVaultFileLines.call_count, 2)
+
+        self.mock_file_broker.getVaultFileLines.reset_mock()
+        second = self.provider.discover()
+        self.assertEqual([task["taskText"] for task in second["tasks"]], ["Define next action"])
+        self.assertEqual(self.mock_file_broker.getVaultFileLines.call_count, 1)
+
+        self.mock_file_broker.getVaultFiles.reset_mock()
+        self.mock_file_broker.getVaultFileLines.reset_mock()
+        third = self.provider.discover()
+        self.assertEqual([task["taskText"] for task in third["tasks"]], ["Define next action"])
+        self.mock_file_broker.getVaultFiles.assert_called_once_with(VaultRegistry.OBSIDIAN)
+        self.mock_file_broker.getVaultFileLines.assert_not_called()
+
+    def test_failed_discovery_is_retried_and_changed_project_still_gets_action(self):
+        files = [("existing.md", 100.0), ("new.md", 200.0)]
+        contents = {
+            "existing.md": [
+                "---", "project: open", "track: work", "---",
+                "- [ ] Existing [track::work]",
+            ],
+            "new.md": ["---", "project: closed", "track: work", "---", "# New project"],
+        }
+        fail_new_project_read = False
+        self.mock_file_broker.getVaultFiles.side_effect = lambda _: list(files)
+
+        def read_lines(_, path):
+            if path == "new.md" and fail_new_project_read:
+                raise OSError("temporary project read failure")
+            return list(contents[path])
+
+        def update_lines(_, path, updater):
+            updated = updater(list(contents[path]))
+            contents[path] = list(updated)
+            files[:] = [(current_path, mtime + 1.0 if current_path == path else mtime) for current_path, mtime in files]
+            return list(updated)
+
+        self.mock_file_broker.getVaultFileLines.side_effect = read_lines
+        self.mock_file_broker.updateVaultFileLines.side_effect = update_lines
+        self.provider.discover()
+
+        contents["new.md"] = ["---", "project: open", "track: work", "---", "# New project"]
+        files[:] = [(path, mtime + 1.0 if path == "new.md" else mtime) for path, mtime in files]
+        self.provider.getJson()  # Cache the new inventory before discovery fails.
+        fail_new_project_read = True
+        with self.assertRaisesRegex(OSError, "temporary project read failure"):
+            self.provider.discover()
+
+        fail_new_project_read = False
+        self.mock_file_broker.getVaultFileLines.reset_mock()
+        retried = self.provider.discover()
+
+        self.assertTrue(any(task["file"] == "new.md" and task["taskText"] == "Define next action" for task in retried["tasks"]))
+        self.assertGreater(self.mock_file_broker.getVaultFileLines.call_count, 0)
+
+    def test_external_project_added_during_discovery_is_reconciled_next_time(self):
+        files = [("existing.md", 100.0)]
+        contents = {
+            "existing.md": [
+                "---", "project: open", "track: work", "---",
+                "- [ ] Existing [track::work]",
+            ],
+            "new.md": ["---", "project: open", "track: work", "---", "# New project"],
+        }
+        external_change_added = False
+        self.mock_file_broker.getVaultFiles.side_effect = lambda _: list(files)
+
+        def read_lines(_, path):
+            nonlocal external_change_added
+            if path == "existing.md" and not external_change_added:
+                files.append(("new.md", 200.0))
+                external_change_added = True
+            return list(contents[path])
+
+        def update_lines(_, path, updater):
+            updated = updater(list(contents[path]))
+            contents[path] = list(updated)
+            files[:] = [(current_path, mtime + 1.0 if current_path == path else mtime) for current_path, mtime in files]
+            return list(updated)
+
+        self.mock_file_broker.getVaultFileLines.side_effect = read_lines
+        self.mock_file_broker.updateVaultFileLines.side_effect = update_lines
+
+        self.provider.discover()
+        retried = self.provider.discover()
+
+        self.assertTrue(any(task["file"] == "new.md" and task["taskText"] == "Define next action" for task in retried["tasks"]))
 
     def test_process_task_file_with_project_header(self):
         self.mock_file_broker.getVaultFiles.return_value = [("project.md", 100.0)]
