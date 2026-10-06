@@ -105,6 +105,58 @@ class TestObsidianVaultTaskJsonProvider(unittest.TestCase):
             [("one.md", "closed"), ("renamed.md", "open")],
         )
 
+    def test_identity_snapshot_reuses_parse_and_keeps_invalid_metadata_ids_reserved(self):
+        self.mock_file_broker.getVaultFiles.return_value = [("tasks.md", 100.0)]
+        self.mock_file_broker.getVaultFileLines.return_value = [
+            "- [ ] Valid task [track::work] [id::valid-id]",
+            "- [x] Invalid task [track::work] [severity::bad] [id::reserved-id]",
+        ]
+
+        parsed = self.provider.getJson()
+        self.assertEqual([task["id"] for task in parsed["tasks"]], ["valid-id"])
+        self.mock_file_broker.getVaultFileLines.reset_mock()
+
+        identities = self.provider.getTaskIdentitySnapshot()
+
+        self.assertEqual(
+            identities,
+            [
+                {"id": "valid-id", "file": "tasks.md", "line": 0},
+                {"id": "reserved-id", "file": "tasks.md", "line": 1},
+            ],
+        )
+        self.mock_file_broker.getVaultFiles.assert_called_with(VaultRegistry.OBSIDIAN)
+        self.mock_file_broker.getVaultFileLines.assert_not_called()
+
+    def test_identity_snapshot_reloads_only_changed_and_added_files(self):
+        files = [("one.md", 100.0), ("two.md", 100.0)]
+        contents = {
+            "one.md": ["- [ ] One [track::work] [id::one]"],
+            "two.md": ["- [ ] Two [track::work] [id::two]"],
+            "three.md": ["- [x] Three [track::work] [id::three]"],
+        }
+        self.mock_file_broker.getVaultFiles.side_effect = lambda _: list(files)
+        self.mock_file_broker.getVaultFileLines.side_effect = lambda _, path: list(contents[path])
+        self.provider.getJson()
+
+        contents["two.md"] = ["- [ ] Two updated [track::work] [id::two-updated]"]
+        files[:] = [("two.md", 101.0), ("three.md", 102.0)]
+        self.mock_file_broker.getVaultFileLines.reset_mock()
+
+        identities = self.provider.getTaskIdentitySnapshot()
+
+        self.assertEqual(
+            identities,
+            [
+                {"id": "two-updated", "file": "two.md", "line": 0},
+                {"id": "three", "file": "three.md", "line": 0},
+            ],
+        )
+        self.assertEqual(
+            [call.args[1] for call in self.mock_file_broker.getVaultFileLines.call_args_list],
+            ["two.md", "three.md"],
+        )
+
     def test_getJson_refreshes_default_dates_when_local_day_changes(self):
         self.mock_file_broker.getVaultFiles.return_value = [("today.md", 100.0)]
         self.mock_file_broker.getVaultFileLines.return_value = ["- [ ] Today [track::work]"]

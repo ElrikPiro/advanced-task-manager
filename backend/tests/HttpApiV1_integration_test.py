@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import asyncio
 import datetime
 import json
 from pathlib import Path
 from tempfile import TemporaryDirectory
+import time
+from threading import Event
 from typing import Any
 from unittest import IsolatedAsyncioTestCase
 from unittest.mock import AsyncMock, patch
@@ -264,6 +267,49 @@ class HttpApiV1IntegrationTest(IsolatedAsyncioTestCase):
             response = await self.client.request(method, path, headers=self._headers())
             self.assertEqual(response.status, 405, (method, path))
             self.assertEqual(response.headers["Cache-Control"], "no-store", (method, path))
+
+    async def test_task_projection_routes_reuse_one_model_snapshot(self) -> None:
+        original_get_task_list = self.task_provider.getTaskList
+        with patch.object(self.task_provider, "getTaskList", wraps=original_get_task_list) as get_task_list:
+            response = await self.client.get(f"{PREFIX}/tasks", headers=AUTH)
+            self.assertEqual(response.status, 200)
+            self.assertEqual(get_task_list.call_count, 1)
+
+            get_task_list.reset_mock()
+            response = await self.client.get(f"{PREFIX}/tasks/task%20%2F%2Bone", headers=AUTH)
+            self.assertEqual(response.status, 200)
+            self.assertEqual(get_task_list.call_count, 1)
+
+            get_task_list.reset_mock()
+            response = await self.client.get(f"{PREFIX}/agenda?day=2026-10-04", headers=AUTH)
+            self.assertEqual(response.status, 200)
+            self.assertEqual(get_task_list.call_count, 1)
+
+            get_task_list.reset_mock()
+            response = await self.client.get(f"{PREFIX}/statistics", headers=AUTH)
+            self.assertEqual(response.status, 200)
+            self.assertEqual(get_task_list.call_count, 1)
+
+    async def test_slow_task_read_does_not_block_other_http_requests(self) -> None:
+        original_get_task_list = self.task_provider.getTaskList
+        read_started = Event()
+
+        def slow_get_task_list(*, include_completed: bool = False):
+            read_started.set()
+            time.sleep(0.5)
+            return original_get_task_list(include_completed=include_completed)
+
+        with patch.object(self.task_provider, "getTaskList", side_effect=slow_get_task_list):
+            started_at = time.perf_counter()
+            task_response = asyncio.create_task(self.client.get(f"{PREFIX}/tasks", headers=AUTH))
+            self.assertTrue(await asyncio.to_thread(read_started.wait, 2))
+            root_response = await self.client.get(f"{PREFIX}/", headers=AUTH)
+            root_elapsed = time.perf_counter() - started_at
+            task_result = await task_response
+
+        self.assertEqual(root_response.status, 200)
+        self.assertEqual(task_result.status, 200)
+        self.assertLess(root_elapsed, 0.35)
 
     async def test_notifications_without_history_store_is_not_advertised_or_created(self) -> None:
         notifications_path = Path(

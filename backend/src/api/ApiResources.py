@@ -167,8 +167,12 @@ class ApiResources:
 
     def read_tasks(self, view: TaskView) -> dict[str, Any]:
         """Return a live page of full task resources and query relationships."""
-        content = self.application_service.query_tasks(view)
-        task_models = self.application_service.read_task_models(include_completed=True)
+        task_models = self._read_task_projection_models()
+        if task_models is None:
+            content = self.application_service.query_tasks(view)
+            task_models = self.application_service.read_task_models(include_completed=True)
+        else:
+            content = self.application_service.query_tasks(view, task_models=task_models)
         models_by_id = self._unique_tasks_by_id(task_models)
         embedded_tasks: list[dict[str, Any]] = []
         for entry in content.tasks:
@@ -216,8 +220,12 @@ class ApiResources:
 
     def read_task(self, task_id: str) -> dict[str, Any]:
         """Read a task by opaque ID, including its computed detail fields."""
-        task = self.application_service.read_task(task_id)
-        return self.task_resource(task, extended=True)
+        task_models = self._read_task_projection_models()
+        if task_models is None:
+            task = self.application_service.read_task(task_id)
+        else:
+            task = self.application_service.read_task(task_id, task_models=task_models)
+        return self.task_resource(task, extended=True, task_models=task_models)
 
     def task_resource(
         self,
@@ -226,6 +234,7 @@ class ApiResources:
         extended: bool = True,
         heuristic_name: str | None = None,
         heuristic_value: float | None = None,
+        task_models: Sequence[ITaskModel] | None = None,
     ) -> dict[str, Any]:
         """Serialize one already-resolved task model without resolving it again."""
         try:
@@ -282,7 +291,14 @@ class ApiResources:
                     "comment": "",
                 }]
             if extended:
-                detail = self.application_service.read_task_information_for(task, extended=True)
+                if task_models is None:
+                    detail = self.application_service.read_task_information_for(task, extended=True)
+                else:
+                    detail = self.application_service.read_task_information_for(
+                        task,
+                        extended=True,
+                        task_models=task_models,
+                    )
                 task_document["heuristics"] = [
                     self._heuristic_representation(item)
                     for item in (detail.extended.heuristics if detail.extended is not None else [])
@@ -298,10 +314,13 @@ class ApiResources:
 
     def read_agenda(self, query: AgendaQuery) -> dict[str, Any]:
         """Return the requested civil-day agenda with direct task links."""
-        agenda = self.application_service.read_agenda(query)
-        models_by_id = self._unique_tasks_by_id(
-            self.application_service.read_task_models(include_completed=True)
-        )
+        task_models = self._read_task_projection_models()
+        if task_models is None:
+            agenda = self.application_service.read_agenda(query)
+            task_models = self.application_service.read_task_models(include_completed=True)
+        else:
+            agenda = self.application_service.read_agenda(query, task_models=task_models)
+        models_by_id = self._unique_tasks_by_id(task_models)
 
         active = self._agenda_entries(agenda.active_urgent_tasks, models_by_id)
         planned = self._agenda_entries(agenda.planned_urgent_tasks, models_by_id)
@@ -335,8 +354,13 @@ class ApiResources:
 
     def read_statistics(self, view: TaskView) -> dict[str, Any]:
         """Return work and workload data calculated from the current query set."""
-        stats = self.application_service.read_statistics(view)
-        content = self.application_service.query_tasks(view)
+        task_models = self._read_task_projection_models()
+        if task_models is None:
+            stats = self.application_service.read_statistics(view)
+            content = self.application_service.query_tasks(view)
+        else:
+            stats = self.application_service.read_statistics(view, task_models=task_models)
+            content = self.application_service.query_tasks(view, task_models=task_models)
         work_done = {
             day: self._finite_number(value, "work done")
             for day, value in stats.workDone.items()
@@ -717,6 +741,12 @@ class ApiResources:
                 raise AmbiguousResourceError("More than one task has the same identifier")
             result[task_id] = task
         return result
+
+    def _read_task_projection_models(self) -> list[ITaskModel] | None:
+        """Load one request-local model set when the application supports it."""
+        if isinstance(self.application_service, TaskApplicationService):
+            return self.application_service.read_task_models(include_completed=True)
+        return None
 
     @staticmethod
     def _raw_description(task: ITaskModel) -> str:

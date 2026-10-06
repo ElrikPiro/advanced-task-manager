@@ -12,6 +12,14 @@ from .taskmodels.TaskIdentity import InvalidTaskIdentityError
 T = TypeVar("T")
 
 
+class _VaultFileInventory(list[tuple[str, float]]):
+    """Public path/mtime pairs with a stronger same-walk cache signature."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self._signatures: dict[str, tuple[int, int, int, int]] = {}
+
+
 class FileBroker(IFileBroker):
     def __init__(
         self,
@@ -302,7 +310,7 @@ class FileBroker(IFileBroker):
 
     # Get all files in vauld directory and subdirectories, returns a tuple with the path and the last modification time
     def getVaultFiles(self, vaultRegistry: VaultRegistry) -> list[tuple[str, float]]:
-        files = []
+        files = _VaultFileInventory()
         vault_path = self.vaultPaths[vaultRegistry]
         for root, _, filenames in os.walk(self.vaultPaths[vaultRegistry]):
             for filename in filenames:
@@ -311,8 +319,14 @@ class FileBroker(IFileBroker):
                 full_file_path = os.path.join(root, filename)
                 file_path = os.path.relpath(full_file_path, vault_path)
                 try:
-                    last_mod_time = os.path.getmtime(full_file_path)
+                    stat_result = os.stat(full_file_path)
                 except FileNotFoundError:
                     continue
-                files.append((file_path, last_mod_time))
+                files.append((file_path, stat_result.st_mtime))
+                files._signatures[file_path] = (
+                    stat_result.st_mtime_ns,
+                    stat_result.st_ctime_ns,
+                    stat_result.st_size,
+                    stat_result.st_ino,
+                )
         return files

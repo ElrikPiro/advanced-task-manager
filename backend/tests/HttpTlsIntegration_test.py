@@ -26,6 +26,7 @@ from src.MutationCoordinator import MutationCoordinator
 from src.NotificationHistoryStore import NotificationHistoryStore
 from src.api.ProblemDetails import safe_detail
 from src.domain.errors import ValidationError
+from src.SafeDiagnostics import format_safe_exception_diagnostic
 from src.wrappers.HttpUserCommService import HttpUserCommService
 from src.wrappers.Messaging import IAgent
 
@@ -276,6 +277,19 @@ class HttpTlsIntegrationTest(unittest.IsolatedAsyncioTestCase):
             self.token,
         )
 
+    def service_with_tls_paths(self, chain: Path, key: Path) -> HttpUserCommService:
+        return HttpUserCommService(
+            url="127.0.0.1",
+            port=0,
+            token=self.token,
+            chat_id=1,
+            agent=self.agent,
+            tls_cert_chain_path=str(chain),
+            tls_private_key_path=str(key),
+            application_service=self.application,
+            notification_history_store=self.notification_history_store,
+        )
+
     def tearDown(self) -> None:
         self.mutation_coordinator.close()
         self.data_directory.cleanup()
@@ -311,6 +325,39 @@ class HttpTlsIntegrationTest(unittest.IsolatedAsyncioTestCase):
         if cafile is None:
             return ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
         return ssl.create_default_context(ssl.Purpose.SERVER_AUTH, cafile=str(cafile))
+
+    async def test_missing_tls_certificate_keeps_safe_cause_and_binds_no_server(self) -> None:
+        missing_chain = Path(self.temporary_directory.name) / "missing-chain-secret-path.pem"
+        service = self.service_with_tls_paths(missing_chain, self.certificates.valid_key)
+
+        with self.assertRaises(RuntimeError) as captured:
+            await service.initialize()
+
+        error = captured.exception
+        diagnostic = format_safe_exception_diagnostic(error)
+        self.assertIsInstance(error.__cause__, FileNotFoundError)
+        self.assertIn("RuntimeError>FileNotFoundError", diagnostic)
+        self.assertNotIn(str(missing_chain), diagnostic)
+        self.assertNotIn(self.token, diagnostic)
+        self.assertFalse(hasattr(service, "server"))
+
+    async def test_mismatched_tls_key_keeps_safe_cause_and_binds_no_server(self) -> None:
+        service = self.service_with_tls_paths(
+            self.certificates.wrong_san_chain,
+            self.certificates.valid_key,
+        )
+
+        with self.assertRaises(RuntimeError) as captured:
+            await service.initialize()
+
+        error = captured.exception
+        diagnostic = format_safe_exception_diagnostic(error)
+        self.assertIsInstance(error.__cause__, ssl.SSLError)
+        self.assertIn("RuntimeError>SSLError", diagnostic)
+        self.assertNotIn(str(self.certificates.wrong_san_chain), diagnostic)
+        self.assertNotIn(str(self.certificates.valid_key), diagnostic)
+        self.assertNotIn(self.token, diagnostic)
+        self.assertFalse(hasattr(service, "server"))
 
     @contextlib.contextmanager
     def captured_protocol_logs(self) -> Iterator[io.StringIO]:

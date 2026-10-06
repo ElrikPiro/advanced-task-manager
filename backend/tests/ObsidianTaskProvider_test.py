@@ -1,7 +1,13 @@
 import hashlib
 import json
+import os
+import tempfile
+import time
 import unittest
+from pathlib import Path
 from unittest.mock import MagicMock
+from unittest.mock import patch
+from src.FileBroker import FileBroker
 from src.taskmodels.TaskIdentity import fallback_task_id
 from src.taskproviders.TaskIdentityErrors import AmbiguousTaskIdentityError, MissingTaskIdentityError
 from src.wrappers.TimeManagement import TimePoint
@@ -177,6 +183,134 @@ class TestObsidianTaskProvider(unittest.TestCase):
             self.provider.saveTask(task)
 
         self.mockFileBroker.writeVaultFileLines.assert_not_called()
+
+    def test_cached_identity_index_reserves_completed_task_with_invalid_task_metadata(self):
+        contents = {
+            "open.md": ["- [ ] Open [track::work] [id::duplicated]\n"],
+            "completed.md": [
+                "- [x] Completed but invalid metadata [track::work] "
+                "[severity::not-a-number] [id::duplicated]\n"
+            ],
+        }
+        files = [("open.md", 100.0), ("completed.md", 200.0)]
+        self.mockFileBroker.getVaultFiles.side_effect = lambda _: list(files)
+        self.mockFileBroker.getVaultFileLines.side_effect = lambda _, path: list(contents[path])
+        json_provider = ObsidianVaultTaskJsonProvider(
+            self.mockFileBroker,
+            TaskDiscoveryPolicies(
+                context_missing_policy="0",
+                date_missing_policy="0",
+                default_context="inbox",
+                categories_prefixes=["work"],
+            ),
+        )
+        self.assertEqual([row["id"] for row in json_provider.getJson()["tasks"]], ["duplicated"])
+        task_provider = ObsidianTaskProvider(json_provider, self.mockFileBroker, True)
+        task = self._task_with_id("duplicated", file="open.md", line=0)
+
+        with self.assertRaises(AmbiguousTaskIdentityError):
+            task_provider.saveTask(task)
+
+        self.mockFileBroker.updateVaultFileLines.assert_not_called()
+        task_provider.dispose()
+
+    def test_atomic_identity_recheck_detects_external_duplicate_added_after_initial_scan(self):
+        contents = {
+            "tasks.md": ["- [ ] Existing [track::work] [id::same-id]\n"],
+        }
+        files = [("tasks.md", 100.0)]
+        self.mockFileBroker.getVaultFiles.side_effect = lambda _: list(files)
+        self.mockFileBroker.getVaultFileLines.side_effect = lambda _, path: list(contents[path])
+        json_provider = ObsidianVaultTaskJsonProvider(
+            self.mockFileBroker,
+            TaskDiscoveryPolicies(
+                context_missing_policy="0",
+                date_missing_policy="0",
+                default_context="inbox",
+                categories_prefixes=["work"],
+            ),
+        )
+        external_added = False
+
+        def add_external_duplicate_then_update(registry, path, updater):
+            nonlocal external_added
+            if not external_added:
+                contents["other.md"] = ["- [x] External [track::work] [id::same-id]\n"]
+                files.append(("other.md", 200.0))
+                external_added = True
+            updated = updater(list(contents[path]))
+            contents[path] = list(updated)
+            self.mockFileBroker.writeVaultFileLines(registry, path, list(updated))
+            return list(updated)
+
+        self.mockFileBroker.updateVaultFileLines.side_effect = add_external_duplicate_then_update
+        task_provider = ObsidianTaskProvider(json_provider, self.mockFileBroker, True)
+        task = self._task_with_id("same-id", file="tasks.md", line=0)
+        task.setDescription("Edited")
+
+        with self.assertRaises(AmbiguousTaskIdentityError):
+            task_provider.saveTask(task)
+
+        self.assertEqual(contents["tasks.md"], ["- [ ] Existing [track::work] [id::same-id]\n"])
+        self.mockFileBroker.writeVaultFileLines.assert_not_called()
+        task_provider.dispose()
+
+    def test_atomic_identity_recheck_detects_edit_that_restores_mtime(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            data = root / "data"
+            appdata = root / "appdata"
+            vault = root / "vault"
+            data.mkdir()
+            appdata.mkdir()
+            vault.mkdir()
+            target = vault / "tasks.md"
+            external = vault / "other.md"
+            target_original = "- [ ] Existing [track::work] [id::same-id]\n"
+            target.write_text(target_original, encoding="utf-8")
+            external.write_text("- [ ] External [track::work] [id::otherid]\n", encoding="utf-8")
+            broker = FileBroker(str(data), str(appdata), str(vault))
+            json_provider = ObsidianVaultTaskJsonProvider(
+                broker,
+                TaskDiscoveryPolicies(
+                    context_missing_policy="0",
+                    date_missing_policy="0",
+                    default_context="inbox",
+                    categories_prefixes=["work"],
+                ),
+            )
+            task_provider = ObsidianTaskProvider(json_provider, broker, True)
+            task = self._task_with_id("same-id", file="tasks.md", line=0)
+            task.setDescription("Edited")
+            previous_stat = external.stat()
+            original_update = broker.updateVaultFileLines
+
+            def change_external_id_and_update(registry, relative_path, updater):
+                if relative_path == "tasks.md":
+                    time.sleep(0.01)
+                    external.write_text(
+                        "- [ ] External [track::work] [id::same-id]\n",
+                        encoding="utf-8",
+                    )
+                    os.utime(
+                        external,
+                        ns=(previous_stat.st_atime_ns, previous_stat.st_mtime_ns),
+                    )
+                return original_update(registry, relative_path, updater)
+
+            with patch.object(
+                broker,
+                "updateVaultFileLines",
+                side_effect=change_external_id_and_update,
+            ):
+                with self.assertRaises(AmbiguousTaskIdentityError):
+                    task_provider.saveTask(task)
+
+            self.assertEqual(external.stat().st_mtime_ns, previous_stat.st_mtime_ns)
+            self.assertEqual(external.stat().st_size, previous_stat.st_size)
+            self.assertNotEqual(external.stat().st_ctime_ns, previous_stat.st_ctime_ns)
+            self.assertEqual(target.read_text(encoding="utf-8"), target_original)
+            task_provider.dispose()
 
     def _task_with_id(self, task_id: str, *, file: str, line: int) -> ObsidianTaskModel:
         return ObsidianTaskModel(

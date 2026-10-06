@@ -106,6 +106,8 @@ Task IDs are opaque strings stored with each task: JSON records use `id`, and Ma
 
 ### File save behavior
 
+Markdown-backed API reads check a fresh file inventory for each request. Parsed task data and task-ID summaries are reused only for files whose fingerprints are unchanged; an API projection uses one request-local task snapshot, which is not shared with later requests. Synchronous read projections run in worker threads so they do not block the HTTP event loop while reading the vault.
+
 Task data, project files, and work statistics are saved one file at a time through a temporary file in the same directory, followed by an atomic replacement. Readers see the complete previous file or the complete replacement. If a write fails before replacement, that file is known to be unchanged; if durability fails after replacement, the saved state may be uncertain. Operations that touch several files stop at the first failure and report the confirmed changes for review. They do not roll back earlier files or retry automatically. External editors can still change a file between the backend's comparison and replacement.
 
 All writes initiated inside one running backend process enter a shared in-memory FIFO queue. A task operation that also updates statistics holds one queue turn across both files, and discovery, project changes, imports, and channel commands use the same queue. A caller that times out or disconnects stops waiting; an already admitted operation continues. The queue and its short-lived operation results are cleared when the backend restarts.
@@ -142,6 +144,31 @@ The resource API accepts a Bearer token in the `Authorization` header. Each resp
 API mode requires both TLS paths in `config.json`. Supply a PEM chain with the server certificate first and its intermediate certificates after it, plus the matching, unencrypted PEM private key. Startup does not prompt for a passphrase. The listener validates and loads both before opening its socket. Missing, unreadable, invalid, or mismatched material prevents startup; the service never falls back to HTTP. The listener uses Python's `ssl` server profile with TLS 1.2 as the minimum and TLS 1.3 when supported by the installed Python/OpenSSL runtime. Cipher selection follows that runtime's defaults rather than a separately maintained cipher list; see the [Python `ssl` documentation](https://docs.python.org/3.13/library/ssl.html).
 
 Keep the private key outside source control, backups or support bundles that are shared without protection, and application logs. Give it read access only to the service account (for example, owner-only permissions such as `0600`, or an equivalent restricted group ACL). The certificate chain may be readable by the service account. The service operator obtains and renews certificate material separately, verifies that the key matches the chain, and restarts the service in a controlled window after updating both files. There is no automatic certificate enrollment, hot reload, or HTTP fallback.
+
+If startup reports that the TLS material could not be loaded, run the same certificate-loading check as the service account. Replace the account and path placeholders locally; this prints only the exception type, numeric error code, and OpenSSL reason, never the configured paths or private-key contents:
+
+```sh
+sudo -u SERVICE_USER python3 - <<'PY'
+from pathlib import Path
+import ssl
+
+chain = Path("/replace/with/configured/chain.pem")
+key = Path("/replace/with/configured/key.pem")
+context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+try:
+    context.load_cert_chain(chain, key, password=lambda: "")
+except Exception as error:
+    print(
+        type(error).__name__,
+        getattr(error, "errno", None),
+        getattr(error, "reason", None),
+    )
+    raise SystemExit(1)
+print("TLS certificate chain and key loaded")
+PY
+```
+
+The sanitized startup diagnostic reports exception types and source locations, without exception messages or configured paths. A file or permission error points to access, while an SSL error can indicate malformed or mismatched material. Keep certificate paths and key files out of shared logs and support bundles.
 
 For a private CA, distribute the CA certificate and its SHA-256 fingerprint through a separately authenticated channel and verify the fingerprint before installing it in the effective browser or system trust store. In Firefox, use its certificate manager and Authorities list; Chromium uses its certificate manager or the effective system store, depending on platform. A self-signed server certificate must be explicitly trusted by the client. The certificate must be current and include a Subject Alternative Name (SAN) matching the exact DNS name or IP address used by the client; trust does not bypass hostname or validity checks. Remove a trust anchor from the effective store, restart affected client connections, and verify that the endpoint is rejected. Another independently trusted chain can still validate the same server certificate.
 

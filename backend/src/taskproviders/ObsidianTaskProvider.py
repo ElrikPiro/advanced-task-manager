@@ -5,7 +5,7 @@ import re
 import threading
 
 from src.Utils import TaskJsonType
-from typing import Any, TypeVar
+from typing import Any, TypeVar, cast
 
 from ..Interfaces.IFileBroker import IFileBroker, FileRegistry, VaultRegistry
 from ..Interfaces.ITaskProvider import ITaskProvider
@@ -238,7 +238,11 @@ class ObsidianTaskProvider(ITaskProvider):
             self.__validate_prepared_task(file, updated, task_id)
             return updated
 
-        confirmed_lines = self.fileBroker.updateVaultFileLines(VaultRegistry.OBSIDIAN, file, prepare)
+        self.__invalidate_cached_markdown_file(file)
+        try:
+            confirmed_lines = self.fileBroker.updateVaultFileLines(VaultRegistry.OBSIDIAN, file, prepare)
+        finally:
+            self.__invalidate_cached_markdown_file(file)
         if isinstance(task, ObsidianTaskModel):
             try:
                 refreshed = self.__materializeTaskFromLines(file, confirmed_lines, task_id)
@@ -283,7 +287,11 @@ class ObsidianTaskProvider(ITaskProvider):
             self.__validate_prepared_task(self._NEW_TASK_FILE, lines, task_id)
             return "".join(lines)
 
-        committed_content = self.fileBroker.updateFileContent(FileRegistry.OBSIDIAN_TASKS_MD, prepare)
+        self.__invalidate_cached_markdown_file(self._NEW_TASK_FILE)
+        try:
+            committed_content = self.fileBroker.updateFileContent(FileRegistry.OBSIDIAN_TASKS_MD, prepare)
+        finally:
+            self.__invalidate_cached_markdown_file(self._NEW_TASK_FILE)
         committed_lines = committed_content.splitlines(keepends=True)
         try:
             refreshed = self.__materializeTaskFromLines(self._NEW_TASK_FILE, committed_lines, task_id)
@@ -328,6 +336,10 @@ class ObsidianTaskProvider(ITaskProvider):
             setattr(target, attribute, getattr(source, attribute))
 
     def _scan_vault_task_identities(self, skip_file: str | None = None) -> list[dict[str, str | int]]:
+        identity_snapshot = getattr(self.TaskJsonProvider, "getTaskIdentitySnapshot", None)
+        if callable(identity_snapshot):
+            return cast(list[dict[str, str | int]], identity_snapshot(skip_file))
+
         locations: list[dict[str, str | int]] = []
         for file, _ in self.fileBroker.getVaultFiles(VaultRegistry.OBSIDIAN):
             if not file.lower().endswith(".md"):
@@ -337,6 +349,11 @@ class ObsidianTaskProvider(ITaskProvider):
             file_lines = self.fileBroker.getVaultFileLines(VaultRegistry.OBSIDIAN, file)
             locations.extend(self.__task_identities_from_lines(file_lines, file))
         return locations
+
+    def __invalidate_cached_markdown_file(self, relative_path: str) -> None:
+        invalidate = getattr(self.TaskJsonProvider, "invalidateCachedFile", None)
+        if callable(invalidate):
+            invalidate(relative_path)
 
     def __task_identities_from_lines(self, lines: list[str], file: str) -> list[dict[str, str | int]]:
         locations: list[dict[str, str | int]] = []

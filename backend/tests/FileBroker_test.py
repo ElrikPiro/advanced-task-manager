@@ -3,6 +3,7 @@ import os
 import json
 import tempfile
 import threading
+from types import SimpleNamespace
 from unittest.mock import patch, mock_open
 from src.FileBroker import FileBroker
 from src.Interfaces.IFileBroker import FileRegistry, VaultRegistry
@@ -287,14 +288,18 @@ class TestFileBroker(unittest.TestCase):
                 self.assertEqual(file.read(), original)
 
     @patch("os.walk")
-    @patch("os.path.getmtime")
-    def test_getVaultFiles_WhenFilesExist_ThenReturnFilePathsAndModificationTimes(self, mock_getmtime, mock_walk):
+    @patch("os.stat")
+    def test_getVaultFiles_WhenFilesExist_ThenReturnFilePathsAndModificationTimes(self, mock_stat, mock_walk):
         fakePath = self.vaultPath
         mock_walk.return_value = [
             (fakePath, ("subdir",), ("file1.txt", "file2.txt")),
             (os.path.join(fakePath, "subdir"), (), ("file3.txt",))
         ]
-        mock_getmtime.side_effect = [1000.0, 2000.0, 3000.0]
+        mock_stat.side_effect = [
+            SimpleNamespace(st_mtime=1000.0, st_mtime_ns=1000, st_ctime_ns=2000, st_size=10, st_ino=1),
+            SimpleNamespace(st_mtime=2000.0, st_mtime_ns=2000, st_ctime_ns=3000, st_size=20, st_ino=2),
+            SimpleNamespace(st_mtime=3000.0, st_mtime_ns=3000, st_ctime_ns=4000, st_size=30, st_ino=3),
+        ]
 
         expected_files = [
             (os.path.join("file1.txt"), 1000.0),
@@ -304,6 +309,14 @@ class TestFileBroker(unittest.TestCase):
 
         files = self.fileBroker.getVaultFiles(VaultRegistry.OBSIDIAN)
         self.assertEqual(files, expected_files)
+        self.assertEqual(
+            files._signatures,
+            {
+                "file1.txt": (1000, 2000, 10, 1),
+                "file2.txt": (2000, 3000, 20, 2),
+                os.path.join("subdir", "file3.txt"): (3000, 4000, 30, 3),
+            },
+        )
 
     @patch("os.walk")
     def test_getVaultFiles_WhenNoFilesExist_ThenReturnEmptyList(self, mock_walk):
@@ -313,10 +326,13 @@ class TestFileBroker(unittest.TestCase):
         self.assertEqual(files, [])
 
     @patch("os.walk")
-    @patch("os.path.getmtime")
-    def test_getVaultFiles_skipsFilesRemovedAfterDirectoryEnumeration(self, mock_getmtime, mock_walk):
+    @patch("os.stat")
+    def test_getVaultFiles_skipsFilesRemovedAfterDirectoryEnumeration(self, mock_stat, mock_walk):
         mock_walk.return_value = [(self.vaultPath, (), ("present.md", "removed.md"))]
-        mock_getmtime.side_effect = [1000.0, FileNotFoundError]
+        mock_stat.side_effect = [
+            SimpleNamespace(st_mtime=1000.0, st_mtime_ns=1000, st_ctime_ns=2000, st_size=10, st_ino=1),
+            FileNotFoundError,
+        ]
 
         files = self.fileBroker.getVaultFiles(VaultRegistry.OBSIDIAN)
 

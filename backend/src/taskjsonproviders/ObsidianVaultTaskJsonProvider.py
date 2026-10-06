@@ -1,4 +1,5 @@
 from copy import deepcopy
+from dataclasses import dataclass
 import re
 import math
 from threading import RLock
@@ -10,6 +11,16 @@ from ..Interfaces.IFileBroker import IFileBroker, VaultRegistry
 from ..taskmodels.TaskIdentity import fallback_task_id, validate_task_id
 from ..taskproviders.TaskIdentityErrors import AmbiguousTaskIdentityError, InvalidTaskIdentityError
 from ..MutationCoordinator import MutationCoordinator
+
+
+FileFingerprint = float | tuple[int, int, int, int]
+
+
+@dataclass(frozen=True)
+class _TaskIdentityFileSnapshot:
+    signature: FileFingerprint
+    rows: tuple[tuple[str, int], ...]
+    fault: str | None = None
 
 
 class ObsidianVaultTaskJsonProvider(ITaskJsonProvider):
@@ -27,11 +38,12 @@ class ObsidianVaultTaskJsonProvider(ITaskJsonProvider):
         self.__policies = policies
         self.__snapshot_lock = RLock()
         self.__request_sequence = 0
-        self.__last_inventory: tuple[tuple[str, float], ...] | None = None
+        self.__last_inventory: tuple[tuple[str, FileFingerprint], ...] | None = None
         self.__last_cache_day: str | None = None
         self.__last_json: TaskJsonType | None = None
-        self.__file_snapshots: dict[str, tuple[float, TaskJsonType]] = {}
-        self.__last_reconciled_inventory: tuple[tuple[str, float], ...] | None = None
+        self.__file_snapshots: dict[str, tuple[FileFingerprint, TaskJsonType]] = {}
+        self.__identity_file_snapshots: dict[str, _TaskIdentityFileSnapshot] = {}
+        self.__last_reconciled_inventory: tuple[tuple[str, FileFingerprint], ...] | None = None
         self.__last_reconciled_day: str | None = None
         self.mutation_coordinator = mutation_coordinator
         if self.mutation_coordinator is None:
@@ -46,16 +58,13 @@ class ObsidianVaultTaskJsonProvider(ITaskJsonProvider):
 
     def __getJsonSnapshot(
         self,
-    ) -> tuple[TaskJsonType, tuple[tuple[str, float], ...], str]:
+    ) -> tuple[TaskJsonType, tuple[tuple[str, FileFingerprint], ...], str]:
         with self.__snapshot_lock:
             self.__request_sequence += 1
             request_sequence = self.__request_sequence
 
         cache_day = str(TimePoint.today())
-        vaultFiles = [
-            file for file in self.__fileBroker.getVaultFiles(VaultRegistry.OBSIDIAN)
-            if file[0].lower().endswith(".md")
-        ]
+        vaultFiles = self.__get_vault_markdown_inventory()
         inventory = tuple(vaultFiles)
         cached_snapshot: TaskJsonType | None = None
         with self.__snapshot_lock:
@@ -68,26 +77,36 @@ class ObsidianVaultTaskJsonProvider(ITaskJsonProvider):
                 if cache_day == self.__last_cache_day
                 else {}
             )
+            reusable_identity_snapshots = dict(self.__identity_file_snapshots)
 
         if cached_snapshot is not None:
             return deepcopy(cached_snapshot), inventory, cache_day
 
-        next_file_snapshots: dict[str, tuple[float, TaskJsonType]] = {}
+        next_file_snapshots: dict[str, tuple[FileFingerprint, TaskJsonType]] = {}
+        next_identity_snapshots: dict[str, _TaskIdentityFileSnapshot] = {}
         task_list: TaskJsonListType = []
         project_list: ProjectJsonListType = []
 
         for file in vaultFiles:
             relative_path, mtime = file
             cached = reusable_file_snapshots.get(relative_path)
-            if cached is not None and cached[0] == mtime:
+            identity_cached = reusable_identity_snapshots.get(relative_path)
+            if cached is not None and cached[0] == mtime and identity_cached is not None and identity_cached.signature == mtime:
                 file_snapshot = cached[1]
+                identity_snapshot = identity_cached
+            elif cached is not None and cached[0] == mtime:
+                file_snapshot = cached[1]
+                file_content = self.__fileBroker.getVaultFileLines(VaultRegistry.OBSIDIAN, relative_path)
+                identity_snapshot = self.__identity_snapshot_from_lines(file_content, relative_path, mtime)
             else:
                 file_tasks: TaskJsonListType = []
                 file_projects: ProjectJsonListType = []
-                self.__process_task_file(file, file_tasks, file_projects)
+                file_content = self.__fileBroker.getVaultFileLines(VaultRegistry.OBSIDIAN, relative_path)
+                identity_snapshot = self.__process_task_file(file, file_tasks, file_projects, file_content)
                 file_snapshot = {"tasks": file_tasks, "projects": file_projects}
 
             next_file_snapshots[relative_path] = (mtime, file_snapshot)
+            next_identity_snapshots[relative_path] = identity_snapshot
             task_list.extend(file_snapshot["tasks"])
             project_list.extend(file_snapshot["projects"])
 
@@ -98,19 +117,107 @@ class ObsidianVaultTaskJsonProvider(ITaskJsonProvider):
         with self.__snapshot_lock:
             if request_sequence == self.__request_sequence:
                 self.__file_snapshots = next_file_snapshots
+                self.__identity_file_snapshots = next_identity_snapshots
                 self.__last_inventory = inventory
                 self.__last_cache_day = cache_day
                 self.__last_json = snapshot
         return deepcopy(snapshot), inventory, cache_day
 
+    def __get_vault_markdown_inventory(self) -> list[tuple[str, FileFingerprint]]:
+        files = self.__fileBroker.getVaultFiles(VaultRegistry.OBSIDIAN)
+        signatures_value = getattr(files, "_signatures", None)
+        signatures = signatures_value if isinstance(signatures_value, dict) else {}
+        inventory: list[tuple[str, FileFingerprint]] = []
+        for relative_path, mtime in files:
+            if not relative_path.lower().endswith(".md"):
+                continue
+            signature = signatures.get(relative_path, mtime)
+            inventory.append((relative_path, signature))
+        return inventory
+
     def __invalidate_cached_file(self, relative_path: str) -> None:
         with self.__snapshot_lock:
             self.__request_sequence += 1
             self.__file_snapshots.pop(relative_path, None)
+            self.__identity_file_snapshots.pop(relative_path, None)
             self.__last_inventory = None
             self.__last_json = None
             self.__last_reconciled_inventory = None
             self.__last_reconciled_day = None
+
+    def invalidateCachedFile(self, relative_path: str) -> None:
+        """Invalidate parsed task and identity data after a Markdown write."""
+        self.__invalidate_cached_file(relative_path)
+
+    def getTaskIdentitySnapshot(
+        self,
+        skip_file: str | None = None,
+    ) -> list[dict[str, str | int]]:
+        """Return IDs from a fresh inventory, reusing unchanged file parses."""
+        with self.__snapshot_lock:
+            self.__request_sequence += 1
+            request_sequence = self.__request_sequence
+            reusable_snapshots = dict(self.__identity_file_snapshots)
+
+        inventory = tuple(self.__get_vault_markdown_inventory())
+        next_snapshots: dict[str, _TaskIdentityFileSnapshot] = {}
+        locations: list[dict[str, str | int]] = []
+        skip_normalized = skip_file.replace("\\", "/") if skip_file is not None else None
+        first_fault: str | None = None
+        for relative_path, mtime in inventory:
+            snapshot = reusable_snapshots.get(relative_path)
+            if snapshot is None or snapshot.signature != mtime:
+                lines = self.__fileBroker.getVaultFileLines(VaultRegistry.OBSIDIAN, relative_path)
+                snapshot = self.__identity_snapshot_from_lines(lines, relative_path, mtime)
+            next_snapshots[relative_path] = snapshot
+            normalized_path = relative_path.replace("\\", "/")
+            if normalized_path == skip_normalized:
+                continue
+            if first_fault is None and snapshot.fault is not None:
+                first_fault = snapshot.fault
+            locations.extend(
+                {"id": task_id, "file": normalized_path, "line": line_number}
+                for task_id, line_number in snapshot.rows
+            )
+
+        with self.__snapshot_lock:
+            if request_sequence == self.__request_sequence:
+                self.__identity_file_snapshots = next_snapshots
+
+        if first_fault == "conflicting-ids":
+            raise InvalidTaskIdentityError("A Markdown task declares conflicting identifiers")
+        if first_fault == "invalid-id":
+            raise InvalidTaskIdentityError("Task ID must be a non-empty string")
+        return locations
+
+    def __identity_snapshot_from_lines(
+        self,
+        lines: list[str],
+        relative_path: str,
+        mtime: FileFingerprint,
+    ) -> _TaskIdentityFileSnapshot:
+        rows: list[tuple[str, int]] = []
+        normalized_path = relative_path.replace("\\", "/")
+        for line_number, line in enumerate(lines):
+            match = self._TASK_LINE.match(line)
+            if match is None:
+                continue
+            body = match.group(2)
+            metadata = list(self._TASK_METADATA.finditer(body))
+            text = body[:metadata[0].start()].strip() if metadata else body.strip()
+            declared_ids: list[str] = []
+            for item in metadata:
+                if item.group(1).strip() != "id":
+                    continue
+                task_id = item.group(2).strip()
+                if not task_id:
+                    return _TaskIdentityFileSnapshot(mtime, tuple(rows), "invalid-id")
+                declared_ids.append(validate_task_id(task_id))
+            if len(set(declared_ids)) > 1:
+                return _TaskIdentityFileSnapshot(mtime, tuple(rows), "conflicting-ids")
+            task_id = declared_ids[0] if declared_ids else fallback_task_id(text, normalized_path, line_number)
+            rows.append((task_id, line_number))
+        return _TaskIdentityFileSnapshot(mtime, tuple(rows))
 
     def parseTaskFile(self, relative_path: str, lines: list[str]) -> list[dict[str, str]]:
         """Parse one supplied Markdown snapshot without performing file I/O."""
@@ -130,10 +237,7 @@ class ObsidianVaultTaskJsonProvider(ITaskJsonProvider):
     def __discover(self) -> TaskJsonType:
         """Persist a default next action in each uncovered open project."""
         cache_day = str(TimePoint.today())
-        vaultFiles = [
-            file for file in self.__fileBroker.getVaultFiles(VaultRegistry.OBSIDIAN)
-            if file[0].lower().endswith(".md")
-        ]
+        vaultFiles = self.__get_vault_markdown_inventory()
         inventory = tuple(vaultFiles)
         reconciled_snapshot: TaskJsonType | None = None
         with self.__snapshot_lock:
@@ -259,11 +363,14 @@ class ObsidianVaultTaskJsonProvider(ITaskJsonProvider):
 
     def __process_task_file(
         self,
-        file: tuple[str, float],
+        file: tuple[str, FileFingerprint],
         task_list: TaskJsonListType,
         project_list: ProjectJsonListType,
-    ) -> None:
-        fileContent = self.__fileBroker.getVaultFileLines(VaultRegistry.OBSIDIAN, file[0])
+        fileContent: list[str] | None = None,
+    ) -> _TaskIdentityFileSnapshot:
+        if fileContent is None:
+            fileContent = self.__fileBroker.getVaultFileLines(VaultRegistry.OBSIDIAN, file[0])
+        identity_snapshot = self.__identity_snapshot_from_lines(fileContent, file[0], file[1])
         fileHeader = self.__getFileHeader(fileContent)
         taskLines = self.__getFileTaskLines(fileContent, fileHeader)
 
@@ -281,6 +388,7 @@ class ObsidianVaultTaskJsonProvider(ITaskJsonProvider):
             if taskDict["valid"] == "False":
                 continue
             self.__update_or_append_task(taskDict, task_list)
+        return identity_snapshot
 
     def __is_open_task_line(self, line: str) -> bool:
         match = self._TASK_LINE.match(line)

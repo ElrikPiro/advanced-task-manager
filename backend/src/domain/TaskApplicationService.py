@@ -7,6 +7,7 @@ import json
 import math
 import os
 import uuid
+from collections.abc import Sequence
 from typing import Any, Literal, Mapping, cast
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
@@ -203,11 +204,17 @@ class TaskApplicationService:
         """Expose an explicit maintenance hook for the existing provider cycle."""
         return self.discover_initialize()
 
-    def read_task(self, task_id: str) -> ITaskModel:
+    def read_task(
+        self,
+        task_id: str,
+        *,
+        task_models: Sequence[ITaskModel] | None = None,
+    ) -> ITaskModel:
         """Read one task by its currently exposed UID, including completed tasks."""
         if not isinstance(task_id, str) or not task_id:
             raise ValidationError("A task identifier is required", details={"field": "id"})
-        matches = [task for task in self._all_tasks() if self._capture_task_id(task) == task_id]
+        source_tasks = self._all_tasks() if task_models is None else list(task_models)
+        matches = [task for task in source_tasks if self._capture_task_id(task) == task_id]
         if not matches:
             raise ResourceNotFoundError("No task matches the requested identifier")
         if len(matches) > 1:
@@ -218,10 +225,19 @@ class TaskApplicationService:
         """Return a fresh, read-only model snapshot for resource projection."""
         return self._all_tasks(include_completed=include_completed)
 
-    def query_tasks(self, view: TaskView) -> TaskListContent:
+    def query_tasks(
+        self,
+        view: TaskView,
+        *,
+        task_models: Sequence[ITaskModel] | None = None,
+    ) -> TaskListContent:
         """Run a task query with its filters, strategies and page supplied inline."""
         self._validate_view(view)
-        tasks = self._all_tasks(include_completed=False)
+        tasks = (
+            self._all_tasks(include_completed=False)
+            if task_models is None
+            else [task for task in task_models if task.getStatus() != "x"]
+        )
         try:
             manager = self._task_list_manager.clone_for_view(tasks, view)
         except DomainError:
@@ -237,11 +253,16 @@ class TaskApplicationService:
             self._raise_task_identity_error(error)
             raise DomainCalculationError("Task view could not be calculated") from error
 
-    def read_agenda(self, query: AgendaQuery) -> AgendaContent:
+    def read_agenda(
+        self,
+        query: AgendaQuery,
+        *,
+        task_models: Sequence[ITaskModel] | None = None,
+    ) -> AgendaContent:
         """Calculate an agenda from current tasks and explicit date/heuristic."""
         if not isinstance(query.day, TimePoint):
             raise ValidationError("Agenda day must be a TimePoint", details={"field": "day"})
-        tasks = self._all_tasks(include_completed=True)
+        tasks = self._all_tasks(include_completed=True) if task_models is None else list(task_models)
         try:
             manager = self._task_list_manager.clone_for_view(
                 tasks,
@@ -280,13 +301,16 @@ class TaskApplicationService:
         task: ITaskModel,
         *,
         extended: bool = False,
+        task_models: Sequence[ITaskModel] | None = None,
     ) -> TaskInformation:
         """Project typed detail data for an already-resolved model snapshot."""
         try:
             clone_for_view = getattr(self._task_list_manager, "clone_for_view", None)
             if callable(clone_for_view):
                 manager = clone_for_view(
-                    self._all_tasks(include_completed=True),
+                    self._all_tasks(include_completed=True)
+                    if task_models is None
+                    else list(task_models),
                     TaskView(filters=(), algorithm="", heuristic=""),
                 )
             else:
@@ -301,11 +325,20 @@ class TaskApplicationService:
             self._raise_task_identity_error(error)
             raise ResourceReadError("Task detail could not be read") from error
 
-    def read_statistics(self, view: TaskView) -> WorkloadStats:
+    def read_statistics(
+        self,
+        view: TaskView,
+        *,
+        task_models: Sequence[ITaskModel] | None = None,
+    ) -> WorkloadStats:
         """Calculate live work statistics for an explicit, unpaged task view."""
         self._validate_view(view)
         try:
-            tasks = self._all_tasks(include_completed=False)
+            tasks = (
+                self._all_tasks(include_completed=False)
+                if task_models is None
+                else [task for task in task_models if task.getStatus() != "x"]
+            )
             manager = self._task_list_manager.clone_for_view(tasks, view)
             read_stats = getattr(self._statistics_service, "readWorkloadStats", None)
             if callable(read_stats):

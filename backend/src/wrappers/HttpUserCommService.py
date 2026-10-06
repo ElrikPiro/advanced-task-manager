@@ -188,10 +188,10 @@ class HttpUserCommService(IUserCommService):
                 # therefore fail closed during initialization.
                 password=lambda: "",
             )
-        except Exception:
+        except Exception as error:
             raise RuntimeError(
                 "TLS certificate chain and private key could not be loaded"
-            ) from None
+            ) from error
         return context
 
     @staticmethod

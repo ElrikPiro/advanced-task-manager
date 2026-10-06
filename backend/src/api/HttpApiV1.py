@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import datetime
+import asyncio
 import copy
 import json
 import hmac
@@ -363,13 +364,15 @@ class HttpApiV1:
         if path == ("tasks",):
             if request.method == "GET":
                 view = self._task_view(request)
-                return self._hal(self.resources.read_tasks(view)), None
+                document = await asyncio.to_thread(self.resources.read_tasks, view)
+                return self._hal(document), None
             self._require_method(request, {"GET"})
 
         if len(path) == 2 and path[0] == "tasks":
             if request.method == "GET":
                 self._require_no_query(request)
-                return self._hal(self.resources.read_task(path[1])), None
+                document = await asyncio.to_thread(self.resources.read_task, path[1])
+                return self._hal(document), None
             if request.method == "PATCH":
                 self._require_request_media(request, "application/merge-patch+json")
                 self._require_no_query(request)
@@ -387,7 +390,8 @@ class HttpApiV1:
                 result = await self.application_service.submit_operation_async(
                     operation_id, "edit-task", target, parameters
                 )
-                return self._hal(self.resources.task_resource(result.value)), operation_id
+                document = await asyncio.to_thread(self.resources.task_resource, result.value)
+                return self._hal(document), operation_id
             self._require_method(request, {"GET", "PATCH"})
 
         if path == ("agenda",):
@@ -405,11 +409,15 @@ class HttpApiV1:
                 day = TimePoint(parsed_day)
             if not heuristic:
                 raise HttpInputError("invalid-query-parameter", "heuristic must be a name", field="heuristic")
-            return self._hal(self.resources.read_agenda(AgendaQuery(day=day, heuristic=heuristic))), None
+            query = AgendaQuery(day=day, heuristic=heuristic)
+            document = await asyncio.to_thread(self.resources.read_agenda, query)
+            return self._hal(document), None
 
         if path == ("statistics",):
             self._require_method(request, {"GET"})
-            return self._hal(self.resources.read_statistics(self._task_view(request))), None
+            view = self._task_view(request)
+            document = await asyncio.to_thread(self.resources.read_statistics, view)
+            return self._hal(document), None
 
         if path == ("notifications",):
             self._require_method(request, {"GET"})
@@ -420,14 +428,17 @@ class HttpApiV1:
                     "notification-history-unavailable",
                     "Notification history is not configured",
                 )
-            return self._hal(self.resources.read_notifications()), None
+            document = await asyncio.to_thread(self.resources.read_notifications)
+            return self._hal(document), None
 
         if path in {("events",), ("strategies",)}:
             self._require_method(request, {"GET"})
             self._require_no_query(request)
             if path[0] == "events":
-                return self._hal(self.resources.read_events()), None
-            return self._hal(self.resources.read_strategies()), None
+                document = await asyncio.to_thread(self.resources.read_events)
+                return self._hal(document), None
+            document = await asyncio.to_thread(self.resources.read_strategies)
+            return self._hal(document), None
 
         if path == ("projects",):
             self._require_method(request, {"GET"})
@@ -435,12 +446,14 @@ class HttpApiV1:
             status = query_values.get("status", ["open"])[0]
             if not status:
                 raise HttpInputError("invalid-query-parameter", "status must be a name", field="status")
-            return self._hal(self.resources.read_projects(status)), None
+            document = await asyncio.to_thread(self.resources.read_projects, status)
+            return self._hal(document), None
 
         if len(path) == 2 and path[0] == "projects":
             self._require_method(request, {"GET"})
             self._require_no_query(request)
-            return self._hal(self.resources.read_project(path[1])), None
+            document = await asyncio.to_thread(self.resources.read_project, path[1])
+            return self._hal(document), None
 
         if path == ("operations",):
             if request.method != "POST":
@@ -460,7 +473,8 @@ class HttpApiV1:
             self._require_no_query(request)
             operation_id = self._normalize_uuid(path[1], field="id")
             request[_OPERATION_ID_KEY] = operation_id
-            return self._hal(self.resources.read_operation(operation_id)), None
+            document = await asyncio.to_thread(self.resources.read_operation, operation_id)
+            return self._hal(document), None
 
         raise _HttpFailure(404, "not-found", "The requested resource was not found")
 
