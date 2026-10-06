@@ -23,6 +23,7 @@ graph TB
         H[StatisticsService]
         P[Atomic file store]
         R[NotificationHistoryStore]
+        S[Vault refresh coordinator]
     end
 
     subgraph "Data Providers"
@@ -55,6 +56,7 @@ graph TB
     J --> N
     K --> L
     L --> O
+    S --> L
     J --> P
     L --> P
     H --> P
@@ -189,15 +191,17 @@ The application uses several heuristics to prioritize tasks:
 
 ### TaskApplicationService
 
-`TaskApplicationService` provides task reads and queries from the configured data providers. Query methods accept explicit task-view inputs and use a temporary manager with copies of the filter, heuristic and algorithm settings, leaving the configured manager's page, selection and view unchanged. HTTP queries therefore do not modify or depend on a shared channel selection; Telegram and command-line channels retain their configured manager behavior.
+`TaskApplicationService` provides task reads and queries from the configured data providers. Query methods accept explicit task-view inputs and use a temporary manager with copies of the filter, heuristic and algorithm settings, leaving the configured manager's page, selection and view unchanged. HTTP queries therefore do not modify or depend on a shared channel selection; Telegram and command-line channels retain their configured manager behavior. A query uses one provider generation; task pages and agendas resolve only their returned task IDs through that generation's index. Statistics and task count share the same algorithm-selected population.
 
-Task IDs are opaque values stored with their tasks: JSON uses the `id` field, and Markdown uses `[id:: value]` on the task line. For older tasks without a declared ID, JSON derives an MD5 fallback from the description, configured file path and zero-based position in the full task array; Markdown derives it from the description, file path and line number. Reads calculate the fallback without writing it. The first actual write stores that value, which then remains stable across edits and moves. Resolution scans completed as well as open tasks: a lookup for an ID with no matching task reports absence, while duplicate IDs are ambiguous and block writes to that ID. MD5 can collide, so the fallback is not guaranteed to be unique.
+Task IDs are opaque values stored with their tasks: JSON uses the `id` field, and Markdown uses `[id:: value]` on the task line. For older tasks without a declared ID, JSON derives an MD5 fallback from the description, configured file path and zero-based position in the full task array; Markdown derives it from the description, file path and line number. Reads calculate the fallback without writing it. The first actual write stores that value, which then remains stable across edits and moves. Resolution includes completed and open tasks. A duplicate ID is ambiguous and cannot be edited safely; invalid or conflicting IDs are reported as invalid task data. MD5 can collide, so the fallback is not guaranteed to be unique. Cross-file external changes are detected on a later successful refresh, so a duplicate introduced elsewhere may not be visible immediately.
 
-Provider `getJson()` and `getTaskList()` reads parse the current JSON or Markdown data without running discovery or persisting fallback IDs. Startup initialization is explicit, and the provider maintenance cycle retains its configured 10-second cadence. Reading an open project without an open next action does not create or save `Define next action`; explicit discovery may create it. Task updates preserve completed rows and fields outside the update. If task or statistics files are missing, reads use in-memory defaults until initialization or a write creates the files.
+Markdown reads use the latest complete, immutable in-memory generation. Warm `getJson()` and `getTaskList()` reads do not inventory, stat, or read vault files. A background refresh builds the next generation and publishes it atomically; successful local Markdown commits patch the generation and identity index before the write response completes. Refresh begins after the listener is initialized, repeats ten seconds after the preceding refresh finishes, and also runs at local-day rollover because default task dates depend on the current day. External edits, moves, and deletions appear on the next successful refresh; ten seconds is not a strict freshness guarantee because scans can take longer or fail. A failed refresh keeps the last complete generation, and its age can grow without a fixed limit.
+
+The HTTP root and `GET /status` remain available while the first generation loads. Task-dependent reads return `503` with `Retry-After` until the first generation exists. A read whose task index entry was invalidated by an uncertain local write returns a retryable `503` with the `snapshot-refresh-required` code. A mutation with a missing, stale, ambiguous, or parse-fault target returns a `409` refresh-required conflict before changing task data. After every successful full refresh, maintenance checks open projects and creates a deterministic `Define next action` task when needed. The refresh-completion signal starts one maintenance worker; signals received during a pass coalesce into one pending pass, and confirmed local note patches do not trigger discovery. Maintenance prepares from one generation and commits one target note at a time, allowing other queued writes to proceed between notes. A stale plan is retried after the next successful full refresh. Task updates preserve fields outside the requested change. If JSON task or statistics files are missing, reads use in-memory defaults until a write creates those files.
 
 ### File persistence
 
-The shared file store writes a complete candidate into an exclusive temporary file beside its destination, flushes and synchronizes it, preserves applicable permissions, then replaces the destination atomically. The store checks for external changes before replacement and retries from fresh file contents where it can; editors that do not cooperate can still race after that check. Memory snapshots are published only after the replacement is confirmed. A failure before replacement has no effect on that file; a failure after replacement can leave durability uncertain. Each file is atomic independently. Operations spanning task, statistics, project, or several task files stop at the first failure, keep earlier confirmed writes, and report known and uncertain effects for manual review without rollback or automatic retry.
+The shared file store writes a complete candidate into an exclusive temporary file beside its destination, flushes and synchronizes it, preserves applicable permissions, then replaces the destination atomically. The store checks for external changes before replacement and retries from fresh file contents where it can; editors that do not cooperate can still race after that check. Memory snapshots are published only after the replacement is confirmed. In Markdown mode, a confirmed local file commit patches the published task generation and ID index before the mutation response completes. If a multi-file operation partially commits, the confirmed subset is reflected; uncertain commits invalidate affected index entries and request a refresh. A failure before replacement has no effect on that file; a failure after replacement can leave durability uncertain. Each file is atomic independently. Operations spanning task, statistics, project, or several task files stop at the first failure, keep earlier confirmed writes, and report known and uncertain effects for manual review without rollback or automatic retry.
 
 ### Mutation coordination
 
@@ -218,7 +222,8 @@ Task-list defaults are page 1, page size 5, the `All active task filter`, the `G
 | Resource path | Methods | Purpose |
 | --- | --- | --- |
 | `/api/v1/` | GET | API version, time zone and collection links. |
-| `/api/v1/tasks` | GET | Live task page with per-request filters, search and ordering. |
+| `/api/v1/status` | GET | Readiness, published generation, snapshot age and refresh status. |
+| `/api/v1/tasks` | GET | Task page from the latest published generation, with per-request filters, search and ordering. |
 | `/api/v1/tasks/{id}` | GET, PATCH | Task detail or a validated partial task update. |
 | `/api/v1/agenda` | GET | Tasks grouped for a requested civil day. |
 | `/api/v1/statistics` | GET | Current workload and recorded work. |
@@ -229,6 +234,8 @@ Task-list defaults are page 1, page size 5, the `All active task filter`, the `G
 | `/api/v1/notifications` | GET | Read the complete retained notification history without consuming entries. |
 
 Task and project links include the configured mount prefix and encode opaque identifiers as path segments. Task instants use ISO 8601 values with a UTC offset, and effort values use finite decimal text with the `pomodoro` unit. Project details expose a JSON description or Markdown content according to the configured storage mode.
+
+In Markdown mode the listener initializes before the first full vault refresh. Until the first complete generation is published, task reads return `503 service-not-ready`; the root and status resources remain available. Warm task reads use the latest complete generation without vault inventory or Markdown I/O. Refreshes run in the background ten seconds after the preceding refresh completes, with an additional refresh at local-day rollover. External edits, moves and deletions appear on a later successful refresh, so freshness depends on scan duration and scheduler delay. Failed refreshes retain the last good generation and expose its age and a sanitized error in status; repeated failures can leave that generation stale without a fixed bound. Responses remain `no-store`.
 
 Every request requires a Bearer token. Authenticated successes and errors use `Cache-Control: no-store`; errors use `application/problem+json` and carry a generated request ID in both the body and `X-Request-ID`. Mutating command-style GET paths are retired with an explicit `legacy-route-retired` response. Notification history is returned in ascending sequence order with its `historyId`, `nextSequence`, retained sequence bounds and `discardedThrough` marker. The API has no acknowledgement, cursor-based deletion or history consumer.
 

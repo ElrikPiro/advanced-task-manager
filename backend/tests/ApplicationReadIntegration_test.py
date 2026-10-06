@@ -11,7 +11,7 @@ from unittest.mock import patch
 
 from src.FileBroker import FileBroker
 from src.HeuristicScheduling import HeuristicScheduling
-from src.Interfaces.IFileBroker import FileRegistry
+from src.MutationCoordinator import MutationCoordinator
 from src.StatisticsService import StatisticsService
 from src.TelegramTaskListManager import TelegramTaskListManager
 from src.Utils import TaskDiscoveryPolicies
@@ -36,6 +36,7 @@ from src.taskmodels.TaskIdentity import fallback_task_id
 from src.taskproviders.ObsidianTaskProvider import ObsidianTaskProvider
 from src.taskproviders.TaskProvider import TaskProvider
 from src.wrappers.TimeManagement import TimeAmount, TimePoint
+from src.api.ApiResources import ApiResources
 
 
 class ApplicationReadIntegrationTest(TestCase):
@@ -460,6 +461,158 @@ class ApplicationReadIntegrationTest(TestCase):
             self.assertNotEqual(channel_view_before_reads, original_view)
             task_provider.dispose()
 
+    def test_markdown_record_work_uses_latest_target_effort_inside_write_turn(self) -> None:
+        with self._fixed_clock(), TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            data = root / "data"
+            appdata = root / "appdata"
+            vault = root / "vault"
+            data.mkdir()
+            appdata.mkdir()
+            vault.mkdir()
+            self._write_markdown_fixture(vault)
+            coordinator = MutationCoordinator()
+            file_broker = FileBroker(str(data), str(appdata), str(vault), coordinator)
+            policies = TaskDiscoveryPolicies(
+                context_missing_policy="0",
+                date_missing_policy="0",
+                default_context="inbox",
+                categories_prefixes=["alert", "work", "home", "inbox"],
+            )
+            json_provider = ObsidianVaultTaskJsonProvider(
+                file_broker,
+                policies,
+                mutation_coordinator=coordinator,
+                auto_start=False,
+            )
+            task_provider = ObsidianTaskProvider(
+                json_provider,
+                file_broker,
+                disableThreading=True,
+                mutation_coordinator=coordinator,
+            )
+            try:
+                json_provider.refresh()
+                application, _, _, _ = self._create_query_stack(file_broker, task_provider)
+                target = next(
+                    task
+                    for task in task_provider.getTaskList(include_completed=True)
+                    if "Review release draft" in task.getDescription()
+                )
+                task_id = target.getTaskUID()
+
+                note_path = vault / "Atlas.md"
+                note = note_path.read_text(encoding="utf-8")
+                note_path.write_text(
+                    note.replace(
+                        "[remaining_cost::8] [invested::2]",
+                        "[remaining_cost::6] [invested::4]",
+                        1,
+                    ),
+                    encoding="utf-8",
+                )
+
+                result = application.execute_operation(
+                    "record-work",
+                    OperationTarget("task", task_id),
+                    {"duration": "1p", "now": self.FIXED_NOW},
+                )
+
+                self.assertEqual(result.value.getInvestedEffort().as_pomodoros(), 5.0)
+                self.assertEqual(result.value.getTotalCost().as_pomodoros(), 1.0)
+                updated = task_provider.getTaskById(task_id)
+                self.assertEqual(updated.getInvestedEffort().as_pomodoros(), 5.0)
+                self.assertEqual(updated.getTotalCost().as_pomodoros(), 1.0)
+            finally:
+                task_provider.dispose()
+                coordinator.close()
+
+    def test_event_operations_recheck_waiters_from_the_current_note(self) -> None:
+        with self._fixed_clock(), TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            data = root / "data"
+            appdata = root / "appdata"
+            vault = root / "vault"
+            data.mkdir()
+            appdata.mkdir()
+            vault.mkdir()
+            self._write_markdown_fixture(vault)
+            other_path = vault / "Other.md"
+            other_path.write_text(
+                "- [ ] Another waiter [track::work] [starts::2026-01-01] "
+                "[due::2099-01-01] [severity::1] [remaining_cost::3] "
+                "[invested::0] [calm::false] [waited::review-ready] [id::other-waiter]\n",
+                encoding="utf-8",
+            )
+            coordinator = MutationCoordinator()
+            broker = FileBroker(str(data), str(appdata), str(vault), coordinator)
+            policies = TaskDiscoveryPolicies(
+                context_missing_policy="0",
+                date_missing_policy="0",
+                default_context="inbox",
+                categories_prefixes=["alert", "work", "home", "inbox"],
+            )
+            json_provider = ObsidianVaultTaskJsonProvider(
+                broker,
+                policies,
+                mutation_coordinator=coordinator,
+                auto_start=False,
+            )
+            task_provider = ObsidianTaskProvider(
+                json_provider,
+                broker,
+                disableThreading=True,
+                mutation_coordinator=coordinator,
+            )
+            try:
+                json_provider.refresh()
+                application, _, _, _ = self._create_query_stack(broker, task_provider)
+                tasks = task_provider.getTaskList(include_completed=True)
+                raised = next(task for task in tasks if task.getEventRaised() == "review-ready")
+                original_waiter = next(task for task in tasks if task.getTaskUID() == "other-waiter")
+                original_start = original_waiter.getStart()
+
+                atlas = vault / "Atlas.md"
+                atlas_text = atlas.read_text(encoding="utf-8")
+                atlas.write_text(
+                    atlas_text.replace(
+                        "[waited::review-ready]",
+                        "[waited::different-event]",
+                        1,
+                    ),
+                    encoding="utf-8",
+                )
+                other_path.write_text(
+                    other_path.read_text(encoding="utf-8").replace(
+                        "[waited::review-ready]",
+                        "[waited::different-event]",
+                        1,
+                    ),
+                    encoding="utf-8",
+                )
+
+                application.execute_operation(
+                    "complete-task",
+                    OperationTarget("task", raised.getTaskUID()),
+                    {},
+                )
+                application.execute_operation(
+                    "raise-event",
+                    OperationTarget("event", "review-ready"),
+                    {},
+                )
+
+                self.assertIn("[waited::different-event]", other_path.read_text(encoding="utf-8"))
+                json_provider.refresh()
+                self.assertEqual(
+                    task_provider.getTaskById("other-waiter").getEventWaited(),
+                    "different-event",
+                )
+                self.assertEqual(task_provider.getTaskById("other-waiter").getStart(), original_start)
+            finally:
+                task_provider.dispose()
+                coordinator.close()
+
     def test_absent_json_and_statistics_files_remain_absent_on_reads(self) -> None:
         with self._fixed_clock(), TemporaryDirectory() as temporary:
             root = Path(temporary)
@@ -504,7 +657,12 @@ class ApplicationReadIntegrationTest(TestCase):
                 default_context="inbox",
                 categories_prefixes=["alert", "work", "home", "inbox"],
             )
-            markdown_provider = ObsidianVaultTaskJsonProvider(file_broker, policies)
+            markdown_provider = ObsidianVaultTaskJsonProvider(
+                file_broker,
+                policies,
+                auto_start=False,
+            )
+            markdown_provider.refresh()
             task_provider = ObsidianTaskProvider(markdown_provider, file_broker, disableThreading=True)
             application, channel_manager, statistics, algorithms = self._create_query_stack(
                 file_broker,
@@ -732,7 +890,12 @@ class ApplicationReadIntegrationTest(TestCase):
                 default_context="work",
                 categories_prefixes=["work"],
             )
-            markdown_json = ObsidianVaultTaskJsonProvider(file_broker, policies)
+            markdown_json = ObsidianVaultTaskJsonProvider(
+                file_broker,
+                policies,
+                auto_start=False,
+            )
+            markdown_json.refresh()
             task_provider = ObsidianTaskProvider(markdown_json, file_broker, disableThreading=True)
             application, _, _, _ = self._create_query_stack(
                 file_broker,
@@ -747,7 +910,13 @@ class ApplicationReadIntegrationTest(TestCase):
             self.assertEqual(target.getTaskUID(), target_id)
             self.assertEqual(application.read_task("completed-markdown").getStatus(), "x")
             before_reads = self._snapshot(vault)
-            self.assertEqual(application.read_task(target_id).getTaskUID(), target_id)
+            with patch.object(
+                task_provider,
+                "getTaskList",
+                side_effect=AssertionError("indexed detail must not rebuild the full task list"),
+            ):
+                detail = ApiResources(application).read_task(target_id)
+            self.assertEqual(detail["id"], target_id)
             self.assertEqual(self._snapshot(vault), before_reads)
 
             application.edit_task(target_id, {"description": "Updated markdown task"})
@@ -761,6 +930,7 @@ class ApplicationReadIntegrationTest(TestCase):
             source_path.write_text("".join(line for line in source_lines if line != moved_line), encoding="utf-8")
             moved_path = vault / "Moved.md"
             moved_path.write_text("# Moved\n" + moved_line, encoding="utf-8")
+            markdown_json.refresh()
             before_move_read = self._snapshot(vault)
             resolved_after_move = application.read_task(target_id)
             self.assertEqual(resolved_after_move.getFile(), "Moved.md")
@@ -787,6 +957,7 @@ class ApplicationReadIntegrationTest(TestCase):
                 if f"[id:: {target_id}]" in line
             )
             duplicate_path.write_text("# Duplicate\n" + moved_line, encoding="utf-8")
+            markdown_json.refresh()
             duplicate_snapshot = self._snapshot(vault)
             with self.assertRaises(AmbiguousResourceError):
                 application.edit_task(target_id, {"description": "Must not be written"})
@@ -798,6 +969,7 @@ class ApplicationReadIntegrationTest(TestCase):
                 "[severity::1] [remaining_cost::1] [invested::0] [calm::false] [id:: ]\n",
                 encoding="utf-8",
             )
+            markdown_json.refresh()
             invalid_snapshot = self._snapshot(vault)
             with self.assertRaises(InvalidResourceDataError):
                 application.read_task(target_id)

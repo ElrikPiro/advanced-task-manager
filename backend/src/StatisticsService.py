@@ -1,7 +1,7 @@
 import datetime
 import math
 from copy import deepcopy
-from typing import Any, Callable
+from typing import Any, Callable, cast
 
 from src.Utils import WorkLogEntry, WorkloadStats, EventsContent, EventStatistics
 
@@ -12,6 +12,12 @@ from .Interfaces.IFilter import IFilter
 from .Interfaces.IHeuristic import IHeuristic
 from .wrappers.TimeManagement import TimePoint, TimeAmount
 from .MutationCoordinator import MutationCoordinator
+from .filters.ActiveTaskFilter import ActiveTaskFilter
+from .filters.WorkloadAbleFilter import WorkloadAbleFilter
+from .heuristics.RemainingEffortHeuristic import RemainingEffortHeuristic
+from .heuristics.SlackHeuristic import SlackHeuristic
+from .taskmodels.ObsidianTaskModel import ObsidianTaskModel
+from .taskmodels.TaskModel import TaskModel
 
 
 class StatisticsUpdateError(ValueError):
@@ -24,6 +30,22 @@ class ConfirmedStatisticsRefreshError(RuntimeError):
     """The file update was confirmed but its returned document was unusable."""
 
     effects_state = "unknown"
+
+
+class _StatisticsTaskView:
+    """Request-local model view that memoizes built-in remaining-time reads."""
+
+    def __init__(self, task: ITaskModel) -> None:
+        self.__task = task
+        self.__remaining_time: TimeAmount | None = None
+
+    def calculateRemainingTime(self) -> TimeAmount:
+        if self.__remaining_time is None:
+            self.__remaining_time = self.__task.calculateRemainingTime()
+        return self.__remaining_time
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self.__task, name)
 
 
 class StatisticsService(IStatisticsService):
@@ -153,7 +175,17 @@ class StatisticsService(IStatisticsService):
         taskList: list[ITaskModel],
         work_done: dict[str, Any],
     ) -> WorkloadStats:
-        filteredTasks = self.workLoadAbleFilter.filter(taskList)
+        stats_task_list: list[ITaskModel] = taskList
+        if self.__can_memoize_remaining_time(taskList):
+            # The built-in workload filter and two built-in heuristics ask for
+            # the same day count repeatedly. Keep one lazy value per detached
+            # task for this calculation only; custom filters/models/heuristics
+            # keep their existing call behavior.
+            stats_task_list = cast(
+                list[ITaskModel],
+                [_StatisticsTaskView(task) for task in taskList],
+            )
+        filteredTasks = self.workLoadAbleFilter.filter(stats_task_list)
 
         workload: TimeAmount = TimeAmount("0.0p")
         remainingEffort: TimeAmount = TimeAmount("0.0p")
@@ -201,6 +233,18 @@ class StatisticsService(IStatisticsService):
             workDone=filtered_work_done,
             workDoneLog=log_list
         )
+
+    def __can_memoize_remaining_time(self, tasks: list[ITaskModel]) -> bool:
+        active_filter = getattr(self.workLoadAbleFilter, "activeFilter", None)
+        if type(self.workLoadAbleFilter) is not WorkloadAbleFilter:
+            return False
+        if type(active_filter) is not ActiveTaskFilter:
+            return False
+        if type(self.remainingEffortHeuristic) is not RemainingEffortHeuristic:
+            return False
+        if type(self.mainHeuristic) is not SlackHeuristic:
+            return False
+        return all(type(task) in (TaskModel, ObsidianTaskModel) for task in tasks)
 
     def getWorkDoneLog(self) -> list[WorkLogEntry]:
         logList = self.workDone.get("log", [])

@@ -4,7 +4,7 @@ import os
 import time
 import unittest
 from typing import List
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 from src.AtomicFileStore import AtomicWriteError
 from src.TelegramTaskListManager import TelegramTaskListManager
@@ -18,6 +18,8 @@ from src.domain.errors import (
     OperationFailedError,
     ResourceNotFoundError,
     ResourceReadError,
+    SnapshotRefreshRequiredError,
+    ServiceNotReadyError,
     ValidationError,
 )
 from src.domain.models import AgendaQuery, OperationTarget, TaskView
@@ -31,6 +33,7 @@ from src.taskproviders.TaskIdentityErrors import (
     MissingTaskIdentityError,
 )
 from src.taskproviders.TaskProvider import TaskProvider
+from src.Utils import WorkloadStats
 from src.wrappers.TimeManagement import TimeAmount
 
 
@@ -228,6 +231,48 @@ class TaskApplicationServiceTest(unittest.TestCase):
         self.assertEqual(content.tasks, [])
         self.assertEqual(content.total_tasks, 0)
 
+    def test_statistics_and_count_reuse_one_algorithm_selected_population(self) -> None:
+        class CountingFilter(PrefixFilter):
+            def __init__(self) -> None:
+                super().__init__("")
+                self.calls = 0
+
+            def filter(self, tasks: list[TaskModel]) -> list[TaskModel]:
+                self.calls += 1
+                return super().filter(tasks)
+
+        active_filter = CountingFilter()
+        self.application._task_list_manager._TelegramTaskListManager__filterList = [
+            ("All active task filter", active_filter, True)
+        ]
+        stats = WorkloadStats(
+            TimeAmount("0p"),
+            TimeAmount("0p"),
+            0.0,
+            "",
+            "",
+            TimeAmount("0p"),
+            {},
+            [],
+        )
+        self.statistics.readWorkloadStats = MagicMock(return_value=stats)
+
+        actual_stats, content = self.application.read_statistics_and_task_query(
+            TaskView(filters=("All active task filter",), algorithm="", heuristic="")
+        )
+
+        self.assertIs(actual_stats, stats)
+        self.assertEqual(active_filter.calls, 3)
+        self.assertEqual(content.total_tasks, 2)
+        self.statistics.readWorkloadStats.assert_called_once()
+        self.assertEqual(len(self.statistics.readWorkloadStats.call_args.args[0]), 2)
+
+    def test_task_reads_report_not_ready_instead_of_an_empty_vault(self) -> None:
+        self.provider.isReady = lambda: False
+
+        with self.assertRaises(ServiceNotReadyError):
+            self.application.read_task_models()
+
     def test_query_ids_resolve_to_the_same_open_task_when_completed_tasks_precede_it(self) -> None:
         content = self.application.query_tasks(TaskView(filters=("Work",), algorithm="EDF"))
 
@@ -288,6 +333,22 @@ class TaskApplicationServiceTest(unittest.TestCase):
         with self.assertRaises(ResourceReadError):
             self.application.read_agenda(AgendaQuery())
 
+    def test_invalidated_index_reads_return_refresh_conflict(self) -> None:
+        def refresh_required(*_args, **_kwargs):
+            error = RuntimeError("snapshot refresh required")
+            error.code = "snapshot-refresh-required"
+            raise error
+
+        class InvalidatedSnapshot:
+            getTaskById = staticmethod(refresh_required)
+
+        with self.assertRaises(SnapshotRefreshRequiredError):
+            self.application.read_task_from_snapshot("1", InvalidatedSnapshot())
+
+        with patch.object(self.provider, "getTaskById", side_effect=refresh_required, create=True):
+            with self.assertRaises(SnapshotRefreshRequiredError):
+                self.application.read_task("1")
+
     def test_maintenance_runs_explicit_provider_discovery(self) -> None:
         result = self.application.maintain()
 
@@ -296,6 +357,46 @@ class TaskApplicationServiceTest(unittest.TestCase):
         ])
         self.assertEqual(self.provider.discovery_calls, 1)
         self.assertEqual(self.provider.saved, [])
+
+    def test_async_provider_discovers_after_readiness_instead_of_only_refreshing(self) -> None:
+        class RefreshingProvider(MemoryTaskProvider):
+            def __init__(self, tasks: list[TaskModel]) -> None:
+                super().__init__(tasks)
+                self.ready = True
+                self.refresh_requests = 0
+
+            def isReady(self) -> bool:
+                return self.ready
+
+            def requestRefresh(self) -> None:
+                self.refresh_requests += 1
+
+        provider = RefreshingProvider(self.provider.tasks)
+        manager = TelegramTaskListManager(
+            provider.getTaskList(),
+            self.algorithms,
+            self.heuristics,
+            self.filters,
+            self.statistics,
+        )
+        application = TaskApplicationService(
+            provider,
+            scheduling=None,
+            statistics_service=self.statistics,
+            task_list_manager=manager,
+            categories=[{"prefix": "work"}, {"prefix": "home"}],
+        )
+
+        discovered = application.discover_initialize()
+
+        self.assertEqual(provider.discovery_calls, 1)
+        self.assertEqual(provider.refresh_requests, 0)
+        self.assertEqual(len(discovered), 3)
+
+        provider.ready = False
+        with self.assertRaises(ServiceNotReadyError):
+            application.discover_initialize()
+        self.assertEqual(provider.refresh_requests, 1)
 
     def test_missing_and_ambiguous_ids_are_typed_errors_and_block_writes(self) -> None:
         with self.assertRaises(ResourceNotFoundError):

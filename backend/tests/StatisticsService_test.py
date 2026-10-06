@@ -10,7 +10,12 @@ from src.FileBroker import FileBroker
 from src.StatisticsService import StatisticsService, StatisticsUpdateError
 from src.Interfaces.IFileBroker import FileRegistry
 from src.Utils import WorkLogEntry
-from src.wrappers.TimeManagement import TimeAmount
+from src.filters.ActiveTaskFilter import ActiveTaskFilter
+from src.filters.WorkloadAbleFilter import WorkloadAbleFilter
+from src.heuristics.RemainingEffortHeuristic import RemainingEffortHeuristic
+from src.heuristics.SlackHeuristic import SlackHeuristic
+from src.taskmodels.TaskModel import TaskModel
+from src.wrappers.TimeManagement import TimeAmount, TimePoint
 
 
 class TestStatisticsService(unittest.TestCase):
@@ -44,6 +49,154 @@ class TestStatisticsService(unittest.TestCase):
             self.mock_remaining_effort_heuristic,
             self.mock_main_heuristic
         )
+
+    @staticmethod
+    def _task(
+        description: str,
+        *,
+        due_day: int,
+        start_day: int = 6,
+        status: str = " ",
+        waited: str | None = None,
+        total_cost: float = 4.0,
+        severity: float = 1.0,
+        model_type: type[TaskModel] = TaskModel,
+    ) -> TaskModel:
+        start = datetime.datetime(2026, 10, start_day, 12, 0).timestamp() * 1000
+        due = datetime.datetime(2026, 10, due_day, 0, 0).timestamp() * 1000
+        return model_type(
+            description,
+            "work:test",
+            int(start),
+            int(due),
+            severity,
+            total_cost,
+            -0.5,
+            status,
+            "false",
+            "",
+            0,
+            None,
+            waited,
+        )
+
+    @staticmethod
+    def _built_in_service(remaining_type=RemainingEffortHeuristic, slack_type=SlackHeuristic):
+        remaining = remaining_type(TimeAmount("2p"), 1.0)
+        slack = slack_type(TimeAmount("2p"))
+        return StatisticsService(
+            Mock(),
+            WorkloadAbleFilter(ActiveTaskFilter()),
+            remaining,
+            slack,
+        )
+
+    def test_builtin_statistics_reuse_remaining_days_at_fixed_clock_boundaries(self):
+        class LegacyTaskModel(TaskModel):
+            def calculateRemainingTime(self):
+                return super().calculateRemainingTime()
+
+        task_values = [
+            ("First tied workload", 8, 4.0, 1.0, 6, " ", None),
+            ("Second tied workload", 8, 4.0, 1.0, 6, " ", None),
+            ("Fractional cost", 9, 4.5, 0.6, 6, " ", None),
+            ("Near deadline", 7, 2.25, 1.5, 6, " ", None),
+            ("Urgent", 6, 8.0, 1.0, 6, " ", None),
+            ("Negative cost", 9, -1.25, 1.0, 6, " ", None),
+            ("Waiting", 9, 3.0, 1.0, 6, " ", "external-event"),
+            ("Future start", 9, 3.0, 1.0, 7, " ", None),
+            ("Completed", 9, 3.0, 1.0, 6, "x", None),
+        ]
+        optimized_tasks = [
+            self._task(
+                description,
+                due_day=due_day,
+                total_cost=cost,
+                severity=severity,
+                start_day=start_day,
+                status=status,
+                waited=waited,
+            )
+            for description, due_day, cost, severity, start_day, status, waited in task_values
+        ]
+        legacy_tasks = [
+            self._task(
+                description,
+                due_day=due_day,
+                total_cost=cost,
+                severity=severity,
+                start_day=start_day,
+                status=status,
+                waited=waited,
+                model_type=LegacyTaskModel,
+            )
+            for description, due_day, cost, severity, start_day, status, waited in task_values
+        ]
+        optimized_service = self._built_in_service()
+        legacy_service = self._built_in_service()
+        instants = (
+            datetime.datetime(2026, 10, 6, 23, 59, 59, 999000),
+            datetime.datetime(2026, 10, 7, 0, 0, 0),
+        )
+        optimized_results = []
+
+        for instant in instants:
+            fixed_now = TimePoint(instant)
+            with patch.object(TimePoint, "now", return_value=fixed_now):
+                optimized = optimized_service.getWorkloadStats(optimized_tasks)
+            with patch.object(TimePoint, "now", return_value=fixed_now):
+                legacy = legacy_service.getWorkloadStats(legacy_tasks)
+
+            self.assertEqual(optimized, legacy)
+            optimized_results.append(optimized)
+        self.assertEqual(optimized_results[0].offender, "Near deadline")
+        self.assertEqual(optimized_results[1].offender, "First tied workload")
+
+    def test_builtin_statistics_calculate_remaining_time_once_per_active_task(self):
+        tasks = [
+            self._task("One", due_day=8),
+            self._task("Two", due_day=9),
+            self._task("Urgent", due_day=6),
+            self._task("Future", due_day=9, start_day=7),
+            self._task("Complete", due_day=9, status="x"),
+            self._task("Waiting", due_day=9, waited="external-event"),
+        ]
+        service = self._built_in_service()
+        original_calculate = TaskModel.calculateRemainingTime
+        fixed_now = TimePoint(datetime.datetime(2026, 10, 6, 23, 59, 59, 999000))
+
+        with patch.object(TimePoint, "now", return_value=fixed_now), patch.object(
+            TaskModel,
+            "calculateRemainingTime",
+            autospec=True,
+            side_effect=original_calculate,
+        ) as calculate_remaining:
+            service.getWorkloadStats(tasks)
+
+        # The active filter excludes future and completed work; each remaining
+        # active task is evaluated once, even when several stats use its days.
+        self.assertEqual(calculate_remaining.call_count, 4)
+
+    def test_custom_statistics_heuristic_keeps_uncached_call_behavior(self):
+        class CustomRemainingEffortHeuristic(RemainingEffortHeuristic):
+            pass
+
+        task = self._task("Custom stats", due_day=8)
+        service = self._built_in_service(remaining_type=CustomRemainingEffortHeuristic)
+        original_calculate = TaskModel.calculateRemainingTime
+        fixed_now = TimePoint(datetime.datetime(2026, 10, 6, 23, 59, 59, 999000))
+
+        with patch.object(TimePoint, "now", return_value=fixed_now), patch.object(
+            TaskModel,
+            "calculateRemainingTime",
+            autospec=True,
+            side_effect=original_calculate,
+        ) as calculate_remaining:
+            service.getWorkloadStats([task])
+
+        # The workload filter, two configured heuristics, and workload formula
+        # keep their legacy independent calls for custom extension types.
+        self.assertEqual(calculate_remaining.call_count, 4)
 
     def test_do_work(self):
         # Arrange

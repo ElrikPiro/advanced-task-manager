@@ -188,6 +188,8 @@ def problem_response(
                 methods = [method.strip() for method in value.split(",")]
                 if methods and all(method in _ALLOWED_METHODS for method in methods):
                     response_headers["Allow"] = ", ".join(methods)
+            elif name.casefold() == "retry-after" and re.fullmatch(r"[0-9]{1,5}", value):
+                response_headers["Retry-After"] = value
     encoded = json.dumps(body, ensure_ascii=False, allow_nan=False, separators=(",", ":"))
     return web.Response(
         status=status,

@@ -70,6 +70,7 @@ class ApiResources:
             "agenda": self._link(self._href("agenda")),
             "statistics": self._link(self._href("statistics")),
             "events": self._link(self._href("events")),
+            "status": self._link(self._href("status")),
             "strategies": self._link(self._href("strategies")),
             "projects": self._link(self._href("projects")),
             "operations": self._link(self._href("operations"), method="POST"),
@@ -80,6 +81,47 @@ class ApiResources:
             "version": "1",
             "timeZone": self._time_zone_name(),
             "_links": links,
+        }
+
+    def read_status(self) -> dict[str, Any]:
+        """Expose readiness and refresh age without exposing provider paths."""
+        status = self.application_service.read_service_status()
+        ready = status.get("ready")
+        refreshing = status.get("refreshing")
+        generation = status.get("generation")
+        age = status.get("snapshot_age_seconds")
+        if not isinstance(ready, bool) or not isinstance(refreshing, bool):
+            raise ResourceReadError("Service status could not be read")
+        if generation is not None and (
+            isinstance(generation, bool) or not isinstance(generation, int) or generation < 0
+        ):
+            raise ResourceReadError("Service status could not be read")
+        if age is not None:
+            age = self._finite_number(age, "snapshot age")
+            if age < 0:
+                age = 0.0
+        built_at = self._status_timestamp(status.get("built_at"))
+        last_success = self._status_timestamp(status.get("last_success"))
+        last_error = status.get("last_error")
+        if last_error is not None and not isinstance(last_error, str):
+            raise ResourceReadError("Service status could not be read")
+        local_day = status.get("local_day")
+        if local_day is not None and not isinstance(local_day, str):
+            raise ResourceReadError("Service status could not be read")
+        return {
+            "ready": ready,
+            "generation": generation,
+            "builtAt": built_at,
+            "snapshotAgeSeconds": age,
+            "localDay": local_day,
+            "refreshing": refreshing,
+            "lastSuccess": last_success,
+            "lastError": safe_detail(last_error, self._diagnostic_token) if last_error else None,
+            "observedAt": self._now_iso(),
+            "_links": {
+                "self": self._link(self._href("status")),
+                "root": self._link(self.prefix),
+            },
         }
 
     def read_notifications(self) -> dict[str, Any]:
@@ -167,16 +209,30 @@ class ApiResources:
 
     def read_tasks(self, view: TaskView) -> dict[str, Any]:
         """Return a live page of full task resources and query relationships."""
-        task_models = self._read_task_projection_models()
-        if task_models is None:
+        snapshot = self._read_task_projection_snapshot()
+        task_models: list[ITaskModel] | None
+        if snapshot is not None:
+            task_models = self.application_service.task_models_from_snapshot(snapshot)
+            content = self.application_service.query_tasks(view, task_models=task_models)
+        else:
+            task_models = self._read_task_projection_models()
+        if snapshot is None and task_models is None:
             content = self.application_service.query_tasks(view)
             task_models = self.application_service.read_task_models(include_completed=True)
-        else:
+        elif snapshot is None:
             content = self.application_service.query_tasks(view, task_models=task_models)
-        models_by_id = self._unique_tasks_by_id(task_models)
+        models_by_id: dict[str, ITaskModel] | None = None
+        if snapshot is None or not callable(getattr(snapshot, "getTaskById", None)):
+            if task_models is None:
+                raise DomainCalculationError("The task query did not provide its source models")
+            models_by_id = self._unique_tasks_by_id(task_models)
         embedded_tasks: list[dict[str, Any]] = []
         for entry in content.tasks:
-            task = models_by_id.get(entry.id)
+            task = (
+                self.application_service.read_task_from_snapshot(entry.id, snapshot)
+                if snapshot is not None and models_by_id is None
+                else models_by_id.get(entry.id) if models_by_id is not None else None
+            )
             if task is None:
                 raise DomainCalculationError("A task view referenced an unavailable task")
             heuristic_value = self._finite_number(entry.heuristic_value, "heuristic value")
@@ -220,11 +276,18 @@ class ApiResources:
 
     def read_task(self, task_id: str) -> dict[str, Any]:
         """Read a task by opaque ID, including its computed detail fields."""
-        task_models = self._read_task_projection_models()
-        if task_models is None:
+        if isinstance(self.application_service, TaskApplicationService):
+            # A detail request needs only the provider's indexed identity lookup.
+            # The returned model carries metadata from that same published
+            # generation, so detail does not materialize every task model.
             task = self.application_service.read_task(task_id)
+            task_models = None
         else:
-            task = self.application_service.read_task(task_id, task_models=task_models)
+            task_models = self._read_task_projection_models()
+            if task_models is None:
+                task = self.application_service.read_task(task_id)
+            else:
+                task = self.application_service.read_task(task_id, task_models=task_models)
         return self.task_resource(task, extended=True, task_models=task_models)
 
     def task_resource(
@@ -314,17 +377,27 @@ class ApiResources:
 
     def read_agenda(self, query: AgendaQuery) -> dict[str, Any]:
         """Return the requested civil-day agenda with direct task links."""
-        task_models = self._read_task_projection_models()
-        if task_models is None:
+        snapshot = self._read_task_projection_snapshot()
+        task_models: list[ITaskModel] | None
+        if snapshot is not None:
+            task_models = self.application_service.task_models_from_snapshot(snapshot)
+            agenda = self.application_service.read_agenda(query, task_models=task_models)
+        else:
+            task_models = self._read_task_projection_models()
+        if snapshot is None and task_models is None:
             agenda = self.application_service.read_agenda(query)
             task_models = self.application_service.read_task_models(include_completed=True)
-        else:
+        elif snapshot is None:
             agenda = self.application_service.read_agenda(query, task_models=task_models)
-        models_by_id = self._unique_tasks_by_id(task_models)
+        models_by_id: dict[str, ITaskModel] | None = None
+        if snapshot is None or not callable(getattr(snapshot, "getTaskById", None)):
+            if task_models is None:
+                raise DomainCalculationError("The agenda did not provide its source models")
+            models_by_id = self._unique_tasks_by_id(task_models)
 
-        active = self._agenda_entries(agenda.active_urgent_tasks, models_by_id)
-        planned = self._agenda_entries(agenda.planned_urgent_tasks, models_by_id)
-        other = self._agenda_entries(agenda.other_tasks, models_by_id)
+        active = self._agenda_entries(agenda.active_urgent_tasks, models_by_id, snapshot)
+        planned = self._agenda_entries(agenda.planned_urgent_tasks, models_by_id, snapshot)
+        other = self._agenda_entries(agenda.other_tasks, models_by_id, snapshot)
         planned_groups: dict[str, list[dict[str, Any]]] = {}
         for resource in planned:
             start = resource["start"]
@@ -354,11 +427,26 @@ class ApiResources:
 
     def read_statistics(self, view: TaskView) -> dict[str, Any]:
         """Return work and workload data calculated from the current query set."""
-        task_models = self._read_task_projection_models()
-        if task_models is None:
+        snapshot = self._read_task_projection_snapshot()
+        task_models: list[ITaskModel] | None
+        if snapshot is not None:
+            task_models = self.application_service.task_models_from_snapshot(snapshot)
+            combined_reader = getattr(
+                self.application_service,
+                "read_statistics_and_task_query",
+                None,
+            )
+            if callable(combined_reader):
+                stats, content = combined_reader(view, task_models=task_models)
+            else:
+                stats = self.application_service.read_statistics(view, task_models=task_models)
+                content = self.application_service.query_tasks(view, task_models=task_models)
+        else:
+            task_models = self._read_task_projection_models()
+        if snapshot is None and task_models is None:
             stats = self.application_service.read_statistics(view)
             content = self.application_service.query_tasks(view)
-        else:
+        elif snapshot is None:
             stats = self.application_service.read_statistics(view, task_models=task_models)
             content = self.application_service.query_tasks(view, task_models=task_models)
         work_done = {
@@ -716,11 +804,16 @@ class ApiResources:
     def _agenda_entries(
         self,
         entries: Sequence[TaskEntry],
-        models_by_id: Mapping[str, ITaskModel],
+        models_by_id: Mapping[str, ITaskModel] | None,
+        snapshot: Any | None = None,
     ) -> list[dict[str, Any]]:
         resources: list[dict[str, Any]] = []
         for entry in entries:
-            task = models_by_id.get(entry.id)
+            task = (
+                self.application_service.read_task_from_snapshot(entry.id, snapshot)
+                if snapshot is not None and models_by_id is None
+                else models_by_id.get(entry.id) if models_by_id is not None else None
+            )
             if task is None:
                 raise DomainCalculationError("An agenda referenced an unavailable task")
             resources.append(
@@ -742,11 +835,27 @@ class ApiResources:
             result[task_id] = task
         return result
 
+    def _read_task_projection_snapshot(self) -> Any | None:
+        """Capture a generation-bound task view for application projections."""
+        if isinstance(self.application_service, TaskApplicationService):
+            return self.application_service.read_task_snapshot()
+        return None
+
     def _read_task_projection_models(self) -> list[ITaskModel] | None:
-        """Load one request-local model set when the application supports it."""
+        """Load one request-local model set for non-standard application adapters."""
         if isinstance(self.application_service, TaskApplicationService):
             return self.application_service.read_task_models(include_completed=True)
         return None
+
+    @staticmethod
+    def _status_timestamp(value: Any) -> str | None:
+        if value is None:
+            return None
+        if isinstance(value, datetime.datetime):
+            return value.isoformat()
+        if isinstance(value, str):
+            return value
+        raise ResourceReadError("Service status could not be read")
 
     @staticmethod
     def _raw_description(task: ITaskModel) -> str:

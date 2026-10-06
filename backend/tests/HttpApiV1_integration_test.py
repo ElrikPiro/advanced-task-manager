@@ -173,8 +173,15 @@ class HttpApiV1IntegrationTest(IsolatedAsyncioTestCase):
             self.assertEqual(response.content_type, "application/hal+json")
             self.assertEqual(root["version"], "1")
             self.assertEqual(root["_links"]["tasks"]["href"], PREFIX + "/tasks")
+            self.assertEqual(root["_links"]["status"]["href"], PREFIX + "/status")
             self.assertEqual(root["_links"]["self"]["href"], PREFIX)
             self.assertEqual(response.headers["Cache-Control"], "no-store")
+
+            status, service_status, status_response = await self._get_json(PREFIX + "/status")
+            self.assertEqual(status, 200)
+            self.assertTrue(service_status["ready"])
+            self.assertIsNone(service_status["snapshotAgeSeconds"])
+            self.assertEqual(status_response.headers["Cache-Control"], "no-store")
 
             status, page, _ = await self._get_json(
                 PREFIX + "/tasks?page=999&pageSize=2&algorithm=" + quote("EDF Algorithm", safe="")
@@ -212,6 +219,7 @@ class HttpApiV1IntegrationTest(IsolatedAsyncioTestCase):
                 "/agenda?day=2026-10-04",
                 "/statistics",
                 "/events",
+                "/status",
                 "/strategies",
                 "/projects",
                 "/projects/Quarter%201%20%26%20follow-up",
@@ -274,7 +282,6 @@ class HttpApiV1IntegrationTest(IsolatedAsyncioTestCase):
             response = await self.client.get(f"{PREFIX}/tasks", headers=AUTH)
             self.assertEqual(response.status, 200)
             self.assertEqual(get_task_list.call_count, 1)
-
             get_task_list.reset_mock()
             response = await self.client.get(f"{PREFIX}/tasks/task%20%2F%2Bone", headers=AUTH)
             self.assertEqual(response.status, 200)
@@ -289,6 +296,134 @@ class HttpApiV1IntegrationTest(IsolatedAsyncioTestCase):
             response = await self.client.get(f"{PREFIX}/statistics", headers=AUTH)
             self.assertEqual(response.status, 200)
             self.assertEqual(get_task_list.call_count, 1)
+
+    async def test_invalidated_index_detail_returns_retryable_503(self) -> None:
+        def require_refresh(_task_id: str):
+            error = RuntimeError("The indexed task needs refresh")
+            error.code = "snapshot-refresh-required"
+            raise error
+
+        with patch.object(self.task_provider, "getTaskById", side_effect=require_refresh, create=True):
+            response = await self.client.get(
+                f"{PREFIX}/tasks/task%20%2F%2Bone",
+                headers=AUTH,
+            )
+
+        self.assertEqual(response.status, 503)
+        self.assertEqual(response.headers["Retry-After"], "1")
+        self.assertEqual((await response.json())["code"], "snapshot-refresh-required")
+
+    async def test_vault_listener_serves_status_while_first_snapshot_loads(self) -> None:
+        appdata = self.root / "vault-appdata"
+        vault = self.root / "obsidian-vault"
+        appdata.mkdir()
+        vault.mkdir()
+        broker = FileBroker(str(self.root / "json-data"), str(appdata), str(vault), self.coordinator)
+        json_provider = ObsidianVaultTaskJsonProvider(
+            broker,
+            TaskDiscoveryPolicies("0", "0", "inbox", []),
+            mutation_coordinator=self.coordinator,
+            auto_start=False,
+        )
+        provider = ObsidianTaskProvider(
+            json_provider,
+            broker,
+            mutation_coordinator=self.coordinator,
+        )
+        with patch.object(provider, "getTaskList", return_value=[]):
+            application, _, _, _ = self.helper._create_query_stack(broker, provider)
+        application._project_manager = ObsidianProjectManager(
+            provider,
+            broker,
+            self.coordinator,
+        )
+        api = HttpApiV1(application, TOKEN, PREFIX)
+        client = TestClient(TestServer(api.create_app()))
+        await client.start_server()
+
+        scan_started = Event()
+        release_scan = Event()
+
+        def blocked_inventory(_registry: Any) -> list[tuple[str, float]]:
+            scan_started.set()
+            release_scan.wait(5)
+            return []
+
+        try:
+            with patch.object(
+                broker,
+                "getVaultFilesCancellable",
+                side_effect=lambda registry, _cancel: blocked_inventory(registry),
+            ):
+                provider.start()
+                self.assertTrue(await asyncio.to_thread(scan_started.wait, 2))
+
+                root_response = await client.get(PREFIX + "/", headers=AUTH)
+                self.assertEqual(root_response.status, 200)
+                status_response = await client.get(PREFIX + "/status", headers=AUTH)
+                self.assertEqual(status_response.status, 200)
+                service_status = await status_response.json()
+                self.assertFalse(service_status["ready"])
+                self.assertTrue(service_status["refreshing"])
+
+                for path in (
+                    "/tasks",
+                    "/tasks/unavailable-yet",
+                    "/agenda?day=2026-10-04",
+                    "/statistics",
+                    "/events",
+                    "/projects",
+                    "/projects/Atlas",
+                ):
+                    response = await client.get(PREFIX + path, headers=AUTH)
+                    self.assertEqual(response.status, 503, path)
+                    self.assertEqual((await response.json())["code"], "service-not-ready")
+                    self.assertEqual(response.headers["Retry-After"], "1")
+
+                operation_id = str(uuid4())
+                create_response = await client.post(
+                    PREFIX + "/operations",
+                    headers={**AUTH, "Content-Type": "application/json"},
+                    json={
+                        "id": operation_id,
+                        "type": "create-task",
+                        "target": {"kind": "tasks"},
+                        "parameters": {"description": "Wait for the vault"},
+                    },
+                )
+                create_problem = await create_response.json()
+                self.assertEqual(create_response.status, 503)
+                self.assertEqual(create_problem["code"], "service-not-ready")
+                self.assertEqual(create_problem["effectsState"], "none")
+                receipt_response = await client.get(
+                    PREFIX + "/operations/" + operation_id,
+                    headers=AUTH,
+                )
+                self.assertEqual(receipt_response.status, 404)
+
+                patch_response = await client.patch(
+                    PREFIX + "/tasks/unavailable-yet",
+                    headers={
+                        **AUTH,
+                        "Content-Type": "application/merge-patch+json",
+                    },
+                    json={"description": "Wait for the vault"},
+                )
+                patch_problem = await patch_response.json()
+                self.assertEqual(patch_response.status, 503)
+                self.assertEqual(patch_problem["code"], "service-not-ready")
+                self.assertEqual(patch_problem["effectsState"], "none")
+            release_scan.set()
+            deadline = time.monotonic() + 2
+            while not provider.isReady() and time.monotonic() < deadline:
+                await asyncio.sleep(0.01)
+            self.assertTrue(provider.isReady())
+            ready_response = await client.get(PREFIX + "/tasks", headers=AUTH)
+            self.assertEqual(ready_response.status, 200)
+        finally:
+            release_scan.set()
+            await client.close()
+            provider.dispose()
 
     async def test_slow_task_read_does_not_block_other_http_requests(self) -> None:
         original_get_task_list = self.task_provider.getTaskList
@@ -739,7 +874,13 @@ class HttpApiV1IntegrationTest(IsolatedAsyncioTestCase):
             default_context="inbox",
             categories_prefixes=["alert", "work", "home", "inbox"],
         )
-        json_provider = ObsidianVaultTaskJsonProvider(broker, policies, self.coordinator)
+        json_provider = ObsidianVaultTaskJsonProvider(
+            broker,
+            policies,
+            self.coordinator,
+            auto_start=False,
+        )
+        json_provider.refresh()
         provider = ObsidianTaskProvider(
             json_provider,
             broker,

@@ -1,13 +1,22 @@
 from typing import NoReturn
 import unittest
 import asyncio
-from unittest.mock import MagicMock, AsyncMock, call
+from pathlib import Path
+from tempfile import TemporaryDirectory
+from threading import Event, Thread
+from unittest.mock import MagicMock, AsyncMock, call, patch
 from types import SimpleNamespace
 from src.TelegramReportingService import TelegramReportingService
 from src.algorithms.Interfaces.IAlgorithm import IAlgorithm
 from src.Interfaces.ITaskModel import ITaskModel
-from src.domain.errors import ValidationError
+from src.domain.TaskApplicationService import TaskApplicationService
+from src.domain.errors import SnapshotRefreshRequiredError, ValidationError
 from src.domain.models import TaskView
+from src.FileBroker import FileBroker
+from src.MutationCoordinator import MutationCoordinator
+from src.Utils import TaskDiscoveryPolicies
+from src.taskjsonproviders.ObsidianVaultTaskJsonProvider import ObsidianVaultTaskJsonProvider
+from src.taskproviders.ObsidianTaskProvider import ObsidianTaskProvider
 from src.Utils import TaskEntry, TaskInformation
 
 
@@ -52,16 +61,83 @@ class TestTelegramReportingService(unittest.TestCase):
         self.assertFalse(self.telegramReportingService.run)
 
     def test_onTaskListUpdated(self) -> None:
-        # Arrange
-        mockTaskList = [MagicMock(), MagicMock()]
-        self.taskProvider.getTaskList.return_value = mockTaskList
-
-        # Act
         self.telegramReportingService.onTaskListUpdated()
 
-        # Assert
+        self.assertTrue(self.telegramReportingService._task_list_refresh_pending)
+        self.assertFalse(self.telegramReportingService._updateFlag)
+        self.taskProvider.getTaskList.assert_not_called()
+        self.task_list_manager.update_taskList.assert_not_called()
+
+    def test_pending_task_list_refresh_is_applied_by_reporting_thread(self) -> None:
+        tasks = [MagicMock(), MagicMock()]
+        self.taskProvider.getTaskList.return_value = tasks
+        self.telegramReportingService.onTaskListUpdated()
+
+        self.telegramReportingService._drain_pending_task_list_refresh()
+
+        self.assertFalse(self.telegramReportingService._task_list_refresh_pending)
         self.assertTrue(self.telegramReportingService._updateFlag)
-        self.task_list_manager.update_taskList.assert_called_once_with(mockTaskList)
+        self.task_list_manager.update_taskList.assert_called_once_with(tasks)
+
+    def test_onTaskListUpdated_does_not_read_during_initial_loading(self) -> None:
+        application = SimpleNamespace(is_ready=lambda: False)
+        self.telegramReportingService._application_service = application
+
+        self.telegramReportingService.onTaskListUpdated()
+
+        self.taskProvider.getTaskList.assert_not_called()
+        self.task_list_manager.update_taskList.assert_not_called()
+
+    def test_processMessage_reports_loading_until_task_data_is_ready(self) -> None:
+        self.telegramReportingService._application_service = SimpleNamespace(
+            is_ready=lambda: False
+        )
+        task_list_command = AsyncMock()
+        self.telegramReportingService.commands = [("/list", task_list_command)]
+        message = SimpleNamespace(
+            content=SimpleNamespace(text="list", textList=[], requestId=17)
+        )
+
+        asyncio.run(self.telegramReportingService.processMessage(message, True))
+
+        task_list_command.assert_not_awaited()
+        self.task_list_manager.get_task_list_content.assert_not_called()
+        source_content = self.messageBuilder.createOutboundMessage.call_args.kwargs["content"]
+        outbound_content = self.messageBuilder.createOutboundMessage.return_value.content
+        self.assertEqual(source_content.text, "Task data is still loading. Try again shortly.")
+        self.assertEqual(outbound_content.requestId, 17)
+
+    def test_help_remains_available_while_task_data_is_loading(self) -> None:
+        self.telegramReportingService._application_service = SimpleNamespace(
+            is_ready=lambda: False
+        )
+        help_command = AsyncMock()
+        self.telegramReportingService.helpCommand = help_command
+        self.telegramReportingService.commands = []
+        message = SimpleNamespace(
+            content=SimpleNamespace(text="help", textList=[], requestId=18)
+        )
+
+        asyncio.run(self.telegramReportingService.processMessage(message, True))
+
+        help_command.assert_awaited_once_with("/help", True, 18)
+
+    def test_project_mutation_waits_until_task_data_is_loaded(self) -> None:
+        self.telegramReportingService._application_service = SimpleNamespace(
+            is_ready=lambda: False
+        )
+        self.telegramReportingService.commands = [
+            ("/project", self.telegramReportingService.projectCommand)
+        ]
+        message = SimpleNamespace(
+            content=SimpleNamespace(text="project", textList=["open"], requestId=19)
+        )
+
+        asyncio.run(self.telegramReportingService.processMessage(message, True))
+
+        self.projectManager.process_command.assert_not_called()
+        source_content = self.messageBuilder.createOutboundMessage.call_args.kwargs["content"]
+        self.assertEqual(source_content.text, "Task data is still loading. Try again shortly.")
 
     def test_listenForEvents_normal(self) -> None:
         # Arrange
@@ -147,6 +223,297 @@ class TestTelegramReportingService(unittest.TestCase):
 
         # Assert
         self.bot.initialize.assert_awaited_once()
+
+    def test_background_refresh_starts_after_listener_initialization(self) -> None:
+        events: list[str] = []
+
+        class RefreshingProvider:
+            def start(self) -> None:
+                events.append("refresh")
+
+        self.telegramReportingService.taskProvider = RefreshingProvider()  # type: ignore[assignment]
+        self.bot.initialize = AsyncMock(side_effect=lambda: events.append("listener"))
+
+        async def stop_after_start() -> None:
+            events.append("loop")
+            self.telegramReportingService.run = False
+
+        self.telegramReportingService.runEventLoop = AsyncMock(side_effect=stop_after_start)
+
+        asyncio.run(self.telegramReportingService._listenForEvents())
+
+        self.assertEqual(events, ["listener", "refresh", "loop"])
+
+    def test_async_provider_discovery_retries_after_refresh_completion(self) -> None:
+        events: list[str] = []
+        discovered = Event()
+        service = self.telegramReportingService
+
+        class AsyncApplication(TaskApplicationService):
+            def __init__(self) -> None:
+                self.ready = False
+                self.discovery_attempts = 0
+
+            def uses_background_refresh(self) -> bool:
+                return True
+
+            def is_ready(self) -> bool:
+                return self.ready
+
+            def start_background_refresh(self) -> None:
+                events.append("refresh")
+                self.ready = True
+                service.onTaskListUpdated()
+                service.onTaskRefreshCompleted()
+
+            def discover_initialize(self) -> list[ITaskModel]:
+                self.discovery_attempts += 1
+                if self.discovery_attempts == 1:
+                    raise SnapshotRefreshRequiredError()
+                events.append("discover")
+                discovered.set()
+                return []
+
+        application = AsyncApplication()
+        service._application_service = application
+        self.bot.initialize = AsyncMock(side_effect=lambda: events.append("listener"))
+
+        async def stop_after_discovery() -> None:
+            for _ in range(200):
+                if application.discovery_attempts:
+                    break
+                await asyncio.sleep(0.01)
+            service.onTaskRefreshCompleted()
+            for _ in range(200):
+                if discovered.is_set():
+                    break
+                await asyncio.sleep(0.01)
+            service.run = False
+
+        service.runEventLoop = AsyncMock(side_effect=stop_after_discovery)
+
+        asyncio.run(service._listenForEvents())
+
+        self.assertTrue(discovered.is_set())
+        self.assertEqual(events, ["listener", "refresh", "discover"])
+        self.assertEqual(application.discovery_attempts, 2)
+        self.assertEqual(self.task_list_manager.update_taskList.call_count, 0)
+
+    def test_mutation_callback_does_not_deadlock_reporting_loop(self) -> None:
+        coordinator = MutationCoordinator()
+        service = self.telegramReportingService
+        service.mutation_coordinator = coordinator
+        service.chatId = 123
+        self.task_list_manager.selected_task.getTaskUID.return_value = "task-1"
+        self.task_list_manager.selected_task.getDescription.return_value = "Task"
+        self.taskProvider.getTaskList.return_value = []
+
+        class MutatingApplication:
+            def is_ready(self) -> bool:
+                return True
+
+            async def execute_operation_async(self, *_args, **_kwargs):
+                def commit_and_publish_callback():
+                    service.onTaskListUpdated()
+                    return SimpleNamespace(value=service._taskListManager.selected_task)
+
+                return await coordinator.run_job_async(commit_and_publish_callback)
+
+        service._application_service = MutatingApplication()  # type: ignore[assignment]
+        first_message = SimpleNamespace(
+            source=SimpleNamespace(id="123"),
+            content=SimpleNamespace(text="done", textList=[], requestId=1),
+        )
+        other_chat_message = SimpleNamespace(
+            source=SimpleNamespace(id="456"),
+            content=SimpleNamespace(text="ignored", textList=[], requestId=2),
+        )
+        self.bot.getMessageUpdates = AsyncMock(
+            return_value=[first_message, other_chat_message]
+        )
+        service.checkFilteredListChanges = AsyncMock()
+
+        try:
+            asyncio.run(asyncio.wait_for(service.runEventLoop(), timeout=1.0))
+        finally:
+            coordinator.close(wait=True)
+
+        self.task_list_manager.update_taskList.assert_called_once_with([])
+        self.assertFalse(service._task_list_refresh_pending)
+
+    def test_async_maintenance_repeats_for_external_projects_and_coalesces_refreshes(self) -> None:
+        entered_second_discovery = Event()
+        release_second_discovery = Event()
+        projects = ["Existing"]
+
+        class AsyncApplication(TaskApplicationService):
+            def __init__(self) -> None:
+                self.discovery_projects: list[list[str]] = []
+                self.active_discoveries = 0
+                self.max_active_discoveries = 0
+
+            def uses_background_refresh(self) -> bool:
+                return True
+
+            def is_ready(self) -> bool:
+                return True
+
+            def discover_initialize(self) -> list[ITaskModel]:
+                self.active_discoveries += 1
+                self.max_active_discoveries = max(
+                    self.max_active_discoveries, self.active_discoveries
+                )
+                try:
+                    self.discovery_projects.append(list(projects))
+                    if len(self.discovery_projects) == 2:
+                        entered_second_discovery.set()
+                        release_second_discovery.wait(timeout=2)
+                    return []
+                finally:
+                    self.active_discoveries -= 1
+
+        class RefreshProvider:
+            callback = None
+
+            def registerRefreshCompletedCallback(self, callback) -> None:
+                self.callback = callback
+
+            def publish_generation(self) -> None:
+                if self.callback is not None:
+                    self.callback()
+
+            def dispose(self) -> None:
+                pass
+
+        application = AsyncApplication()
+        provider = RefreshProvider()
+        service = self.telegramReportingService
+        service.taskProvider = provider  # type: ignore[assignment]
+        service._application_service = application
+        service._start_discovery_maintenance_worker()
+
+        def wait_for_discovery_count(expected: int) -> None:
+            for _ in range(200):
+                if len(application.discovery_projects) >= expected:
+                    return
+                threading_event_wait = Event()
+                threading_event_wait.wait(0.01)
+            self.fail(f"expected at least {expected} maintenance passes")
+
+        try:
+            provider.publish_generation()
+            wait_for_discovery_count(1)
+            self.assertEqual(application.discovery_projects[0], ["Existing"])
+
+            projects.append("ExternalProject")
+            provider.publish_generation()
+            self.assertTrue(entered_second_discovery.wait(timeout=2))
+            provider.publish_generation()
+            provider.publish_generation()
+            release_second_discovery.set()
+            wait_for_discovery_count(3)
+
+            self.assertIn("ExternalProject", application.discovery_projects[1])
+            self.assertIn("ExternalProject", application.discovery_projects[2])
+            self.assertEqual(application.max_active_discoveries, 1)
+            Event().wait(0.05)
+            self.assertEqual(len(application.discovery_projects), 3)
+        finally:
+            release_second_discovery.set()
+            service._maintenance_stop.set()
+            service._maintenance_refresh_ready.set()
+            worker = service._maintenance_thread
+            if worker is not None:
+                worker.join(timeout=2)
+
+    def test_dispose_stops_discovery_preparation_before_any_maintenance_commit(self) -> None:
+        with TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            data = root / "data"
+            appdata = root / "appdata"
+            vault = root / "vault"
+            data.mkdir()
+            appdata.mkdir()
+            vault.mkdir()
+            for name in ("ProjectA", "ProjectB"):
+                (vault / f"{name}.md").write_text(
+                    f"---\nproject: open\ntrack: work\n---\n# {name}\n",
+                    encoding="utf-8",
+                )
+            coordinator = MutationCoordinator()
+            broker = FileBroker(str(data), str(appdata), str(vault), coordinator)
+            json_provider = ObsidianVaultTaskJsonProvider(
+                broker,
+                TaskDiscoveryPolicies("0", "0", "inbox", ["work"]),
+                mutation_coordinator=coordinator,
+                auto_start=False,
+            )
+            task_provider = ObsidianTaskProvider(
+                json_provider,
+                broker,
+                mutation_coordinator=coordinator,
+            )
+            json_provider.refresh()
+            application = TaskApplicationService(
+                task_provider,
+                scheduling=None,
+                statistics_service=None,
+                task_list_manager=None,
+                categories=[],
+                mutation_coordinator=coordinator,
+            )
+            service = TelegramReportingService(
+                bot=self.bot,
+                taskProvider=task_provider,
+                scheduling=self.scheduling,
+                statiticsProvider=self.statisticsProvider,
+                task_list_manager=self.task_list_manager,
+                categories=[],
+                projectManager=self.projectManager,
+                messageBuilder=self.messageBuilder,
+                user=self.user,
+                logger=self.logger,
+                application_service=application,
+                mutation_coordinator=coordinator,
+            )
+            preparation_started = Event()
+            release_preparation = Event()
+            provider_stopped = Event()
+            original_read = broker.getVaultFileLines
+            original_stop = json_provider.stop
+
+            def block_project_read(registry, relative_path):
+                if relative_path == "ProjectA.md":
+                    preparation_started.set()
+                    release_preparation.wait(timeout=2)
+                return original_read(registry, relative_path)
+
+            def stop_provider(timeout: float = 2.0) -> None:
+                original_stop(timeout)
+                provider_stopped.set()
+
+            try:
+                with patch.object(
+                    broker,
+                    "getVaultFileLines",
+                    side_effect=block_project_read,
+                ), patch.object(json_provider, "stop", side_effect=stop_provider):
+                    service._start_discovery_maintenance_worker()
+                    service.onTaskRefreshCompleted()
+                    self.assertTrue(preparation_started.wait(timeout=2))
+                    shutdown = Thread(target=service.dispose)
+                    shutdown.start()
+                    self.assertTrue(provider_stopped.wait(timeout=2))
+                    release_preparation.set()
+                    shutdown.join(timeout=3)
+                    self.assertFalse(shutdown.is_alive())
+
+                self.assertNotIn("Define next action", (vault / "ProjectA.md").read_text(encoding="utf-8"))
+                self.assertNotIn("Define next action", (vault / "ProjectB.md").read_text(encoding="utf-8"))
+            finally:
+                release_preparation.set()
+                task_provider.dispose()
+                coordinator.close()
 
     def test_internalListenForEvents_exception(self) -> None:
         # Arrange

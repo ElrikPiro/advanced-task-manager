@@ -25,7 +25,7 @@ from .Interfaces.ILogger import ILogger
 from .wrappers.interfaces.IUserCommService import IUserCommService
 from .wrappers.TimeManagement import TimeAmount, TimePoint
 from .domain.TaskApplicationService import TaskApplicationService
-from .domain.errors import DomainError
+from .domain.errors import DomainError, SnapshotRefreshRequiredError
 from .domain.models import AgendaQuery, OperationTarget, TaskView
 from .MutationCoordinator import MutationCoordinator
 from .SafeDiagnostics import format_safe_exception_diagnostic
@@ -58,6 +58,13 @@ class TelegramReportingService(IReportingService):
 
         self._lastError = "Event loop initialized"
         self._lock = threading.Lock()
+        self._pending_task_list_refresh_lock = threading.Lock()
+        self._task_list_refresh_pending = False
+        self._maintenance_refresh_ready = threading.Event()
+        self._maintenance_stop = threading.Event()
+        self._maintenance_lock = threading.Lock()
+        self._maintenance_thread: threading.Thread | None = None
+        self._refresh_callback_registered = False
 
         self._categories = categories
 
@@ -92,33 +99,125 @@ class TelegramReportingService(IReportingService):
 
     def dispose(self) -> None:
         self.run = False
+        self._maintenance_stop.set()
+        self._maintenance_refresh_ready.set()
         try:
             asyncio.run(self.bot.shutdown())
         finally:
             try:
+                stop_refresh = getattr(self.taskProvider, "stop", None)
+                if callable(stop_refresh) and callable(getattr(type(self.taskProvider), "stop", None)):
+                    stop_refresh(timeout=5.0)
                 self.taskProvider.dispose()
+                maintenance_thread = self._maintenance_thread
+                if maintenance_thread is not None and maintenance_thread is not threading.current_thread():
+                    maintenance_thread.join(timeout=5.0)
             finally:
                 if self.mutation_coordinator is not None:
                     self.mutation_coordinator.close(wait=True)
         pass
 
     def onTaskListUpdated(self) -> None:
-        with self._lock:
-            self._updateFlag = True
-            self._taskListManager.update_taskList(self.taskProvider.getTaskList())
+        if self._application_service is not None:
+            is_ready = getattr(self._application_service, "is_ready", None)
+            if callable(is_ready) and not is_ready():
+                return
+        # Provider callbacks can run synchronously on the mutation worker.
+        # Never make a confirmed write wait for the reporting loop's lock or
+        # materialize a full task list on that worker.
+        with self._pending_task_list_refresh_lock:
+            self._task_list_refresh_pending = True
+
+    def _update_task_list_from_provider(self) -> None:
+        self._updateFlag = True
+        self._taskListManager.update_taskList(self.taskProvider.getTaskList())
+
+    def _refresh_task_list_after_operation(self) -> None:
+        """Refresh the channel projection after an awaited local operation."""
+        with self._pending_task_list_refresh_lock:
+            self._task_list_refresh_pending = False
+        self._update_task_list_from_provider()
+
+    def _drain_pending_task_list_refresh(self) -> None:
+        """Apply provider updates on the reporting thread, outside callbacks."""
+        with self._pending_task_list_refresh_lock:
+            if not self._task_list_refresh_pending:
+                return
+            self._task_list_refresh_pending = False
+        self._update_task_list_from_provider()
+
+    def _start_discovery_maintenance_worker(self) -> None:
+        """Run recurring Markdown maintenance after each complete vault refresh."""
+        if not isinstance(self._application_service, TaskApplicationService):
+            return
+        if not self._application_service.uses_background_refresh():
+            return
+        if not self._refresh_callback_registered:
+            register_refresh = getattr(self.taskProvider, "registerRefreshCompletedCallback", None)
+            if callable(register_refresh):
+                register_refresh(self.onTaskRefreshCompleted)
+                self._refresh_callback_registered = True
+        with self._maintenance_lock:
+            if self._maintenance_thread is not None:
+                return
+            self._maintenance_thread = threading.Thread(
+                target=self._run_discovery_maintenance,
+                name="ElrikPiroDiscoveryMaintenance",
+                daemon=True,
+            )
+            self._maintenance_thread.start()
+
+    def onTaskRefreshCompleted(self) -> None:
+        """Coalesce successful full-generation publications into maintenance work."""
+        if not self._maintenance_stop.is_set():
+            self._maintenance_refresh_ready.set()
+
+    def _run_discovery_maintenance(self) -> None:
+        """Run one maintenance pass at a time for each coalesced full refresh."""
+        application_service = self._application_service
+        if not isinstance(application_service, TaskApplicationService):
+            return
+        while not self._maintenance_stop.is_set():
+            self._maintenance_refresh_ready.wait(timeout=0.25)
+            if self._maintenance_stop.is_set():
+                return
+            if not self._maintenance_refresh_ready.is_set():
+                continue
+            self._maintenance_refresh_ready.clear()
+            if not application_service.is_ready():
+                continue
+            try:
+                application_service.discover_initialize()
+            except SnapshotRefreshRequiredError:
+                # A local write made the prepared plan stale. The provider
+                # requested a new generation; retry when that scan publishes.
+                continue
+            except Exception as error:
+                if self._maintenance_stop.is_set():
+                    return
+                diagnostic = format_safe_exception_diagnostic(error)
+                self._logger.error(f"Task discovery maintenance failed: {diagnostic}")
+                # Wait for the next successful full refresh before retrying.
 
     def listenForEvents(self) -> None:
-        # Discovery and its permitted writes happen before the communication
-        # service can start an HTTP listener or receive Telegram messages.
-        if self._application_service is not None:
+        self.taskProvider.registerTaskListUpdatedCallback(self.onTaskListUpdated)
+        # Markdown providers defer discovery until the communication listener is
+        # accepting root/status requests. Small synchronous providers retain
+        # their existing initialization behavior.
+        has_async_refresh = (
+            self._application_service.uses_background_refresh()
+            if isinstance(self._application_service, TaskApplicationService)
+            else callable(getattr(type(self.taskProvider), "start", None))
+        )
+        if not has_async_refresh and self._application_service is not None:
             initial_tasks = self._application_service.discover_initialize()
             self._taskListManager.update_taskList(initial_tasks)
-        else:
+        elif not has_async_refresh:
             discover = getattr(self.taskProvider, "discoverTasks", None)
             if callable(discover):
                 self._taskListManager.update_taskList(list(discover()))
-        self.taskProvider.registerTaskListUpdatedCallback(self.onTaskListUpdated)
-        self._taskListManager.update_taskList(self.taskProvider.getTaskList())
+        if not has_async_refresh:
+            self._refresh_task_list_after_operation()
         errCount = 0
         while self.run:
             try:
@@ -141,6 +240,13 @@ class TelegramReportingService(IReportingService):
 
     async def _listenForEvents(self) -> None:
         await self.bot.initialize()
+        if isinstance(self._application_service, TaskApplicationService):
+            self._start_discovery_maintenance_worker()
+            self._application_service.start_background_refresh()
+        else:
+            start_refresh = getattr(self.taskProvider, "start", None)
+            if callable(start_refresh) and callable(getattr(type(self.taskProvider), "start", None)):
+                start_refresh()
         await self.__send_raw_text_message(self._lastError)
         while self.run:
             try:
@@ -204,12 +310,14 @@ class TelegramReportingService(IReportingService):
         self.statiticsProvider.initialize()
 
         with self._lock:
+            self._drain_pending_task_list_refresh()
             await self.checkFilteredListChanges()
 
         # Reads every message received by the bot
         messages = await self.bot.getMessageUpdates()
 
         with self._lock:
+            self._drain_pending_task_list_refresh()
             if not messages:  # If the list is empty
                 return
 
@@ -219,6 +327,7 @@ class TelegramReportingService(IReportingService):
                     self.chatId = int(message.source.id)
                 if message.source.id == str(self.chatId):
                     await self.processMessage(message, isLastIteration)
+                    self._drain_pending_task_list_refresh()
 
     # Each command must be made into an object and injected into this class
     async def listCommand(self, messageText: str = "", expectAnswer: bool = True, reqId: int | None = None) -> None:
@@ -429,7 +538,7 @@ class TelegramReportingService(IReportingService):
             except DomainError as error:
                 await self.__send_raw_text_message(error.message, reqId=reqId)
                 return
-            self._taskListManager.update_taskList(self.taskProvider.getTaskList())
+            self._refresh_task_list_after_operation()
             affected_count = int(result.value or 0)
             self._logger.debug(f"Raised event '{arg}' affecting {affected_count} tasks.")
             await self.__send_raw_text_message(f"{affected_count} task affected.", reqId=reqId)
@@ -511,7 +620,7 @@ class TelegramReportingService(IReportingService):
                 except DomainError as error:
                     await self.__send_raw_text_message(error.message, reqId=reqId)
                     return
-                self._taskListManager.update_taskList(self.taskProvider.getTaskList())
+                self._refresh_task_list_after_operation()
                 task = result.value
                 self._logger.debug(f"Task '{task.getDescription()}' marked as done.")
                 if expectAnswer:
@@ -597,7 +706,7 @@ class TelegramReportingService(IReportingService):
                     await self.__send_raw_text_message(error.message, reqId=reqId)
                     return
                 task = result.value
-                self._taskListManager.update_taskList(self.taskProvider.getTaskList())
+                self._refresh_task_list_after_operation()
                 self._logger.debug(f"Task '{task.getDescription()}' updated through domain service.")
                 if expectAnswer:
                     await self.sendTaskInformation(task, reqId=reqId)
@@ -668,7 +777,7 @@ class TelegramReportingService(IReportingService):
                     return
                 selected_task = result.value
                 self._taskListManager.selected_task = selected_task
-                self._taskListManager.update_taskList(self.taskProvider.getTaskList())
+                self._refresh_task_list_after_operation()
                 self._logger.debug(f"Task '{selected_task.getDescription()}' created.")
                 if expectAnswer:
                     await self.sendTaskInformation(selected_task, reqId=reqId)
@@ -716,7 +825,7 @@ class TelegramReportingService(IReportingService):
                     await self.__send_raw_text_message(error.message, reqId=reqId)
                     return
                 resulting_tasks = list(result.value)
-                self._taskListManager.update_taskList(self.taskProvider.getTaskList())
+                self._refresh_task_list_after_operation()
                 if len(resulting_tasks) > 1 and expectAnswer:
                     split_count = len(resulting_tasks)
                     original_description = resulting_tasks[0].getDescription().replace(f" 1/{split_count}", "")
@@ -786,7 +895,7 @@ class TelegramReportingService(IReportingService):
                     await self.__send_raw_text_message(error.message, reqId=reqId)
                     return
                 task = result.value
-                self._taskListManager.update_taskList(self.taskProvider.getTaskList())
+                self._refresh_task_list_after_operation()
                 self._logger.debug(f"Recorded work on task '{task.getDescription()}'.")
                 if expectAnswer:
                     await self.sendTaskInformation(task, reqId=reqId)
@@ -872,7 +981,7 @@ class TelegramReportingService(IReportingService):
                 await self.__send_raw_text_message(error.message, reqId=reqId)
                 return
             task = result.value
-            self._taskListManager.update_taskList(self.taskProvider.getTaskList())
+            self._refresh_task_list_after_operation()
             if expectAnswer:
                 await self.sendTaskInformation(task, reqId=reqId)
             return
@@ -939,7 +1048,7 @@ class TelegramReportingService(IReportingService):
 
         # get the imported data
         await self._run_legacy_mutation(lambda: self.taskProvider.importTasks(selectedFormat))
-        self._taskListManager.update_taskList(self.taskProvider.getTaskList())
+        self._refresh_task_list_after_operation()
         await self.__send_raw_text_message(f"{selectedFormat} file imported", parse_mode="Markdown")
         await self.listCommand(messageText, expectAnswer, reqId)
 
@@ -1090,7 +1199,29 @@ class TelegramReportingService(IReportingService):
                 message_text += " " + arg
 
         # Find the command handler that matches the command name
-        command_handler = next((command[1] for command in commands if command_name.startswith(command[0])), self.helpCommand)
+        matched_command = next(
+            (command for command in commands if command_name.startswith(command[0])),
+            None,
+        )
+        command_handler = matched_command[1] if matched_command is not None else self.helpCommand
+
+        if self._application_service is not None:
+            is_ready = getattr(self._application_service, "is_ready", None)
+            task_independent_commands = {"/heuristic", "/filter", "/algorithm"}
+            project_arguments = message_text.split()
+            project_help = False
+            if matched_command is not None and matched_command[0] == "/project":
+                project_help = len(project_arguments) > 1 and project_arguments[1] == "help"
+            requires_task_data = matched_command is not None
+            if matched_command is not None:
+                requires_task_data = matched_command[0] not in task_independent_commands
+            requires_task_data = requires_task_data and not project_help
+            if requires_task_data and callable(is_ready) and not is_ready():
+                await self.__send_raw_text_message(
+                    "Task data is still loading. Try again shortly.",
+                    reqId=message.content.requestId,
+                )
+                return
 
         # Execute the command
         await command_handler(message_text, isLastIteration, message.content.requestId)

@@ -36,8 +36,11 @@ from .errors import (
     OperationConflictError,
     OperationFailedError,
     OperationResultUnavailableError,
+    RefreshRequiredError,
     ResourceNotFoundError,
     ResourceReadError,
+    SnapshotRefreshRequiredError,
+    ServiceNotReadyError,
     UnsupportedOperationError,
     ValidationError,
 )
@@ -162,6 +165,7 @@ class TaskApplicationService:
 
     def _all_tasks(self, *, include_completed: bool = True) -> list[ITaskModel]:
         """Load current provider data without running discovery or maintenance."""
+        self.require_ready()
         try:
             return list(self._task_provider.getTaskList(include_completed=include_completed))
         except InvalidTaskIdentityError as error:
@@ -173,10 +177,153 @@ class TaskApplicationService:
         except DomainError:
             raise
         except Exception as error:
+            if self._is_snapshot_refresh_required(error):
+                raise SnapshotRefreshRequiredError() from error
+            if self._is_snapshot_not_ready(error):
+                raise ServiceNotReadyError() from error
             raise ResourceReadError("Task data could not be read") from error
+
+    @staticmethod
+    def _is_snapshot_refresh_required(error: Exception) -> bool:
+        current: BaseException | None = error
+        seen: set[int] = set()
+        while current is not None and id(current) not in seen:
+            seen.add(id(current))
+            if current.__class__.__name__ == "SnapshotRefreshRequiredError":
+                return True
+            if getattr(current, "code", None) == "snapshot-refresh-required":
+                return True
+            current = current.__cause__ or current.__context__
+        return False
+
+    @staticmethod
+    def _is_snapshot_not_ready(error: Exception) -> bool:
+        current: BaseException | None = error
+        seen: set[int] = set()
+        while current is not None and id(current) not in seen:
+            seen.add(id(current))
+            if current.__class__.__name__ == "SnapshotNotReadyError":
+                return True
+            if getattr(current, "code", None) == "snapshot-not-ready":
+                return True
+            current = current.__cause__ or current.__context__
+        return False
+
+    def is_ready(self) -> bool:
+        """Return whether the configured provider can serve task data."""
+        checker = getattr(self._task_provider, "isReady", None)
+        return bool(checker()) if callable(checker) else True
+
+    def uses_background_refresh(self) -> bool:
+        """Identify providers whose first generation is loaded asynchronously."""
+        return callable(getattr(type(self._task_provider), "start", None))
+
+    def start_background_refresh(self) -> None:
+        """Start the provider's coalesced refresh lifecycle when supported."""
+        starter = getattr(self._task_provider, "start", None)
+        if callable(starter) and callable(getattr(type(self._task_provider), "start", None)):
+            starter()
+
+    def stop_background_refresh(self, timeout: float = 5.0) -> None:
+        """Stop a provider refresh worker with a bounded wait."""
+        stopper = getattr(self._task_provider, "stop", None)
+        if callable(stopper) and callable(getattr(type(self._task_provider), "stop", None)):
+            stopper(timeout=timeout)
+
+    def require_ready(self) -> None:
+        """Fail explicitly while a provider has no complete task generation."""
+        if not self.is_ready():
+            raise ServiceNotReadyError()
+
+    def read_service_status(self) -> dict[str, Any]:
+        """Return the provider's sanitized refresh status for readiness checks."""
+        reader = getattr(self._task_provider, "getRefreshStatus", None)
+        if not callable(reader):
+            return {
+                "ready": True,
+                "generation": None,
+                "built_at": None,
+                "local_day": None,
+                "refreshing": False,
+                "last_success": None,
+                "last_error": None,
+            }
+        status = reader()
+        if not isinstance(status, dict):
+            raise ResourceReadError("Service status could not be read")
+        return dict(status)
+
+    def read_task_snapshot(self) -> Any:
+        """Capture one generation-bound provider view for a complete projection."""
+        self.require_ready()
+        reader = getattr(self._task_provider, "getProjectionTaskListSnapshot", None)
+        if not callable(reader):
+            reader = getattr(self._task_provider, "getTaskListSnapshot", None)
+        if callable(reader):
+            try:
+                return reader(include_completed=True)
+            except Exception as error:
+                if self._is_snapshot_refresh_required(error):
+                    raise SnapshotRefreshRequiredError() from error
+                if self._is_snapshot_not_ready(error):
+                    raise ServiceNotReadyError() from error
+                if isinstance(error, DomainError):
+                    raise
+                raise ResourceReadError("Task data could not be read") from error
+        return self._all_tasks(include_completed=True)
+
+    @staticmethod
+    def task_models_from_snapshot(snapshot: Any) -> list[ITaskModel]:
+        """Return the ranking population bound to a provider snapshot."""
+        tasks = getattr(snapshot, "tasks", snapshot)
+        try:
+            return list(tasks)
+        except TypeError as error:
+            raise ResourceReadError("Task snapshot could not be read") from error
+
+    def read_task_from_snapshot(self, task_id: str, snapshot: Any) -> ITaskModel:
+        """Resolve one task from the same generation used by its projection."""
+        if not isinstance(task_id, str) or not task_id:
+            raise ValidationError("A task identifier is required", details={"field": "id"})
+        resolver = getattr(snapshot, "getTaskById", None)
+        try:
+            if callable(resolver):
+                return cast(ITaskModel, resolver(task_id))
+            source_tasks = self.task_models_from_snapshot(snapshot)
+            matches = [task for task in source_tasks if self._capture_task_id(task) == task_id]
+        except InvalidTaskIdentityError as error:
+            raise InvalidResourceDataError("Task data declares an invalid identifier") from error
+        except AmbiguousTaskIdentityError as error:
+            raise AmbiguousResourceError("More than one task matches the requested identifier") from error
+        except MissingTaskIdentityError as error:
+            raise ResourceNotFoundError("No task matches the requested identifier") from error
+        except Exception as error:
+            if self._is_snapshot_refresh_required(error):
+                raise SnapshotRefreshRequiredError() from error
+            if self._is_snapshot_not_ready(error):
+                raise ServiceNotReadyError() from error
+            if isinstance(error, DomainError):
+                raise
+            raise ResourceReadError("Task data could not be read") from error
+        if not matches:
+            raise ResourceNotFoundError("No task matches the requested identifier")
+        if len(matches) > 1:
+            raise AmbiguousResourceError("More than one task matches the requested identifier")
+        return matches[0]
 
     def discover_initialize(self) -> list[ITaskModel]:
         """Run provider discovery explicitly before a communication listener."""
+        request_refresh = getattr(self._task_provider, "requestRefresh", None)
+        if callable(request_refresh) and callable(
+            getattr(type(self._task_provider), "requestRefresh", None)
+        ):
+            if not self.is_ready():
+                request_refresh()
+                return self._all_tasks(include_completed=False)
+            # Async providers prepare discovery from their published generation
+            # and enqueue one target-note commit at a time. Keep that work out
+            # of the outer mutation FIFO.
+            return self._discover_initialize()
         coordinator = self._mutation_coordinator
         run_or_inline = getattr(coordinator, "run_or_inline", None)
         if callable(run_or_inline):
@@ -195,9 +342,15 @@ class TaskApplicationService:
             raise AmbiguousResourceError("More than one task matches the requested identifier") from error
         except MissingTaskIdentityError as error:
             raise ResourceNotFoundError("No task matches the requested identifier") from error
-        except DomainError:
+        except DomainError as error:
+            if self._is_snapshot_refresh_required(error):
+                raise SnapshotRefreshRequiredError() from error
+            if self._is_snapshot_not_ready(error):
+                raise ServiceNotReadyError() from error
             raise
         except Exception as error:
+            if self._is_snapshot_refresh_required(error):
+                raise SnapshotRefreshRequiredError() from error
             raise ResourceReadError("Task discovery failed") from error
 
     def maintain(self) -> list[ITaskModel]:
@@ -209,10 +362,33 @@ class TaskApplicationService:
         task_id: str,
         *,
         task_models: Sequence[ITaskModel] | None = None,
+        read_snapshot: Any | None = None,
     ) -> ITaskModel:
         """Read one task by its currently exposed UID, including completed tasks."""
         if not isinstance(task_id, str) or not task_id:
             raise ValidationError("A task identifier is required", details={"field": "id"})
+        if read_snapshot is not None:
+            return self.read_task_from_snapshot(task_id, read_snapshot)
+        if task_models is None:
+            direct_reader = getattr(self._task_provider, "getTaskById", None)
+            if callable(direct_reader):
+                self.require_ready()
+                try:
+                    return cast(ITaskModel, direct_reader(task_id))
+                except InvalidTaskIdentityError as error:
+                    raise InvalidResourceDataError("Task data declares an invalid identifier") from error
+                except AmbiguousTaskIdentityError as error:
+                    raise AmbiguousResourceError("More than one task matches the requested identifier") from error
+                except MissingTaskIdentityError as error:
+                    raise ResourceNotFoundError("No task matches the requested identifier") from error
+                except Exception as error:
+                    if self._is_snapshot_refresh_required(error):
+                        raise SnapshotRefreshRequiredError() from error
+                    if self._is_snapshot_not_ready(error):
+                        raise ServiceNotReadyError() from error
+                    if isinstance(error, DomainError):
+                        raise
+                    raise ResourceReadError("Task data could not be read") from error
         source_tasks = self._all_tasks() if task_models is None else list(task_models)
         matches = [task for task in source_tasks if self._capture_task_id(task) == task_id]
         if not matches:
@@ -220,6 +396,29 @@ class TaskApplicationService:
         if len(matches) > 1:
             raise AmbiguousResourceError("More than one task matches the requested identifier")
         return matches[0]
+
+    def _read_task_for_mutation(self, task_id: str) -> ITaskModel:
+        """Resolve one target note's latest fields during its serialized write turn."""
+        reader = getattr(self._task_provider, "getTaskForMutation", None)
+        if not callable(reader):
+            return self.read_task(task_id)
+        self.require_ready()
+        try:
+            return cast(ITaskModel, reader(task_id))
+        except InvalidTaskIdentityError as error:
+            raise InvalidResourceDataError("Task data declares an invalid identifier") from error
+        except AmbiguousTaskIdentityError as error:
+            raise AmbiguousResourceError("More than one task matches the requested identifier") from error
+        except MissingTaskIdentityError as error:
+            raise ResourceNotFoundError("No task matches the requested identifier") from error
+        except Exception as error:
+            if getattr(error, "code", None) == "snapshot-refresh-required":
+                raise RefreshRequiredError() from error
+            if self._is_snapshot_not_ready(error):
+                raise ServiceNotReadyError() from error
+            if isinstance(error, DomainError):
+                raise
+            raise ResourceReadError("Task data could not be read for mutation") from error
 
     def read_task_models(self, *, include_completed: bool = True) -> list[ITaskModel]:
         """Return a fresh, read-only model snapshot for resource projection."""
@@ -240,7 +439,9 @@ class TaskApplicationService:
         )
         try:
             manager = self._task_list_manager.clone_for_view(tasks, view)
-        except DomainError:
+        except DomainError as error:
+            if self._is_snapshot_not_ready(error):
+                raise ServiceNotReadyError() from error
             raise
         except ValueError as error:
             self._raise_task_identity_error(error)
@@ -308,9 +509,7 @@ class TaskApplicationService:
             clone_for_view = getattr(self._task_list_manager, "clone_for_view", None)
             if callable(clone_for_view):
                 manager = clone_for_view(
-                    self._all_tasks(include_completed=True)
-                    if task_models is None
-                    else list(task_models),
+                    [] if task_models is None else list(task_models),
                     TaskView(filters=(), algorithm="", heuristic=""),
                 )
             else:
@@ -356,6 +555,41 @@ class TaskApplicationService:
             self._raise_task_identity_error(error)
             raise DomainCalculationError("Statistics could not be calculated") from error
 
+    def read_statistics_and_task_query(
+        self,
+        view: TaskView,
+        *,
+        task_models: Sequence[ITaskModel] | None = None,
+    ) -> tuple[WorkloadStats, TaskListContent]:
+        """Calculate statistics and task count from one algorithm-selected population."""
+        self._validate_view(view)
+        try:
+            tasks = (
+                self._all_tasks(include_completed=False)
+                if task_models is None
+                else [task for task in task_models if task.getStatus() != "x"]
+            )
+            manager = self._task_list_manager.clone_for_view(tasks, view)
+            population = manager.filtered_task_list
+            content = manager.get_task_list_content(selected_tasks=population)
+            read_stats = getattr(self._statistics_service, "readWorkloadStats", None)
+            if callable(read_stats):
+                stats = read_stats(population)
+            else:
+                get_stats = getattr(self._statistics_service, "getWorkloadStats", None)
+                if not callable(get_stats):
+                    raise ResourceReadError("Statistics are unavailable")
+                stats = get_stats(population)
+            return cast(WorkloadStats, stats), content
+        except DomainError:
+            raise
+        except ValueError as error:
+            self._raise_task_identity_error(error)
+            raise ValidationError(str(error), details={"field": "view"}) from error
+        except Exception as error:
+            self._raise_task_identity_error(error)
+            raise DomainCalculationError("Statistics could not be calculated") from error
+
     def read_events(self) -> Any:
         """Read event counts across open and completed tasks without changing them."""
         try:
@@ -389,9 +623,17 @@ class TaskApplicationService:
             raise UnsupportedOperationError("Projects are unavailable for this storage mode")
         try:
             return cast(list[dict[str, Any]], reader(status))
-        except DomainError:
+        except DomainError as error:
+            if self._is_snapshot_refresh_required(error):
+                raise SnapshotRefreshRequiredError() from error
+            if self._is_snapshot_not_ready(error):
+                raise ServiceNotReadyError() from error
             raise
         except Exception as error:
+            if self._is_snapshot_refresh_required(error):
+                raise SnapshotRefreshRequiredError() from error
+            if self._is_snapshot_not_ready(error):
+                raise ServiceNotReadyError() from error
             raise ResourceReadError("Project data could not be read") from error
 
     def read_project(self, name: str) -> dict[str, Any]:
@@ -402,9 +644,17 @@ class TaskApplicationService:
             raise UnsupportedOperationError("Projects are unavailable for this storage mode")
         try:
             return cast(dict[str, Any], reader(name))
-        except DomainError:
+        except DomainError as error:
+            if self._is_snapshot_refresh_required(error):
+                raise SnapshotRefreshRequiredError() from error
+            if self._is_snapshot_not_ready(error):
+                raise ServiceNotReadyError() from error
             raise
         except Exception as error:
+            if self._is_snapshot_refresh_required(error):
+                raise SnapshotRefreshRequiredError() from error
+            if self._is_snapshot_not_ready(error):
+                raise ServiceNotReadyError() from error
             raise ResourceReadError("Project data could not be read") from error
 
     def project_operation_capabilities(self) -> dict[str, dict[str, Any]]:
@@ -470,6 +720,7 @@ class TaskApplicationService:
         parameters: Mapping[str, Any],
     ) -> OperationResult:
         """Admit a client-identified operation, or return its known outcome."""
+        self.require_ready()
         self.validate_operation_structure(operation_type, target, parameters)
         normalized_id = self._normalize_operation_id(operation_id)
         intent = self._make_operation_intent(operation_type, target, parameters)
@@ -496,6 +747,7 @@ class TaskApplicationService:
         parameters: Mapping[str, Any],
     ) -> OperationResult:
         """Admit an operation before yielding, without blocking the event loop."""
+        self.require_ready()
         self.validate_operation_structure(operation_type, target, parameters)
         normalized_id = self._normalize_operation_id(operation_id)
         intent = self._make_operation_intent(operation_type, target, parameters)
@@ -669,7 +921,7 @@ class TaskApplicationService:
         return self._execute_project_operation(operation_type, target, parameters)
 
     def _edit_task_in_turn(self, task_id: str, changes: Mapping[str, Any]) -> ITaskModel:
-        task = self.read_task(task_id)
+        task = self._read_task_for_mutation(task_id)
         resolved_id = self._capture_task_id(task)
         prepared = self._prepare_changes(task, changes)
         candidate = copy.deepcopy(task)
@@ -885,7 +1137,7 @@ class TaskApplicationService:
         self._require_task_target(target)
         if parameters:
             raise ValidationError("complete-task accepts no parameters", details={"field": "parameters"})
-        original = self.read_task(target.id or "")
+        original = self._read_task_for_mutation(target.id or "")
         original_id = self._capture_task_id(original)
         task = copy.deepcopy(original)
         related: list[ITaskModel] = []
@@ -904,7 +1156,10 @@ class TaskApplicationService:
                 matches_target = candidate_id != original_id
                 awaits_event = candidate.getEventWaited() == event
                 if matches_target and awaits_event:
-                    related.append(copy.deepcopy(candidate))
+                    current = self._read_task_for_mutation(candidate_id)
+                    if current.getEventWaited() != event:
+                        continue
+                    related.append(copy.deepcopy(current))
                     related_ids.append(candidate_id)
             for candidate in related:
                 candidate.setEventWaited(None)
@@ -926,7 +1181,7 @@ class TaskApplicationService:
         effort = parameters.get("effort_per_day", "")
         if not isinstance(effort, str):
             raise ValidationError("effort_per_day must be a string", details={"field": "effort_per_day"})
-        original = self.read_task(target.id or "")
+        original = self._read_task_for_mutation(target.id or "")
         original_id = self._capture_task_id(original)
         task_copy = copy.deepcopy(original)
         try:
@@ -966,7 +1221,7 @@ class TaskApplicationService:
         if unknown:
             raise ValidationError("Unknown record-work parameter", details={"field": sorted(unknown)[0]})
         duration = self._as_time_amount(parameters.get("duration"), "duration")
-        original = self.read_task(target.id or "")
+        original = self._read_task_for_mutation(target.id or "")
         task_id = self._capture_task_id(original)
         task = copy.deepcopy(original)
         task.setInvestedEffort(task.getInvestedEffort() + duration)
@@ -1012,7 +1267,7 @@ class TaskApplicationService:
         now = parameters.get("now", TimePoint.now())
         if not isinstance(now, TimePoint):
             raise ValidationError("now must be a TimePoint", details={"field": "now"})
-        original = self.read_task(target.id or "")
+        original = self._read_task_for_mutation(target.id or "")
         task_id = self._capture_task_id(original)
         task = copy.deepcopy(original)
         task.setStart(now + duration)
@@ -1029,11 +1284,16 @@ class TaskApplicationService:
         now = TimePoint.now()
         tasks: list[ITaskModel] = []
         task_ids: list[str] = []
-        for original in self._all_tasks():
+        candidates = self._all_tasks()
+        for original in candidates:
             if original.getEventWaited() != target.id:
                 continue
-            task_ids.append(self._capture_task_id(original))
-            tasks.append(copy.deepcopy(original))
+            task_id = self._capture_task_id(original)
+            current = self._read_task_for_mutation(task_id)
+            if current.getEventWaited() != target.id:
+                continue
+            task_ids.append(task_id)
+            tasks.append(copy.deepcopy(current))
         for task, task_id in zip(tasks, task_ids):
             task.setEventWaited(None)
             task.setStart(now)
@@ -1268,7 +1528,7 @@ class TaskApplicationService:
         changes: Mapping[str, Any],
         delta: Any,
     ) -> ITaskModel:
-        original = self.read_task(task_id)
+        original = self._read_task_for_mutation(task_id)
         resolved_id = self._capture_task_id(original)
         prepared = self._prepare_changes(original, changes)
         amount = self._as_time_amount(delta, "effort_delta")

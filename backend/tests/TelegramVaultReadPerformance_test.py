@@ -66,6 +66,9 @@ class _CountingFakeBot:
                 destination.write(updated)
             modified = time.time() + 5
             os.utime(self.task_file, (modified, modified))
+            # External edits become visible through the next published
+            # generation; a warm read itself never rescans the vault.
+            self.task_provider.TaskJsonProvider.refresh()
             return [InboundMessage(self.user, self.agent, "list", [])]
 
         self.reporting.run = False
@@ -73,7 +76,7 @@ class _CountingFakeBot:
 
 
 class TelegramVaultReadPerformanceTest(unittest.TestCase):
-    def test_event_loop_uses_warmed_channel_snapshot_and_list_command_reads_fresh_file(self):
+    def test_list_command_uses_published_snapshot_after_external_refresh(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             vault = root / "vault"
@@ -94,12 +97,12 @@ class TelegramVaultReadPerformanceTest(unittest.TestCase):
                 "log": [{"timestamp": 1791280000000, "work_units": 1.0, "task": "Earlier task"}],
             })
             counts = {"inventories": 0, "line_reads": 0, "read_paths": []}
-            original_inventory = broker.getVaultFiles
+            original_inventory = broker.getVaultFilesCancellable
             original_lines = broker.getVaultFileLines
 
-            def counted_inventory(registry):
+            def counted_inventory(registry, should_stop):
                 counts["inventories"] += 1
-                return original_inventory(registry)
+                return original_inventory(registry, should_stop)
 
             def counted_lines(registry, relative_path):
                 counts["line_reads"] += 1
@@ -110,12 +113,13 @@ class TelegramVaultReadPerformanceTest(unittest.TestCase):
                     time.sleep(0.005)
                 return original_lines(registry, relative_path)
 
-            broker.getVaultFiles = counted_inventory
+            broker.getVaultFilesCancellable = counted_inventory
             broker.getVaultFileLines = counted_lines
 
             json_provider = ObsidianVaultTaskJsonProvider(
                 broker,
                 TaskDiscoveryPolicies("0", "0", "inbox", ["work"]),
+                disableThreading=True,
             )
             task_provider = ObsidianTaskProvider(json_provider, broker, disableThreading=True)
             all_filter = _AllTasksFilter()
@@ -136,8 +140,8 @@ class TelegramVaultReadPerformanceTest(unittest.TestCase):
                 categories=[{"prefix": "work"}],
             )
 
-            # The provider's startup discovery marks this unchanged inventory
-            # as reconciled. Later maintenance should only enumerate it.
+            # With no open project requiring maintenance, repeated discovery
+            # should use the published generation without an inventory scan.
             task_provider.discoverTasks()
             counts["inventories"] = 0
             counts["line_reads"] = 0
@@ -146,7 +150,7 @@ class TelegramVaultReadPerformanceTest(unittest.TestCase):
             warm_discovery_counts = (
                 counts["inventories"], counts["line_reads"], tuple(counts["read_paths"])
             )
-            self.assertEqual(warm_discovery_counts, (1, 0, ()))
+            self.assertEqual(warm_discovery_counts, (0, 0, ()))
 
             user = UserAgent("123")
             bot = _CountingFakeBot(vault / "01.md", task_provider, user)

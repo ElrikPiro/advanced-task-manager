@@ -58,7 +58,11 @@ Available combinations:
 
 ### Markdown vault reads and service diagnostics
 
-The Markdown provider checks the vault inventory on reads and reuses parsed data for files whose paths and modification times are unchanged. New, changed, renamed, and deleted notes are reflected in the next read; callers receive detached snapshots. After a successful discovery pass, the periodic task-list check avoids rereading unchanged notes. Service failure logs include bounded exception types and source file/line details, while omitting exception messages and local paths.
+The Markdown provider builds a complete task generation in the background and publishes it only after a refresh succeeds. Warm reads use the latest published generation and do not inventory the vault or read Markdown files. A refresh starts after the listener is initialized, then runs again ten seconds after the previous refresh completes and at local-day rollover. External edits, moves and deletions appear after the next successful refresh; this interval is not a strict freshness guarantee because a scan can take longer or fail.
+
+When a process starts in Markdown mode, the HTTP root and `GET {HTTP_API_PREFIX}/status` are available while the first generation loads. Task reads and task commands report that data is still loading instead of showing an empty vault. Status reports readiness, generation, build time, snapshot age, refresh activity, and the last sanitized refresh error. A failed refresh keeps the last complete generation; if failures continue, its age can grow without a fixed limit. The listener remains available for status checks. Service failure logs include bounded exception types and source file/line details, while omitting exception messages and local paths.
+
+After each successful full refresh, maintenance checks open projects and creates a deterministic `Define next action` task when one is missing. It prepares from the published generation and commits one project note at a time so other queued writes can proceed between notes. Refresh-triggered maintenance is single-flight and coalesces refresh notifications; local task-write notifications do not launch another discovery pass. A stale maintenance plan is retried after the next successful refresh. Reads that depend on an index entry invalidated by an uncertain local write return `503` with the `snapshot-refresh-required` problem code and a retry hint. A write whose target is missing, stale, ambiguous, or has invalid task data returns a `409` refresh-required conflict before changing that task.
 
 ### HTTP API behavior and limits
 
@@ -106,7 +110,9 @@ Task IDs are opaque strings stored with each task: JSON records use `id`, and Ma
 
 ### File save behavior
 
-Markdown-backed API reads check a fresh file inventory for each request. Parsed task data and task-ID summaries are reused only for files whose fingerprints are unchanged; an API projection uses one request-local task snapshot, which is not shared with later requests. Synchronous read projections run in worker threads so they do not block the HTTP event loop while reading the vault.
+Each task collection, agenda or statistics response uses one immutable published generation. Task ranking and filters keep their existing order and membership rules; only the returned page or agenda entries are resolved back to task models through that generation's ID index. A task detail lookup resolves its ID directly through the index. Adjacent pages may use different generations if a refresh publishes between requests. Duplicate IDs are ambiguous for the affected ID and are never resolved by choosing an arbitrary note.
+
+Markdown-backed reads do not scan the vault on the request path. The refresh worker parses notes off the read path and publishes a replacement generation atomically. Task writes use the indexed note and validate its current contents during the serialized write turn. A confirmed local write is reflected in the published generation before its response completes. An external duplicate introduced in another note can be detected by a later refresh.
 
 Task data, project files, and work statistics are saved one file at a time through a temporary file in the same directory, followed by an atomic replacement. Readers see the complete previous file or the complete replacement. If a write fails before replacement, that file is known to be unchanged; if durability fails after replacement, the saved state may be uncertain. Operations that touch several files stop at the first failure and report the confirmed changes for review. They do not roll back earlier files or retry automatically. External editors can still change a file between the backend's comparison and replacement.
 

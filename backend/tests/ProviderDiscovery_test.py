@@ -1,7 +1,6 @@
 import json
 import os
 import tempfile
-import threading
 import unittest
 from concurrent.futures import ThreadPoolExecutor
 from unittest.mock import MagicMock
@@ -50,7 +49,8 @@ class ProviderDiscoveryTest(unittest.TestCase):
         task_provider = TaskProvider(json_provider, self.file_broker, disableThreading=True)
         obsidian_json_provider = ObsidianVaultTaskJsonProvider(
             self.file_broker,
-            TaskDiscoveryPolicies("0", "1", "inbox", ["work"])
+            TaskDiscoveryPolicies("0", "1", "inbox", ["work"]),
+            disableThreading=True,
         )
         obsidian_task_provider = ObsidianTaskProvider(
             obsidian_json_provider,
@@ -157,7 +157,8 @@ class ProviderDiscoveryTest(unittest.TestCase):
                 date_missing_policy="1",
                 default_context="inbox",
                 categories_prefixes=["work"]
-            )
+            ),
+            disableThreading=True,
         )
         before = self.snapshot(self.vault_path)
 
@@ -193,7 +194,8 @@ class ProviderDiscoveryTest(unittest.TestCase):
             self.write_file(os.path.join(self.vault_path, path), content)
         provider = ObsidianVaultTaskJsonProvider(
             self.file_broker,
-            TaskDiscoveryPolicies("0", "1", "inbox", ["work"])
+            TaskDiscoveryPolicies("0", "1", "inbox", ["work"]),
+            disableThreading=True,
         )
 
         before = self.snapshot(self.vault_path)
@@ -221,20 +223,20 @@ class ProviderDiscoveryTest(unittest.TestCase):
         provider.discover()
         self.assertEqual(self.snapshot(self.vault_path), after_discovery)
 
-    def test_concurrent_markdown_reads_return_independent_snapshots(self):
+    def test_concurrent_markdown_reads_return_detached_views_of_one_snapshot(self):
         file_broker = MagicMock(spec=IFileBroker)
         file_broker.getVaultFiles.return_value = [("First.md", 1.0), ("Second.md", 2.0)]
-        read_barrier = threading.Barrier(2)
 
         def read_file_lines(registry, path):
-            read_barrier.wait(timeout=5)
             return ["---\n", "---\n", f"- [ ] {path} task [track::work]\n"]
 
         file_broker.getVaultFileLines.side_effect = read_file_lines
         provider = ObsidianVaultTaskJsonProvider(
             file_broker,
-            TaskDiscoveryPolicies("0", "1", "inbox", ["work"])
+            TaskDiscoveryPolicies("0", "1", "inbox", ["work"]),
+            disableThreading=True,
         )
+        first_generation = provider.getRefreshStatus()["generation"]
 
         with ThreadPoolExecutor(max_workers=2) as executor:
             first = executor.submit(provider.getJson)
@@ -247,6 +249,9 @@ class ProviderDiscoveryTest(unittest.TestCase):
             self.assertEqual({task["file"] for task in result["tasks"]}, expected)
             self.assertEqual(len(result["tasks"]), 2)
             self.assertEqual(result["projects"], [])
+        self.assertEqual(provider.getRefreshStatus()["generation"], first_generation)
+        first_result["tasks"].clear()
+        self.assertEqual(len(provider.getJson()["tasks"]), 2)
 
 
 if __name__ == "__main__":

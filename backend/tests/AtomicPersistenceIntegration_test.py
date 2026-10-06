@@ -10,7 +10,7 @@ from pathlib import Path
 from unittest import TestCase
 from unittest.mock import MagicMock, patch
 
-from src.AtomicFileStore import AtomicFileStore
+from src.AtomicFileStore import AtomicFileStore, AtomicWriteError
 from src.FileBroker import FileBroker
 from src.HeuristicScheduling import HeuristicScheduling
 from src.StatisticsService import StatisticsService
@@ -22,9 +22,13 @@ from src.domain.errors import (
     OperationFailedError,
     ResourceNotFoundError,
 )
+from src.MutationCoordinator import OperationExecutionError
 from src.domain.models import OperationTarget
 from src.taskjsonproviders.TaskJsonProvider import TaskJsonProvider
-from src.taskjsonproviders.ObsidianVaultTaskJsonProvider import ObsidianVaultTaskJsonProvider
+from src.taskjsonproviders.ObsidianVaultTaskJsonProvider import (
+    ObsidianVaultTaskJsonProvider,
+    SnapshotRefreshRequiredError,
+)
 from src.taskproviders.TaskIdentityErrors import MissingTaskIdentityError
 from src.taskproviders.ObsidianTaskProvider import ObsidianTaskProvider
 from src.taskproviders.TaskProvider import TaskProvider
@@ -316,8 +320,11 @@ class AtomicPersistenceIntegrationTest(TestCase):
         json_provider = ObsidianVaultTaskJsonProvider(
             self.file_broker,
             TaskDiscoveryPolicies("1", "1", "work", ["work", "home"]),
+            auto_start=False,
+            disableThreading=True,
         )
         provider = ObsidianTaskProvider(json_provider, self.file_broker, disableThreading=True)
+        provider.start()
         manager = TelegramTaskListManager([], [], [], [], self.statistics)
         application = TaskApplicationService(
             provider,
@@ -327,6 +334,167 @@ class AtomicPersistenceIntegrationTest(TestCase):
             categories=[{"prefix": "work"}, {"prefix": "home"}],
         )
         return provider, application
+
+    def test_warm_markdown_reads_use_one_generation_and_local_save_publishes_before_return(self) -> None:
+        markdown_path = self.vault_dir / "Operations.md"
+        provider, _ = self._new_obsidian_application(markdown_path)
+        initial = provider.getTaskListSnapshot()
+        task = initial.tasks[0]
+        task.setDescription("Saved Markdown release")
+        status_before = provider.getRefreshStatus()
+
+        with patch.object(self.file_broker, "getVaultFiles", wraps=self.file_broker.getVaultFiles) as inventory, patch.object(
+            self.file_broker,
+            "getVaultFileLines",
+            wraps=self.file_broker.getVaultFileLines,
+        ) as line_reads:
+            provider.saveTask(task)
+            resolved = provider.getTaskById("markdown-1")
+            metadata = provider.getTaskMetadata(resolved)
+
+        status_after = provider.getRefreshStatus()
+        self.assertGreater(status_after["generation"], initial.generation)
+        self.assertEqual(status_after["last_success"], status_before["last_success"])
+        self.assertEqual(inventory.call_count, 0)
+        self.assertEqual(line_reads.call_count, 0)
+        self.assertEqual(resolved.getTaskText(), "Saved Markdown release")
+        self.assertIn("Saved Markdown release", metadata)
+
+    def test_mutation_read_uses_latest_target_fields_without_a_vault_rescan(self) -> None:
+        markdown_path = self.vault_dir / "Operations.md"
+        provider, _ = self._new_obsidian_application(markdown_path)
+        provider.getTaskById("markdown-1")
+        latest_due = "2026-11-02"
+        external = markdown_path.read_text(encoding="utf-8").replace(
+            "[invested:: 2]", "[invested:: 7]"
+        ).replace("[due:: 2026-10-05]", f"[due:: {latest_due}]")
+        markdown_path.write_text(external, encoding="utf-8")
+
+        with patch.object(self.file_broker, "getVaultFiles", wraps=self.file_broker.getVaultFiles) as inventory:
+            latest = provider.getTaskForMutation("markdown-1")
+            self.assertEqual(latest.getInvestedEffort().as_pomodoros(), 7.0)
+            self.assertEqual(latest.getDue(), TimePoint.from_string(latest_due))
+            latest.setDescription("Latest fields preserved")
+            provider.saveTask(latest)
+
+        self.assertEqual(inventory.call_count, 0)
+        stored = markdown_path.read_text(encoding="utf-8")
+        self.assertIn("[invested:: 7]", stored)
+        self.assertIn(f"[due:: {latest_due}]", stored)
+        self.assertIn("Latest fields preserved", stored)
+
+    def test_unknown_post_replace_markdown_write_invalidates_target_until_refresh(self) -> None:
+        markdown_path = self.vault_dir / "Operations.md"
+        provider, _ = self._new_obsidian_application(markdown_path)
+        task = provider.getTaskById("markdown-1")
+        task.setDescription("Uncertain but committed")
+        original_replace = os.replace
+        original_fsync = os.fsync
+        replace_returned = False
+
+        def mark_replace(source, destination):
+            nonlocal replace_returned
+            result = original_replace(source, destination)
+            replace_returned = True
+            return result
+
+        def fail_directory_sync(fd: int) -> None:
+            if replace_returned and stat.S_ISDIR(os.fstat(fd).st_mode):
+                raise OSError("injected Markdown directory fsync failure")
+            original_fsync(fd)
+
+        with patch("src.AtomicFileStore.os.replace", side_effect=mark_replace), patch(
+            "src.AtomicFileStore.os.fsync", side_effect=fail_directory_sync
+        ), self.assertRaises(AtomicWriteError) as caught:
+            provider.saveTask(task)
+
+        self.assertEqual(caught.exception.effects_state, "unknown")
+        self.assertTrue(provider.getRefreshStatus()["needs_refresh"])
+        self.assertIn("Uncertain but committed", markdown_path.read_text(encoding="utf-8"))
+        with self.assertRaises(SnapshotRefreshRequiredError):
+            provider.getTaskById("markdown-1")
+
+        provider.TaskJsonProvider.refresh()
+        self.assertEqual(provider.getTaskById("markdown-1").getTaskText(), "Uncertain but committed")
+
+    def test_midnight_target_patch_does_not_mark_other_files_reparsed(self) -> None:
+        target_path = self.vault_dir / "target.md"
+        other_path = self.vault_dir / "other.md"
+        target_path.write_text(
+            "- [ ] Target [track:: work:operations] [id:: target-id]\n",
+            encoding="utf-8",
+        )
+        other_path.write_text(
+            "- [ ] Other [track:: work:operations] [id:: other-id]\n",
+            encoding="utf-8",
+        )
+        json_provider = ObsidianVaultTaskJsonProvider(
+            self.file_broker,
+            TaskDiscoveryPolicies("1", "1", "work", ["work", "home"]),
+            auto_start=False,
+            disableThreading=True,
+        )
+        provider = ObsidianTaskProvider(json_provider, self.file_broker, disableThreading=True)
+        first_day = TimePoint.from_string("2026-10-01")
+        next_day = TimePoint.from_string("2026-10-02")
+        with patch("src.taskjsonproviders.ObsidianVaultTaskJsonProvider.TimePoint.today", return_value=first_day):
+            provider.start()
+            first_target = provider.getTaskById("target-id")
+            first_other = provider.getTaskById("other-id")
+            first_other_start = first_other.getStart().as_int()
+
+        with patch("src.taskjsonproviders.ObsidianVaultTaskJsonProvider.TimePoint.today", return_value=next_day):
+            first_target.setDescription("Edited after midnight")
+            provider.saveTask(first_target)
+            patched_status = provider.getRefreshStatus()
+            stale_other = provider.getTaskById("other-id")
+            json_provider.refresh()
+            refreshed_other = provider.getTaskById("other-id")
+
+        self.assertEqual(patched_status["local_day"], "2026-10-01")
+        self.assertEqual(stale_other.getStart().as_int(), first_other_start)
+        self.assertEqual(refreshed_other.getStart().as_int(), next_day.as_int())
+
+    def test_discovery_keeps_first_confirmed_file_when_second_commit_fails(self) -> None:
+        (self.vault_dir / "first.md").write_text(
+            "---\nproject: open\ntrack: work:operations\n---\n# First\n",
+            encoding="utf-8",
+        )
+        (self.vault_dir / "second.md").write_text(
+            "---\nproject: open\ntrack: work:operations\n---\n# Second\n",
+            encoding="utf-8",
+        )
+        json_provider = ObsidianVaultTaskJsonProvider(
+            self.file_broker,
+            TaskDiscoveryPolicies("1", "1", "work", ["work", "home"]),
+            auto_start=False,
+            disableThreading=True,
+        )
+        provider = ObsidianTaskProvider(json_provider, self.file_broker, disableThreading=True)
+        provider.start()
+        original_update = self.file_broker.updateVaultFileLines
+        calls = 0
+
+        def fail_second(registry, relative_path, updater):
+            nonlocal calls
+            calls += 1
+            if calls == 2:
+                raise OSError("injected second project write failure")
+            return original_update(registry, relative_path, updater)
+
+        with patch.object(self.file_broker, "updateVaultFileLines", side_effect=fail_second):
+            with self.assertRaises(OperationExecutionError):
+                json_provider.discover()
+
+        published = json_provider.getJson()["tasks"]
+        self.assertEqual(len(published), 1)
+        persisted = [
+            path.name
+            for path in self.vault_dir.glob("*.md")
+            if "Define next action" in path.read_text(encoding="utf-8")
+        ]
+        self.assertEqual(len(persisted), 1)
+        self.assertEqual(published[0]["file"], persisted[0])
 
     def test_markdown_external_known_field_survives_recalculated_edit(self) -> None:
         markdown_path = self.vault_dir / "Operations.md"
@@ -381,7 +549,7 @@ class AtomicPersistenceIntegrationTest(TestCase):
         def fail_after_confirmed_update(file: str, lines: list[str], task_id: str):
             nonlocal materializations
             materializations += 1
-            if materializations == 2:
+            if materializations == 3:
                 raise ValueError("injected confirmed Markdown refresh failure")
             return materialize(file, lines, task_id)
 
@@ -392,7 +560,7 @@ class AtomicPersistenceIntegrationTest(TestCase):
         ), self.assertRaises(OperationFailedError) as caught:
             application.edit_task("markdown-1", {"description": "Updated Markdown release"})
 
-        self.assertEqual(materializations, 2)
+        self.assertEqual(materializations, 3)
         self.assertEqual(caught.exception.effects_state, "unknown")
         self.assertEqual(caught.exception.details.get("uncertain_id"), "markdown-1")
         self.assertIn("Updated Markdown release", markdown_path.read_text(encoding="utf-8"))

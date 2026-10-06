@@ -42,10 +42,45 @@ class ResourceConflictError(DomainError):
     code = "resource-conflict"
 
 
+class RefreshRequiredError(DomainError):
+    """A task identity is stale or ambiguous and must be refreshed before writing."""
+
+    code = "refresh-required"
+
+    def __init__(self) -> None:
+        super().__init__(
+            "Task identity changed; refresh task data before retrying",
+            details={"resource": "task"},
+            effects_state="none",
+        )
+
+
 class ResourceReadError(DomainError):
     """The provider could not read the requested domain data."""
 
     code = "resource-read-failed"
+
+
+class ServiceNotReadyError(DomainError):
+    """Task data is still loading and cannot be queried yet."""
+
+    code = "service-not-ready"
+
+    def __init__(self) -> None:
+        super().__init__("Task data is still loading; retry shortly")
+
+
+class SnapshotRefreshRequiredError(DomainError):
+    """A read depends on a task index entry invalidated by an uncertain write."""
+
+    code = "snapshot-refresh-required"
+
+    def __init__(self) -> None:
+        super().__init__(
+            "Task data needs refresh; retry shortly",
+            details={"resource": "task"},
+            effects_state="none",
+        )
 
 
 class InvalidResourceDataError(DomainError):

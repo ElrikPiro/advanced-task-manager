@@ -332,6 +332,7 @@ class TelegramReportingServiceContainer():
                 self.container.fileBroker,
                 taskDiscoveryPolicies,
                 mutation_coordinator=self.container.mutationCoordinator(),
+                auto_start=False,
             )
             self.container.taskProvider = providers.Singleton(
                 ObsidianTaskProvider,
@@ -419,7 +420,10 @@ class TelegramReportingServiceContainer():
         self.container.heristicScheduling = providers.Singleton(HeuristicScheduling, dedicationTime, self.container.taskProvider)
 
         # Task Manager
-        self.container.taskListManager = providers.Singleton(TelegramTaskListManager, self.container.taskProvider().getTaskList(), self.container.algorithmList, self.container.heuristicList, self.container.filterList, self.container.statisticsService)
+        # The channel view starts empty internally. Markdown task discovery is
+        # scheduled only after the listener has initialized and readiness gates
+        # prevent this placeholder from being presented as a loaded empty vault.
+        self.container.taskListManager = providers.Singleton(TelegramTaskListManager, [], self.container.algorithmList, self.container.heuristicList, self.container.filterList, self.container.statisticsService)
 
         # Project Manager
         if obsidianMode:

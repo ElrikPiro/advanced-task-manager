@@ -33,9 +33,12 @@ from src.domain.errors import (
     OperationConflictError,
     OperationFailedError,
     OperationResultUnavailableError,
+    RefreshRequiredError,
     ResourceConflictError,
     ResourceNotFoundError,
     ResourceReadError,
+    SnapshotRefreshRequiredError,
+    ServiceNotReadyError,
     UnsupportedOperationError,
     ValidationError,
 )
@@ -202,6 +205,10 @@ class HttpApiV1:
                     self._known_operation_target(request),
                     request.get(_OPERATION_TYPE_KEY),
                 ),
+                headers={"Retry-After": "1"} if isinstance(
+                    error,
+                    (ServiceNotReadyError, SnapshotRefreshRequiredError),
+                ) else None,
             )
         except MutationCoordinatorClosed:
             operation_id = self._known_operation_id(request, operation_id)
@@ -411,6 +418,12 @@ class HttpApiV1:
                 raise HttpInputError("invalid-query-parameter", "heuristic must be a name", field="heuristic")
             query = AgendaQuery(day=day, heuristic=heuristic)
             document = await asyncio.to_thread(self.resources.read_agenda, query)
+            return self._hal(document), None
+
+        if path == ("status",):
+            self._require_method(request, {"GET"})
+            self._require_no_query(request)
+            document = await asyncio.to_thread(self.resources.read_status)
             return self._hal(document), None
 
         if path == ("statistics",):
@@ -1060,6 +1073,10 @@ class HttpApiV1:
 
     @staticmethod
     def _domain_problem(error: DomainError) -> tuple[int, str]:
+        if isinstance(error, ServiceNotReadyError):
+            return 503, "Task data is still loading; retry shortly"
+        if isinstance(error, SnapshotRefreshRequiredError):
+            return 503, "Task data needs refresh; retry shortly"
         if error.code == "notification-history-unavailable":
             return 503, "Notification history is unavailable"
         if error.code == "notification-history-invalid":
@@ -1068,7 +1085,7 @@ class HttpApiV1:
             return 400, "The request contains invalid fields or values"
         if isinstance(error, OperationConflictError):
             return 409, "The operation identifier is already associated with another intent"
-        if isinstance(error, (AmbiguousResourceError, ResourceConflictError)):
+        if isinstance(error, (AmbiguousResourceError, RefreshRequiredError, ResourceConflictError)):
             return 409, "The requested resource conflicts with current data"
         if isinstance(error, (ResourceNotFoundError, OperationResultUnavailableError)):
             return 404, "The requested resource or retained result was not found"

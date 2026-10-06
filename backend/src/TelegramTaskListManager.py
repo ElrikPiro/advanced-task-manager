@@ -1,4 +1,5 @@
 import copy
+import datetime
 from typing import List, Tuple
 
 from src.Utils import EventsContent
@@ -15,6 +16,29 @@ from .Interfaces.ITaskModel import ITaskModel
 from .Interfaces.ITaskListManager import ITaskListManager
 from .algorithms.Interfaces.IAlgorithm import IAlgorithm
 from .domain.models import TaskView
+from .algorithms.EdfAlgorithm import EdfAlgorithm
+from .algorithms.ShortestJobAlgorithm import ShortestJobAlgorithm
+from .filters.ActiveTaskFilter import ActiveTaskFilter, InactiveTaskFilter
+from .heuristics.CfdHeuristic import CfdHeuristic
+from .heuristics.DaysToThresholdHeuristic import DaysToThresholdHeuristic
+from .heuristics.RemainingEffortHeuristic import RemainingEffortHeuristic
+from .heuristics.SlackHeuristic import SlackHeuristic
+from .heuristics.StartTimeHeuristic import StartTimeHeuristic
+from .heuristics.WorkloadHeuristic import WorkloadHeuristic
+from .taskmodels.ObsidianTaskModel import ObsidianTaskModel
+from .taskmodels.TaskModel import TaskModel
+
+
+_BATCHABLE_FILTER_TYPES = (ActiveTaskFilter, InactiveTaskFilter)
+_PURE_BUILTIN_HEURISTIC_TYPES = (
+    CfdHeuristic,
+    DaysToThresholdHeuristic,
+    RemainingEffortHeuristic,
+    SlackHeuristic,
+    StartTimeHeuristic,
+    WorkloadHeuristic,
+)
+_PURE_BUILTIN_ALGORITHM_TYPES = (EdfAlgorithm, ShortestJobAlgorithm)
 
 
 class TelegramTaskListManager(ITaskListManager):
@@ -35,6 +59,8 @@ class TelegramTaskListManager(ITaskListManager):
 
         self.__statistics_service = statistics_service
         self.__search_terms: tuple[str, ...] = ()
+        self.__last_sorted_scores: dict[int, float] | None = None
+        self.__last_scored_population: List[ITaskModel] | None = None
 
         self.reset_pagination(tasksPerPage)
 
@@ -60,6 +86,9 @@ class TelegramTaskListManager(ITaskListManager):
     def filtered_task_list(self) -> List[ITaskModel]:
 
         newTaskList: List[ITaskModel] = []
+        self.__last_sorted_scores = None
+        self.__last_scored_population = None
+        query_now = TimePoint.now()
 
         if self.__search_terms:
             search_terms = tuple(term.casefold() for term in self.__search_terms)
@@ -80,26 +109,97 @@ class TelegramTaskListManager(ITaskListManager):
         if self.__filterList and not active_filters:
             # A configured filter catalog with no selection is the empty union.
             return []
-        for task in source_tasks:
-            if not self.__filterList:
+        batch_matches = (
+            self.__batch_builtin_filter_matches(source_tasks, active_filters, query_now)
+            if self.__filterList
+            else None
+        )
+        if batch_matches is not None:
+            newTaskList = batch_matches
+        elif self.__filterList:
+            # Custom filters retain their original per-task call ordering and
+            # singleton input, since extensions may be stateful.
+            for task in source_tasks:
+                for filterr in active_filters:
+                    matches = filterr[1].filter([task])
+                    if filterr[2] and matches and not isinstance(task.getEventWaited(), str):
+                        newTaskList.append(task)
+                        break
+        else:
+            for task in source_tasks:
                 if task.getStatus() != "x" and not isinstance(task.getEventWaited(), str):
                     newTaskList.append(task)
-                continue
-            for filterr in active_filters:
-                if filterr[2] and filterr[1].filter([task]) and not isinstance(task.getEventWaited(), str):
-                    newTaskList.append(task)
-                    break
 
         if isinstance(self.__selectedHeuristic, tuple):
             heuristic: IHeuristic = self.__selectedHeuristic[1]
             sortedTaskList: List[Tuple[ITaskModel, float]] = heuristic.sort(newTaskList)
+            if self.__can_reuse_sorted_scores(heuristic):
+                self.__last_sorted_scores = {
+                    id(task): score for task, score in sortedTaskList
+                }
             newTaskList = [task for task, _ in sortedTaskList]
 
         if isinstance(self.__selectedAlgorithm, tuple):
             algorithm: IAlgorithm = self.__selectedAlgorithm[1]
+            if not self.__can_reuse_sorted_scores(
+                self.__selectedHeuristic[1]
+                if isinstance(self.__selectedHeuristic, tuple)
+                else None,
+                algorithm,
+            ):
+                self.__last_sorted_scores = None
             newTaskList = algorithm.apply(newTaskList)
 
+        if self.__last_sorted_scores is not None:
+            self.__last_scored_population = newTaskList
+
         return newTaskList
+
+    @staticmethod
+    def __batch_builtin_filter_matches(
+        source_tasks: List[ITaskModel],
+        active_filters: List[Tuple[str, IFilter, bool]],
+        query_now: TimePoint,
+    ) -> List[ITaskModel] | None:
+        """Batch only stateless built-in filters; custom filters keep legacy calls."""
+        if not active_filters or any(
+            type(filter_entry[1]) not in _BATCHABLE_FILTER_TYPES
+            for filter_entry in active_filters
+        ):
+            return None
+        if not all(type(task) in (TaskModel, ObsidianTaskModel) for task in source_tasks):
+            return None
+
+        matching_object_ids: set[int] = set()
+        for _, filterr, _ in active_filters:
+            filter_at = getattr(type(filterr), "filter_at")
+            matching_object_ids.update(
+                id(task) for task in filter_at(filterr, source_tasks, query_now)
+            )
+        return [
+            task
+            for task in source_tasks
+            if id(task) in matching_object_ids and not isinstance(
+                task.getEventWaited(), str
+            )
+        ]
+
+    def __can_reuse_sorted_scores(
+        self,
+        heuristic: IHeuristic | None,
+        algorithm: IAlgorithm | None = None,
+    ) -> bool:
+        if heuristic is None or type(heuristic) not in _PURE_BUILTIN_HEURISTIC_TYPES:
+            return False
+        if not all(
+            type(task) in (TaskModel, ObsidianTaskModel)
+            for task in self.__taskModelList
+        ):
+            return False
+        selected_algorithm = algorithm
+        if selected_algorithm is None and isinstance(self.__selectedAlgorithm, tuple):
+            selected_algorithm = self.__selectedAlgorithm[1]
+        return selected_algorithm is None or type(selected_algorithm) in _PURE_BUILTIN_ALGORITHM_TYPES
 
     @property
     def selected_task(self) -> ITaskModel | None:
@@ -317,12 +417,16 @@ class TelegramTaskListManager(ITaskListManager):
     def get_list_stats(self) -> WorkloadStats:
         return self.__statistics_service.getWorkloadStats(self.__taskModelList)
         
-    def get_task_list_content(self) -> TaskListContent:
+    def get_task_list_content(
+        self,
+        *,
+        selected_tasks: List[ITaskModel] | None = None,
+    ) -> TaskListContent:
         """
         Returns a dictionary with the content needed to render a task list.
         This includes algorithm information, heuristic information, tasks, pagination details, etc.
         """
-        task_list = self.filtered_task_list
+        task_list = self.filtered_task_list if selected_tasks is None else selected_tasks
         
         # Get task details for the current page
         start_index = self.__taskListPage * self.__tasksPerPage
@@ -335,7 +439,14 @@ class TelegramTaskListManager(ITaskListManager):
             # Get heuristic value for the task
             heuristic_value: float = 0.0
             if len(self.__heuristicList) > 0 and isinstance(self.__selectedHeuristic, tuple):
-                heuristic_value = self.__selectedHeuristic[1].evaluate(task)
+                cached_scores = self.__last_sorted_scores
+                use_cached_score = task_list is self.__last_scored_population
+                use_cached_score = use_cached_score and cached_scores is not None
+                use_cached_score = use_cached_score and id(task) in (cached_scores or {})
+                if use_cached_score and cached_scores is not None:
+                    heuristic_value = cached_scores[id(task)]
+                else:
+                    heuristic_value = self.__selectedHeuristic[1].evaluate(task)
             
             task_id = task.getTaskUID()
             
@@ -391,10 +502,15 @@ class TelegramTaskListManager(ITaskListManager):
             interactive=True  # Default to interactive mode
         )
 
-    def __filter_current_tasks(self, tasks: List[ITaskModel]) -> List[ITaskModel]:
+    def __filter_current_tasks(
+        self,
+        tasks: List[ITaskModel],
+        now: TimePoint | None = None,
+    ) -> List[ITaskModel]:
         current_tasks: List[ITaskModel] = []
+        query_now = now or TimePoint.now()
         for task in tasks:
-            if task.getStatus() != "x" and task.getStart().as_int() < TimePoint.now().as_int():
+            if task.getStatus() != "x" and task.getStart().as_int() < query_now.as_int():
                 current_tasks.append(task)
         return current_tasks
 
@@ -414,22 +530,36 @@ class TelegramTaskListManager(ITaskListManager):
                 urgent_tasks.append(task)
         return urgent_tasks
 
-    def __filter_and_sort_future_tasks(self, tasks: List[ITaskModel], date: TimePoint) -> List[ITaskModel]:
+    def __filter_and_sort_future_tasks(
+        self,
+        tasks: List[ITaskModel],
+        date: TimePoint,
+        now: TimePoint | None = None,
+    ) -> List[ITaskModel]:
         sorted_tasks = sorted(tasks, key=lambda x: x.getStart().as_int())
         planned_tasks: List[ITaskModel] = []
         deadline: TimePoint = ((date + TimeAmount("1d")) + TimeAmount("-1s"))
+        query_now = now or TimePoint.now()
         for task in sorted_tasks:
-            if task.getStart().as_int() > TimePoint.now().as_int() and task.getStart().as_int() < deadline.as_int():
+            if task.getStart().as_int() > query_now.as_int() and task.getStart().as_int() < deadline.as_int():
                 planned_tasks.append(task)
         return planned_tasks
 
-    def __filter_high_heuristic_tasks(self, urgent_tasks: List[ITaskModel]) -> List[ITaskModel]:
+    def __filter_high_heuristic_tasks(
+        self,
+        urgent_tasks: List[ITaskModel],
+        now: TimePoint | None = None,
+        tomorrow: TimePoint | None = None,
+    ) -> List[ITaskModel]:
         high_heuristic_tasks: List[ITaskModel] = []
         taskModelListTupled: List[Tuple[ITaskModel, float]] = self.__selectedHeuristic[1].sort(self.__taskModelList) if isinstance(self.__selectedHeuristic, tuple) else []
         taskModelList: List[ITaskModel] = [task for task, _ in taskModelListTupled]
+        query_now = now or TimePoint.now()
+        tomorrow_start = tomorrow or TimePoint.tomorrow()
+        urgent_task_objects = {id(task) for task in urgent_tasks}
 
         for task in taskModelList:
-            if task not in urgent_tasks and task.getStatus() != "x" and task.getStart().as_int() < TimePoint.now().as_int() and task.getDue().as_int() >= TimePoint.tomorrow().as_int() and task.getCalm() is False and task.getEventWaited() is None:
+            if id(task) not in urgent_task_objects and task.getStatus() != "x" and task.getStart().as_int() < query_now.as_int() and task.getDue().as_int() >= tomorrow_start.as_int() and task.getCalm() is False and task.getEventWaited() is None:
                 high_heuristic_tasks.append(task)
 
         return high_heuristic_tasks
@@ -448,10 +578,13 @@ class TelegramTaskListManager(ITaskListManager):
         """
         # Get tasks by different criteria
         urgent_tasks = self.__filter_urgent_tasks(date)
-        current_urgent_tasks = self.__filter_current_tasks(urgent_tasks)
+        query_now = TimePoint.now()
+        tomorrow_day = query_now.datetime_representation.date() + datetime.timedelta(days=1)
+        tomorrow = TimePoint(datetime.datetime.combine(tomorrow_day, datetime.time.min))
+        current_urgent_tasks = self.__filter_current_tasks(urgent_tasks, query_now)
         current_urgents_by_categories = self.__sort_by_categories(current_urgent_tasks, categories)
-        urgent_tasks_by_start = self.__filter_and_sort_future_tasks(urgent_tasks, date)
-        other_tasks = self.__filter_high_heuristic_tasks(urgent_tasks)
+        urgent_tasks_by_start = self.__filter_and_sort_future_tasks(urgent_tasks, date, query_now)
+        other_tasks = self.__filter_high_heuristic_tasks(urgent_tasks, query_now, tomorrow)
         
         # Format the active urgent tasks
         active_urgent_tasks: list[TaskEntry] = []

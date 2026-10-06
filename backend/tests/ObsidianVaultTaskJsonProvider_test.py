@@ -1,8 +1,11 @@
 import unittest
 from concurrent.futures import ThreadPoolExecutor
 from threading import Event
-from unittest.mock import MagicMock, call, patch
-from src.taskjsonproviders.ObsidianVaultTaskJsonProvider import ObsidianVaultTaskJsonProvider
+from unittest.mock import MagicMock, patch
+from src.taskjsonproviders.ObsidianVaultTaskJsonProvider import (
+    ObsidianVaultTaskJsonProvider,
+    SnapshotRefreshRequiredError,
+)
 from src.Interfaces.IFileBroker import IFileBroker, VaultRegistry
 from src.wrappers.TimeManagement import TimePoint
 from src.Utils import TaskDiscoveryPolicies
@@ -20,7 +23,12 @@ class TestObsidianVaultTaskJsonProvider(unittest.TestCase):
             default_context="inbox",
             categories_prefixes=["work"]
         )
-        self.provider = ObsidianVaultTaskJsonProvider(self.mock_file_broker, self.policies)
+        self.provider = ObsidianVaultTaskJsonProvider(
+            self.mock_file_broker,
+            self.policies,
+            auto_start=False,
+            disableThreading=True,
+        )
 
         def update_vault_lines(registry, path, updater):
             current = list(self.mock_file_broker.getVaultFileLines(registry, path))
@@ -36,6 +44,164 @@ class TestObsidianVaultTaskJsonProvider(unittest.TestCase):
         result = self.provider.getJson()
         self.assertEqual(result, {"tasks": [], "projects": []})
         self.mock_file_broker.getVaultFiles.assert_called_once_with(VaultRegistry.OBSIDIAN)
+
+    def test_default_refresh_is_async_and_first_read_is_explicitly_not_ready(self):
+        read_started = Event()
+        release_read = Event()
+        published = Event()
+        refresh_completed = Event()
+        self.mock_file_broker.getVaultFiles.side_effect = lambda _: (read_started.set(), release_read.wait(5), [])[2]
+        provider = ObsidianVaultTaskJsonProvider(
+            self.mock_file_broker,
+            self.policies,
+        )
+        provider.registerSnapshotUpdatedCallback(published.set)
+        provider.registerRefreshCompletedCallback(refresh_completed.set)
+        try:
+            with self.assertRaisesRegex(Exception, "still loading"):
+                provider.getJson()
+            self.assertTrue(read_started.wait(5))
+            self.assertFalse(provider.isReady())
+            release_read.set()
+            self.assertTrue(published.wait(5))
+            self.assertTrue(refresh_completed.wait(5))
+            self.assertTrue(provider.isReady())
+            self.assertEqual(provider.getJson(), {"tasks": [], "projects": []})
+        finally:
+            release_read.set()
+            provider.stop()
+
+    def test_concurrent_refresh_requests_share_the_in_flight_scan(self):
+        read_started = Event()
+        release_read = Event()
+        published = Event()
+        inventories = 0
+
+        def inventory(_):
+            nonlocal inventories
+            inventories += 1
+            if inventories == 1:
+                read_started.set()
+                release_read.wait(5)
+            return []
+
+        self.mock_file_broker.getVaultFiles.side_effect = inventory
+        provider = ObsidianVaultTaskJsonProvider(self.mock_file_broker, self.policies)
+        provider.registerSnapshotUpdatedCallback(published.set)
+        try:
+            self.assertTrue(read_started.wait(5))
+            for _ in range(20):
+                provider.requestRefresh()
+            release_read.set()
+            self.assertTrue(published.wait(5))
+            self.assertEqual(inventories, 1)
+        finally:
+            release_read.set()
+            provider.stop()
+
+    def test_refresh_completed_callback_ignores_local_patches_and_failed_scans(self):
+        self.mock_file_broker.getVaultFiles.return_value = []
+        provider = ObsidianVaultTaskJsonProvider(
+            self.mock_file_broker,
+            self.policies,
+            auto_start=False,
+            disableThreading=True,
+        )
+        notifications: list[str] = []
+        provider.registerRefreshCompletedCallback(lambda: notifications.append("refresh"))
+        try:
+            self.assertTrue(provider.refresh())
+            self.assertEqual(notifications, ["refresh"])
+
+            provider.publishConfirmedFile(
+                "local.md",
+                ["- [ ] Local patch [track::work] [id::local-patch]\n"],
+            )
+            self.assertEqual(notifications, ["refresh"])
+
+            self.mock_file_broker.getVaultFiles.side_effect = OSError("scan failed")
+            with self.assertRaisesRegex(OSError, "scan failed"):
+                provider.refresh()
+            self.assertEqual(notifications, ["refresh"])
+
+            self.mock_file_broker.getVaultFiles.side_effect = None
+            self.mock_file_broker.getVaultFiles.return_value = []
+            self.assertTrue(provider.refresh())
+            self.assertEqual(notifications, ["refresh", "refresh"])
+        finally:
+            provider.stop()
+
+    def test_stop_during_file_read_is_bounded_and_scan_cannot_publish(self):
+        read_started = Event()
+        release_read = Event()
+        published = Event()
+        self.mock_file_broker.getVaultFiles.return_value = [("tasks.md", 1.0)]
+
+        def read_lines(_, __):
+            read_started.set()
+            release_read.wait(5)
+            return ["- [ ] Late [track::work] [id::late-task]\n"]
+
+        self.mock_file_broker.getVaultFileLines.side_effect = read_lines
+        provider = ObsidianVaultTaskJsonProvider(self.mock_file_broker, self.policies)
+        provider.registerSnapshotUpdatedCallback(published.set)
+        self.assertTrue(read_started.wait(5))
+        provider.stop(timeout=0.01)
+        self.assertFalse(provider.isReady())
+        release_read.set()
+        provider.stop(timeout=2)
+        self.assertFalse(published.is_set())
+        self.assertFalse(provider.isReady())
+
+    def test_repeated_local_patches_keep_overlays_flat_and_old_handles_stable(self):
+        contents = ["- [ ] Title 0 [track::work] [id::stable-id]\n"]
+        self.mock_file_broker.getVaultFiles.return_value = [("tasks.md", 1.0)]
+        self.mock_file_broker.getVaultFileLines.side_effect = lambda _, __: list(contents)
+        provider = ObsidianVaultTaskJsonProvider(
+            self.mock_file_broker,
+            self.policies,
+            auto_start=False,
+            disableThreading=True,
+        )
+        original = provider.getReadSnapshot()
+
+        for index in range(1, 1102):
+            contents[:] = [f"- [ ] Title {index} [track::work] [id::stable-id]\n"]
+            provider.publishConfirmedFile("tasks.md", contents)
+
+        current = provider.getReadSnapshot()
+        self.assertEqual(current.getTaskById("stable-id")["taskText"], "Title 1101")
+        self.assertEqual(original.getTaskById("stable-id")["taskText"], "Title 0")
+        self.assertGreater(current.generation, original.generation)
+
+    def test_local_patch_preserves_existing_vault_task_order(self):
+        contents = {
+            "z-first.md": ["- [ ] First [track::work] [id::first-id]\n"],
+            "a-second.md": ["- [ ] Second [track::work] [id::second-id]\n"],
+        }
+        self.mock_file_broker.getVaultFiles.return_value = [
+            ("z-first.md", 1.0),
+            ("a-second.md", 2.0),
+        ]
+        self.mock_file_broker.getVaultFileLines.side_effect = lambda _, path: list(contents[path])
+        provider = ObsidianVaultTaskJsonProvider(
+            self.mock_file_broker,
+            self.policies,
+            auto_start=False,
+            disableThreading=True,
+        )
+        self.assertEqual(
+            [row["id"] for row in provider.getJson()["tasks"]],
+            ["first-id", "second-id"],
+        )
+
+        contents["z-first.md"] = ["- [ ] First updated [track::work] [id::first-id]\n"]
+        provider.publishConfirmedFile("z-first.md", contents["z-first.md"])
+
+        self.assertEqual(
+            [row["id"] for row in provider.getJson()["tasks"]],
+            ["first-id", "second-id"],
+        )
 
     def test_getJson_reuses_unchanged_file_parse_without_discovery(self):
         self.mock_file_broker.getVaultFiles.return_value = [("test.md", 100.0)]
@@ -67,7 +233,7 @@ class TestObsidianVaultTaskJsonProvider(unittest.TestCase):
         self.mock_file_broker.getVaultFileLines.reset_mock()
         self.mock_file_broker.getVaultFiles.reset_mock()
         unchanged = self.provider.getJson()
-        self.mock_file_broker.getVaultFiles.assert_called_once_with(VaultRegistry.OBSIDIAN)
+        self.mock_file_broker.getVaultFiles.assert_not_called()
         self.mock_file_broker.getVaultFileLines.assert_not_called()
         self.assertEqual(unchanged["tasks"][0]["taskText"], "One")
         self.assertEqual(unchanged["projects"][0]["status"], "open")
@@ -75,6 +241,7 @@ class TestObsidianVaultTaskJsonProvider(unittest.TestCase):
         contents["one.md"] = ["---", "project: closed", "---", "- [x] One [track::work]"]
         files = [("one.md", 101.0), ("three.md", 100.0)]
         self.mock_file_broker.getVaultFiles.reset_mock()
+        self.provider.refresh()
         changed = self.provider.getJson()
         self.assertEqual(
             [call.args[1] for call in self.mock_file_broker.getVaultFileLines.call_args_list],
@@ -92,6 +259,7 @@ class TestObsidianVaultTaskJsonProvider(unittest.TestCase):
         files = [("one.md", 101.0), ("renamed.md", 100.0)]
         self.mock_file_broker.getVaultFileLines.reset_mock()
         self.mock_file_broker.getVaultFiles.reset_mock()
+        self.provider.refresh()
         renamed = self.provider.getJson()
         self.assertEqual(
             [call.args[1] for call in self.mock_file_broker.getVaultFileLines.call_args_list],
@@ -142,6 +310,7 @@ class TestObsidianVaultTaskJsonProvider(unittest.TestCase):
         contents["two.md"] = ["- [ ] Two updated [track::work] [id::two-updated]"]
         files[:] = [("two.md", 101.0), ("three.md", 102.0)]
         self.mock_file_broker.getVaultFileLines.reset_mock()
+        self.provider.refresh()
 
         identities = self.provider.getTaskIdentitySnapshot()
 
@@ -166,6 +335,7 @@ class TestObsidianVaultTaskJsonProvider(unittest.TestCase):
         with patch.object(TimePoint, "today", return_value=first_day):
             first = self.provider.getJson()
         with patch.object(TimePoint, "today", return_value=next_day):
+            self.provider.refresh()
             next_snapshot = self.provider.getJson()
 
         self.assertEqual(self.mock_file_broker.getVaultFileLines.call_count, 2)
@@ -193,14 +363,16 @@ class TestObsidianVaultTaskJsonProvider(unittest.TestCase):
         contents[:] = ["- [ ] Updated [track::work]"]
         fail_read = True
         with self.assertRaisesRegex(OSError, "temporary read failure"):
-            self.provider.getJson()
+            self.provider.refresh()
+        self.assertEqual(self.provider.getJson()["tasks"][0]["taskText"], "Original")
 
         fail_read = False
+        self.provider.refresh()
         recovered = self.provider.getJson()
         self.assertEqual(recovered["tasks"][0]["taskText"], "Updated")
         self.assertEqual(self.mock_file_broker.getVaultFileLines.call_count, 3)
 
-    def test_file_invalidation_prevents_pending_old_read_from_publishing(self):
+    def test_refresh_started_before_local_commit_cannot_publish_over_it(self):
         contents = ["- [ ] Before [track::work]"]
         read_started = Event()
         release_read = Event()
@@ -215,14 +387,14 @@ class TestObsidianVaultTaskJsonProvider(unittest.TestCase):
 
         self.mock_file_broker.getVaultFileLines.side_effect = read_lines
         with ThreadPoolExecutor(max_workers=1) as executor:
-            pending_read = executor.submit(self.provider.getJson)
+            pending_read = executor.submit(self.provider.refresh)
             self.assertTrue(read_started.wait(timeout=5))
-            self.provider._ObsidianVaultTaskJsonProvider__invalidate_cached_file("tasks.md")
             contents[:] = ["- [ ] After [track::work]"]
+            self.provider.publishConfirmedFile("tasks.md", contents)
             release_read.set()
-            old_result = pending_read.result(timeout=5)
+            published = pending_read.result(timeout=5)
 
-        self.assertEqual(old_result["tasks"][0]["taskText"], "Before")
+        self.assertFalse(published)
         fresh_result = self.provider.getJson()
         self.assertEqual(fresh_result["tasks"][0]["taskText"], "After")
         self.assertEqual(self.mock_file_broker.getVaultFileLines.call_count, 2)
@@ -257,8 +429,8 @@ class TestObsidianVaultTaskJsonProvider(unittest.TestCase):
         self.mock_file_broker.getVaultFileLines.reset_mock()
         third = self.provider.discover()
         self.assertEqual([task["taskText"] for task in third["tasks"]], ["Define next action"])
-        self.mock_file_broker.getVaultFiles.assert_called_once_with(VaultRegistry.OBSIDIAN)
-        self.mock_file_broker.getVaultFileLines.assert_not_called()
+        self.mock_file_broker.getVaultFiles.assert_not_called()
+        self.assertEqual(self.mock_file_broker.getVaultFileLines.call_count, 1)
 
     def test_failed_discovery_is_retried_and_changed_project_still_gets_action(self):
         files = [("existing.md", 100.0), ("new.md", 200.0)]
@@ -289,7 +461,7 @@ class TestObsidianVaultTaskJsonProvider(unittest.TestCase):
 
         contents["new.md"] = ["---", "project: open", "track: work", "---", "# New project"]
         files[:] = [(path, mtime + 1.0 if path == "new.md" else mtime) for path, mtime in files]
-        self.provider.getJson()  # Cache the new inventory before discovery fails.
+        self.provider.refresh()  # The next completed refresh publishes external changes.
         fail_new_project_read = True
         with self.assertRaisesRegex(OSError, "temporary project read failure"):
             self.provider.discover()
@@ -330,9 +502,199 @@ class TestObsidianVaultTaskJsonProvider(unittest.TestCase):
         self.mock_file_broker.updateVaultFileLines.side_effect = update_lines
 
         self.provider.discover()
+        self.provider.refresh()
         retried = self.provider.discover()
 
         self.assertTrue(any(task["file"] == "new.md" and task["taskText"] == "Define next action" for task in retried["tasks"]))
+
+    def test_async_discovery_signals_retry_when_a_writer_invalidates_its_plan(self):
+        project_lines = ["---\n", "project: open\n", "---\n", "# Empty project\n"]
+        self.mock_file_broker.getVaultFiles.return_value = [("project.md", 1.0)]
+        self.mock_file_broker.getVaultFileLines.return_value = list(project_lines)
+        provider = ObsidianVaultTaskJsonProvider(
+            self.mock_file_broker,
+            self.policies,
+            auto_start=False,
+        )
+        try:
+            provider.refresh()
+            self.mock_file_broker.getVaultFileLines.reset_mock()
+
+            def invalidate_plan(_, __):
+                provider.publishConfirmedFile(
+                    "outside.md",
+                    ["- [ ] Concurrent task [track::work] [id::concurrent-task]\n"],
+                )
+                return list(project_lines)
+
+            self.mock_file_broker.getVaultFileLines.side_effect = invalidate_plan
+            with patch.object(provider, "requestRefresh") as request_refresh:
+                with self.assertRaises(SnapshotRefreshRequiredError):
+                    provider.discover()
+
+            request_refresh.assert_called_once_with()
+            self.mock_file_broker.updateVaultFileLines.assert_not_called()
+        finally:
+            provider.stop()
+
+    def test_discovery_never_pairs_old_generation_with_epoch_of_unpublished_commit(self):
+        project_lines = [
+            "---\n",
+            "project: open\n",
+            "---\n",
+            "- [ ] Existing action [track::work] [id::existing-action]\n",
+        ]
+        self.mock_file_broker.getVaultFiles.return_value = [("project.md", 1.0)]
+        self.mock_file_broker.getVaultFileLines.return_value = list(project_lines)
+        provider = ObsidianVaultTaskJsonProvider(
+            self.mock_file_broker,
+            self.policies,
+            auto_start=False,
+        )
+        build_started = Event()
+        release_build = Event()
+        try:
+            provider.refresh()
+            original_build_file_snapshot = getattr(
+                provider,
+                "_ObsidianVaultTaskJsonProvider__build_file_snapshot",
+            )
+
+            def block_commit_materialization(relative_path, lines, signature, *, cancel_if_stopping=False):
+                if relative_path == "outside.md":
+                    build_started.set()
+                    if not release_build.wait(timeout=5):
+                        raise TimeoutError("test commit materialization barrier timed out")
+                return original_build_file_snapshot(
+                    relative_path,
+                    lines,
+                    signature,
+                    cancel_if_stopping=cancel_if_stopping,
+                )
+
+            with patch.object(
+                provider,
+                "_ObsidianVaultTaskJsonProvider__build_file_snapshot",
+                side_effect=block_commit_materialization,
+            ), ThreadPoolExecutor(max_workers=1) as executor:
+                pending_commit = executor.submit(
+                    provider.publishConfirmedFile,
+                    "outside.md",
+                    ["- [ ] Concurrent task [track::work] [id::concurrent-task]\n"],
+                )
+                self.assertTrue(build_started.wait(timeout=5))
+                with patch.object(provider, "requestRefresh") as request_refresh:
+                    with self.assertRaises(SnapshotRefreshRequiredError):
+                        provider.discover()
+                request_refresh.assert_called_once_with()
+                release_build.set()
+                pending_commit.result(timeout=5)
+
+            self.assertEqual(
+                [task["id"] for task in provider.getReadSnapshot().getTasks()],
+                ["existing-action", "concurrent-task"],
+            )
+        finally:
+            release_build.set()
+            provider.stop()
+
+    def test_async_discovery_checks_writer_epoch_when_no_maintenance_is_needed(self):
+        project_lines = [
+            "---\n",
+            "project: open\n",
+            "---\n",
+            "- [ ] Existing action [track::work] [id::existing-action]\n",
+        ]
+        self.mock_file_broker.getVaultFiles.return_value = [("project.md", 1.0)]
+        self.mock_file_broker.getVaultFileLines.return_value = list(project_lines)
+        provider = ObsidianVaultTaskJsonProvider(
+            self.mock_file_broker,
+            self.policies,
+            auto_start=False,
+        )
+        try:
+            provider.refresh()
+            self.mock_file_broker.getVaultFileLines.reset_mock()
+
+            def invalidate_plan(_, __):
+                provider.publishConfirmedFile(
+                    "outside.md",
+                    ["- [ ] Concurrent task [track::work] [id::concurrent-task]\n"],
+                )
+                return list(project_lines)
+
+            self.mock_file_broker.getVaultFileLines.side_effect = invalidate_plan
+            with patch.object(provider, "requestRefresh") as request_refresh:
+                with self.assertRaises(SnapshotRefreshRequiredError):
+                    provider.discover()
+
+            request_refresh.assert_called_once_with()
+            self.mock_file_broker.updateVaultFileLines.assert_not_called()
+        finally:
+            provider.stop()
+
+    def test_discovery_waits_for_refresh_when_a_commit_outcome_is_uncertain(self):
+        project_lines = ["---\n", "project: open\n", "---\n", "# Empty project\n"]
+        self.mock_file_broker.getVaultFiles.return_value = [("project.md", 1.0)]
+        self.mock_file_broker.getVaultFileLines.return_value = list(project_lines)
+        provider = ObsidianVaultTaskJsonProvider(
+            self.mock_file_broker,
+            self.policies,
+            auto_start=False,
+        )
+        try:
+            provider.refresh()
+            self.mock_file_broker.getVaultFileLines.reset_mock()
+            commit_listener = getattr(
+                provider,
+                "_ObsidianVaultTaskJsonProvider__on_vault_file_commit",
+            )
+            commit_listener("project.md", None, None)
+            self.assertTrue(provider.getRefreshStatus()["needs_refresh"])
+
+            with patch.object(provider, "requestRefresh") as request_refresh:
+                with self.assertRaises(SnapshotRefreshRequiredError):
+                    provider.discover()
+
+            request_refresh.assert_called_once_with()
+            self.mock_file_broker.getVaultFileLines.assert_not_called()
+            self.mock_file_broker.updateVaultFileLines.assert_not_called()
+        finally:
+            provider.stop()
+
+    def test_discovery_stops_preparing_between_project_reads(self):
+        contents = {
+            "first.md": ["---\n", "project: open\n", "---\n", "# First\n"],
+            "second.md": ["---\n", "project: open\n", "---\n", "# Second\n"],
+        }
+        self.mock_file_broker.getVaultFiles.return_value = [
+            ("first.md", 1.0),
+            ("second.md", 2.0),
+        ]
+        self.mock_file_broker.getVaultFileLines.side_effect = lambda _, path: list(contents[path])
+        provider = ObsidianVaultTaskJsonProvider(
+            self.mock_file_broker,
+            self.policies,
+            auto_start=False,
+        )
+        try:
+            provider.refresh()
+            self.mock_file_broker.getVaultFileLines.reset_mock()
+            paths_read: list[str] = []
+
+            def stop_after_first_read(_, path):
+                paths_read.append(path)
+                if len(paths_read) == 1:
+                    provider.stop(timeout=0)
+                return list(contents[path])
+
+            self.mock_file_broker.getVaultFileLines.side_effect = stop_after_first_read
+            provider.discover()
+
+            self.assertEqual(paths_read, ["first.md"])
+            self.mock_file_broker.updateVaultFileLines.assert_not_called()
+        finally:
+            provider.stop()
 
     def test_process_task_file_with_project_header(self):
         self.mock_file_broker.getVaultFiles.return_value = [("project.md", 100.0)]
@@ -387,7 +749,7 @@ class TestObsidianVaultTaskJsonProvider(unittest.TestCase):
         with self.assertRaises(AmbiguousTaskIdentityError):
             self.provider.discover()
 
-        self.mock_file_broker.updateVaultFileLines.assert_called_once()
+        self.mock_file_broker.updateVaultFileLines.assert_not_called()
         self.mock_file_broker.writeVaultFileLines.assert_not_called()
 
     def test_process_task_with_metadata(self):
@@ -532,6 +894,7 @@ class TestObsidianVaultTaskJsonProvider(unittest.TestCase):
             "- [ ] Task 1 updated [track::work]"
         ]
 
+        self.provider.refresh()
         result = self.provider.getJson()
         self.assertEqual(len(result["tasks"]), 1)
         self.assertEqual(result["tasks"][0]["taskText"], "Task 1 updated")
@@ -566,6 +929,7 @@ class TestObsidianVaultTaskJsonProvider(unittest.TestCase):
             "- [ ] Task 1 [track::work] [severity::2]"
         ]
 
+        self.provider.refresh()
         result = self.provider.getJson()
         self.assertEqual(len(result["tasks"]), 1)
         self.assertEqual(result["tasks"][0]["taskText"], "Task 1")
@@ -580,6 +944,7 @@ class TestObsidianVaultTaskJsonProvider(unittest.TestCase):
             "- [ ] Task 2 [track::work]"
         ]
 
+        self.provider.refresh()
         result = self.provider.getJson()
         self.assertEqual(len(result["tasks"]), 2)
 

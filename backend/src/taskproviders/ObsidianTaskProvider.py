@@ -2,7 +2,7 @@ import datetime
 import json
 import math
 import re
-import threading
+from dataclasses import dataclass, field
 
 from src.Utils import TaskJsonType
 from typing import Any, TypeVar, cast
@@ -16,6 +16,10 @@ from ..taskmodels.TaskIdentity import fallback_task_id, validate_task_id
 from .TaskIdentityErrors import AmbiguousTaskIdentityError, InvalidTaskIdentityError, MissingTaskIdentityError
 from ..MutationCoordinator import MutationCoordinator
 from typing import Callable, List
+from ..taskjsonproviders.ObsidianVaultTaskJsonProvider import (
+    SnapshotRefreshRequiredError,
+    VaultReadSnapshot,
+)
 
 T = TypeVar("T")
 
@@ -30,6 +34,19 @@ class MarkdownTaskPrepareError(ValueError):
     """Latest Markdown has task fields that cannot be materialized before a write."""
 
     effects_state = "none"
+
+
+@dataclass(frozen=True)
+class ObsidianTaskListSnapshot:
+    """Generation-bound detached models with indexed detail resolution."""
+
+    generation: int | None
+    tasks: tuple[ITaskModel, ...]
+    _provider: "ObsidianTaskProvider" = field(repr=False, compare=False)
+    _read_snapshot: VaultReadSnapshot | None = field(repr=False, compare=False)
+
+    def getTaskById(self, task_id: str) -> ITaskModel:
+        return self._provider.getTaskById(task_id, read_snapshot=self._read_snapshot)
 
 
 class ObsidianTaskProvider(ITaskProvider):
@@ -60,56 +77,195 @@ class ObsidianTaskProvider(ITaskProvider):
         self.lastJson: TaskJsonType = {}
         self.lastTaskList: List[ITaskModel] = []
         self.onTaskListUpdatedCallbacks: list[Callable[[], None]] = []
-        self.__discoveryLock = threading.Lock()
         self.__pendingNewLines: dict[int, str] = {}
         self.__disableThreading = disableThreading
-        if not self.__disableThreading:
-            self.service = threading.Thread(target=self.__serviceThread)
-            self.service.start()
+        self.__broker_has_commit_notifications = callable(
+            getattr(fileBroker, "registerVaultFileCommitListener", None)
+        )
+        self.__snapshot_callback_registered = False
+        register_snapshot_callback = getattr(taskJsonProvider, "registerSnapshotUpdatedCallback", None)
+        if callable(register_snapshot_callback):
+            register_snapshot_callback(self.__on_snapshot_updated)
+            self.__snapshot_callback_registered = True
 
     def dispose(self) -> None:
-        if not self.__disableThreading:
-            self.serviceRunning = False
-            self.service.join()
+        self.serviceRunning = False
+        stop = getattr(self.TaskJsonProvider, "stop", None)
+        if callable(stop):
+            stop(timeout=5.0)
 
-    def __serviceThread(self) -> None:
-        while self.serviceRunning:
-            previousTaskList = self.lastTaskList
-            try:
-                newTaskList = self.discoverTasks()
-            except Exception:
-                print("Task discovery failed; diagnostic details are suppressed.")
-            else:
-                if not self.compare(previousTaskList, newTaskList):
-                    for callback in self.onTaskListUpdatedCallbacks:
-                        callback()
-            threading.Event().wait(10)
+    def start(self) -> None:
+        start = getattr(self.TaskJsonProvider, "start", None)
+        if callable(start):
+            start()
 
-    def __buildTaskList(self, obsidianJson: TaskJsonType, include_completed: bool = False) -> List[ITaskModel]:
+    def requestRefresh(self) -> None:
+        refresh = getattr(self.TaskJsonProvider, "requestRefresh", None)
+        if callable(refresh):
+            refresh()
+
+    def isReady(self) -> bool:
+        ready = getattr(self.TaskJsonProvider, "isReady", None)
+        return bool(ready()) if callable(ready) else True
+
+    def getRefreshStatus(self) -> dict[str, object]:
+        status = getattr(self.TaskJsonProvider, "getRefreshStatus", None)
+        return cast(dict[str, object], status()) if callable(status) else {"ready": True}
+
+    def __on_snapshot_updated(self) -> None:
+        for callback in tuple(self.onTaskListUpdatedCallbacks):
+            callback()
+
+    def __buildTaskList(
+        self,
+        obsidianJson: TaskJsonType,
+        include_completed: bool = False,
+        read_snapshot: VaultReadSnapshot | None = None,
+        *,
+        include_write_baseline: bool = True,
+        include_snapshot_metadata: bool = True,
+    ) -> List[ITaskModel]:
         taskListJson = obsidianJson.get("tasks", [])
         taskList: List[ITaskModel] = []
         for task in taskListJson:
             if not include_completed and task["status"] == "x":
                 continue
             obsidianTask = ObsidianTaskModel(task["taskText"], task["track"], int(task["starts"]), int(task["due"]), float(task["severity"]), float(task["total_cost"]), float(task["effort_invested"]), task["status"], task["file"], int(task["line"]), task["calm"], task.get("raised"), task.get("waited"), task.get("id"))
-            setattr(obsidianTask, "_task_provider_baseline", self.__getTaskSaveFields(obsidianTask))
+            if include_write_baseline:
+                setattr(obsidianTask, "_task_provider_baseline", self.__getTaskSaveFields(obsidianTask))
+            if include_snapshot_metadata and read_snapshot is not None:
+                setattr(obsidianTask, "_provider_snapshot_metadata", read_snapshot.getTaskMetadata(task))
             taskList.append(obsidianTask)
         return taskList
 
-    def getTaskList(self, include_completed: bool = False) -> List[ITaskModel]:
-        """Return a fresh parsed view without running discovery or writing."""
-        obsidianJson = self.TaskJsonProvider.getJson()
-        return self.__buildTaskList(obsidianJson, include_completed)
+    def __get_read_snapshot(self) -> VaultReadSnapshot | None:
+        read = getattr(self.TaskJsonProvider, "getReadSnapshot", None)
+        return cast(VaultReadSnapshot | None, read()) if callable(read) else None
+
+    def getTaskListSnapshot(self, include_completed: bool = False) -> ObsidianTaskListSnapshot:
+        read_snapshot = self.__get_read_snapshot()
+        obsidian_json = read_snapshot.getJson() if read_snapshot is not None else self.TaskJsonProvider.getJson()
+        models = self.__buildTaskList(obsidian_json, include_completed, read_snapshot)
+        generation = read_snapshot.generation if read_snapshot is not None else None
+        return ObsidianTaskListSnapshot(generation, tuple(models), self, read_snapshot)
+
+    def getProjectionTaskListSnapshot(self, include_completed: bool = True) -> ObsidianTaskListSnapshot:
+        """Return detached ranking models without write or detail-only fields.
+
+        The wrapper retains its immutable vault generation and resolves selected
+        identifiers to full models on demand. Query projections therefore avoid
+        computing a write baseline and copying metadata for every task.
+        """
+        read_snapshot = self.__get_read_snapshot()
+        obsidian_json = read_snapshot.getJson() if read_snapshot is not None else self.TaskJsonProvider.getJson()
+        models = self.__buildTaskList(
+            obsidian_json,
+            include_completed,
+            read_snapshot,
+            include_write_baseline=False,
+            include_snapshot_metadata=False,
+        )
+        generation = read_snapshot.generation if read_snapshot is not None else None
+        return ObsidianTaskListSnapshot(generation, tuple(models), self, read_snapshot)
+
+    def getTaskList(
+        self,
+        include_completed: bool = False,
+        *,
+        read_snapshot: VaultReadSnapshot | ObsidianTaskListSnapshot | None = None,
+    ) -> List[ITaskModel]:
+        """Return fresh mutable models detached from one published generation."""
+        if isinstance(read_snapshot, ObsidianTaskListSnapshot):
+            read_snapshot = read_snapshot._read_snapshot
+        if read_snapshot is not None:
+            obsidian_json = read_snapshot.getJson()
+        else:
+            current = self.__get_read_snapshot()
+            obsidian_json = current.getJson() if current is not None else self.TaskJsonProvider.getJson()
+            read_snapshot = current
+        return self.__buildTaskList(obsidian_json, include_completed, read_snapshot)
+
+    def getTaskById(
+        self,
+        task_id: str,
+        *,
+        read_snapshot: VaultReadSnapshot | None = None,
+    ) -> ITaskModel:
+        snapshot = read_snapshot or self.__get_read_snapshot()
+        if snapshot is not None:
+            row = snapshot.getTaskById(task_id)
+        else:
+            rows = [
+                item
+                for item in self.TaskJsonProvider.getJson().get("tasks", [])
+                if self._get_task_id_from_json(item) == task_id
+            ]
+            if not rows:
+                raise MissingTaskIdentityError("No current Markdown task matches the requested identifier")
+            if len(rows) > 1:
+                raise AmbiguousTaskIdentityError("More than one current Markdown task matches the requested identifier")
+            row = rows[0]
+        models = self.__buildTaskList({"tasks": [row]}, include_completed=True, read_snapshot=snapshot)
+        if not models:
+            raise InvalidTaskIdentityError("The indexed task has invalid task data")
+        return models[0]
+
+    def getTaskForMutation(self, task_id: str) -> ITaskModel:
+        """Read one task's latest Markdown row inside the serialized write turn.
+
+        The published index locates the note without a vault scan. The note is
+        then reread so relative mutations use current effort, dates, and status.
+        """
+        return self._run_mutation(lambda: self.__getTaskForMutation(task_id))
+
+    def __getTaskForMutation(self, task_id: str) -> ITaskModel:
+        validated_id = validate_task_id(task_id)
+        indexed_lookup = getattr(self.TaskJsonProvider, "getTaskLocations", None)
+        if not callable(indexed_lookup):
+            return self.getTaskById(validated_id)
+
+        locations = indexed_lookup(validated_id)
+        if len(locations) > 1:
+            raise AmbiguousTaskIdentityError("More than one current Markdown task matches the requested identifier")
+        if not locations or locations[0].parse_fault is not None:
+            self.requestRefresh()
+            raise SnapshotRefreshRequiredError("The task identity index needs refresh before it can be edited")
+
+        file = locations[0].file
+        try:
+            latest_lines = self.fileBroker.getVaultFileLines(VaultRegistry.OBSIDIAN, file)
+        except FileNotFoundError as error:
+            self.requestRefresh()
+            raise SnapshotRefreshRequiredError("The indexed task note moved and needs refresh") from error
+
+        matching_lines = self.__matching_task_id_lines(latest_lines, file, validated_id)
+        if len(matching_lines) > 1:
+            raise AmbiguousTaskIdentityError("More than one current Markdown task matches the requested identifier")
+        if not matching_lines:
+            self.requestRefresh()
+            raise SnapshotRefreshRequiredError("The indexed task moved or changed and needs refresh")
+
+        try:
+            return self.__materializeTaskFromLines(file, latest_lines, validated_id)
+        except AmbiguousTaskIdentityError:
+            raise
+        except (InvalidTaskIdentityError, MarkdownTaskPrepareError, TypeError, ValueError) as error:
+            self.requestRefresh()
+            raise SnapshotRefreshRequiredError("The indexed task data needs refresh before it can be edited") from error
+
+    def _get_task_id_from_json(self, task: dict[str, str]) -> str:
+        if "id" in task:
+            return validate_task_id(task["id"])
+        return fallback_task_id(task["taskText"], task["file"].replace("\\", "/"), int(task["line"]))
 
     def discoverTasks(self) -> List[ITaskModel]:
         """Run the explicit discovery hook and refresh its maintenance snapshot."""
-        return self._run_mutation(self.__discoverTasks)
+        return self.__discoverTasks()
 
     def __discoverTasks(self) -> List[ITaskModel]:
-        with self.__discoveryLock:
-            discoveredJson = self.TaskJsonProvider.discover()
-            self.lastJson = discoveredJson
-            self.lastTaskList = self.__buildTaskList(discoveredJson)
+        discoveredJson = self.TaskJsonProvider.discover()
+        self.lastJson = discoveredJson
+        self.lastTaskList = self.__buildTaskList(discoveredJson)
         return self.lastTaskList
 
     def _run_mutation(self, callback: Callable[[], T]) -> T:
@@ -189,9 +345,30 @@ class ObsidianTaskProvider(ITaskProvider):
             return
 
         task_id = self._get_task_uid(task)
-        locations = self._scan_vault_task_identities()
-        matches = [location for location in locations if location["id"] == task_id]
+        indexed_lookup = getattr(self.TaskJsonProvider, "getTaskLocations", None)
+        if callable(indexed_lookup):
+            matches = [
+                {"id": location.task_id, "file": location.file, "line": location.line, "parse_fault": location.parse_fault}
+                for location in indexed_lookup(task_id)
+            ]
+            if len(matches) > 1:
+                raise AmbiguousTaskIdentityError("More than one current Markdown task matches the requested identifier")
+            if not matches and bool(self.getRefreshStatus().get("needs_refresh")):
+                self.requestRefresh()
+                raise SnapshotRefreshRequiredError("The task identity index needs refresh")
+            if any(location.get("parse_fault") == "refresh-required" for location in matches):
+                self.requestRefresh()
+                raise SnapshotRefreshRequiredError("The task identity index needs refresh")
+            if any(location.get("parse_fault") for location in matches):
+                self.requestRefresh()
+                raise SnapshotRefreshRequiredError("The indexed Markdown task needs refresh before it can be edited")
+        else:
+            locations = self._scan_vault_task_identities()
+            matches = [location for location in locations if location["id"] == task_id]
         if not matches:
+            if callable(indexed_lookup):
+                self.requestRefresh()
+                raise SnapshotRefreshRequiredError("The task identity is missing from the published index; refresh required")
             raise MissingTaskIdentityError("No current Markdown task matches the requested identifier")
         if len(matches) > 1:
             raise AmbiguousTaskIdentityError("More than one current Markdown task matches the requested identifier")
@@ -203,28 +380,23 @@ class ObsidianTaskProvider(ITaskProvider):
         changed_fields = set(candidate_fields) if not isinstance(baseline_fields, dict) else {
             key for key, value in candidate_fields.items() if baseline_fields.get(key) != value
         }
+        if not isinstance(baseline_fields, dict) and callable(indexed_lookup):
+            raise SnapshotRefreshRequiredError("The task edit has no safe base snapshot")
         forced_fields: Any = getattr(task, "_task_provider_forced_fields", set())
         if isinstance(forced_fields, (set, frozenset, list, tuple)):
             changed_fields.update(key for key in forced_fields if isinstance(key, str) and key in candidate_fields)
 
         def prepare(current_lines: list[str]) -> list[str]:
-            current_identities = self.__task_identities_from_lines(current_lines, file)
-            matches_in_file = [item for item in current_identities if item["id"] == task_id]
-            other_matches = [
-                item
-                for item in self._scan_vault_task_identities(skip_file=file)
-                if item["id"] == task_id
-            ]
-            if len(matches_in_file) + len(other_matches) > 1:
-                raise AmbiguousTaskIdentityError("More than one current Markdown task matches the requested identifier")
-            if not matches_in_file:
-                if other_matches:
-                    raise MissingTaskIdentityError("The Markdown task moved to another file while it was being saved")
-                raise MissingTaskIdentityError("No current Markdown task matches the requested identifier")
+            matches_in_file = self.__matching_task_id_lines(current_lines, file, task_id)
             if len(matches_in_file) > 1:
                 raise AmbiguousTaskIdentityError("More than one current Markdown task matches the requested identifier")
+            if not matches_in_file:
+                if callable(indexed_lookup):
+                    self.requestRefresh()
+                    raise SnapshotRefreshRequiredError("The indexed Markdown task moved or changed and needs refresh")
+                raise MissingTaskIdentityError("No current Markdown task matches the requested identifier")
 
-            line_number = int(matches_in_file[0]["line"])
+            line_number = matches_in_file[0]
             if line_number >= len(current_lines):
                 raise MissingTaskIdentityError("The Markdown task moved while it was being saved")
             updated = list(current_lines)
@@ -238,11 +410,9 @@ class ObsidianTaskProvider(ITaskProvider):
             self.__validate_prepared_task(file, updated, task_id)
             return updated
 
-        self.__invalidate_cached_markdown_file(file)
-        try:
-            confirmed_lines = self.fileBroker.updateVaultFileLines(VaultRegistry.OBSIDIAN, file, prepare)
-        finally:
-            self.__invalidate_cached_markdown_file(file)
+        confirmed_lines = self.fileBroker.updateVaultFileLines(VaultRegistry.OBSIDIAN, file, prepare)
+        if not self.__broker_has_commit_notifications:
+            self.__publish_confirmed_file(file, confirmed_lines)
         if isinstance(task, ObsidianTaskModel):
             try:
                 refreshed = self.__materializeTaskFromLines(file, confirmed_lines, task_id)
@@ -256,8 +426,17 @@ class ObsidianTaskProvider(ITaskProvider):
         lines = file_content.splitlines(keepends=True)
         line_number = len(lines) + len(self.__pendingNewLines)
         task_id = fallback_task_id(description, self._NEW_TASK_FILE, line_number)
-        existing_ids = {str(location["id"]) for location in self._scan_vault_task_identities()}
-        if task_id in existing_ids or task_id in self.__pendingNewLines.values():
+        indexed_lookup = getattr(self.TaskJsonProvider, "getTaskLocations", None)
+        if callable(indexed_lookup):
+            existing = indexed_lookup(task_id)
+            if not existing and bool(self.getRefreshStatus().get("needs_refresh")):
+                self.requestRefresh()
+                raise SnapshotRefreshRequiredError("The task identity index needs refresh")
+            duplicate = bool(existing)
+        else:
+            existing_ids = {str(location["id"]) for location in self._scan_vault_task_identities()}
+            duplicate = task_id in existing_ids
+        if duplicate or task_id in self.__pendingNewLines.values():
             raise AmbiguousTaskIdentityError("The prepared Markdown task identifier is already in use")
         self.__pendingNewLines[line_number] = task_id
         return line_number, task_id
@@ -277,21 +456,18 @@ class ObsidianTaskProvider(ITaskProvider):
                 str(item["id"])
                 for item in self.__task_identities_from_lines(lines, self._NEW_TASK_FILE)
             }
-            current_ids.update(
-                str(item["id"])
-                for item in self._scan_vault_task_identities(skip_file=self._NEW_TASK_FILE)
-            )
             if task_id in current_ids:
                 raise AmbiguousTaskIdentityError("The prepared Markdown task identifier is already in use")
             lines.append(task_line)
             self.__validate_prepared_task(self._NEW_TASK_FILE, lines, task_id)
             return "".join(lines)
 
-        self.__invalidate_cached_markdown_file(self._NEW_TASK_FILE)
-        try:
-            committed_content = self.fileBroker.updateFileContent(FileRegistry.OBSIDIAN_TASKS_MD, prepare)
-        finally:
-            self.__invalidate_cached_markdown_file(self._NEW_TASK_FILE)
+        committed_content = self.fileBroker.updateFileContent(FileRegistry.OBSIDIAN_TASKS_MD, prepare)
+        if not self.__broker_has_commit_notifications:
+            self.__publish_confirmed_file(
+                self._NEW_TASK_FILE,
+                committed_content.splitlines(keepends=True),
+            )
         committed_lines = committed_content.splitlines(keepends=True)
         try:
             refreshed = self.__materializeTaskFromLines(self._NEW_TASK_FILE, committed_lines, task_id)
@@ -307,7 +483,14 @@ class ObsidianTaskProvider(ITaskProvider):
             raise MissingTaskIdentityError("No current Markdown task matches the requested identifier")
         if len(identities) > 1:
             raise AmbiguousTaskIdentityError("More than one current Markdown task matches the requested identifier")
-        rows = [row for row in self.TaskJsonProvider.parseTaskFile(file, lines) if row.get("id") == task_id]
+        rows: list[dict[str, str]] = []
+        for row in self.TaskJsonProvider.parseTaskFile(file, lines):
+            if self._get_task_id_from_json(row) == task_id:
+                row = dict(row)
+                # Persist the location-derived identity before an edit can change
+                # the fallback hash through a title or line-number change.
+                row["id"] = task_id
+                rows.append(row)
         if not rows:
             raise MarkdownTaskPrepareError("The Markdown task has invalid task data")
         if len(rows) > 1:
@@ -315,7 +498,43 @@ class ObsidianTaskProvider(ITaskProvider):
         task_list = self.__buildTaskList({"tasks": rows}, include_completed=True)
         if not task_list or not isinstance(task_list[0], ObsidianTaskModel):
             raise TypeError("Confirmed Markdown task could not be materialized")
+        setattr(task_list[0], "_provider_snapshot_metadata", "".join(
+            lines[max(int(identities[0]["line"]), 0):min(int(identities[0]["line"]) + 5, len(lines))]
+        ))
         return task_list[0]
+
+    def __matching_task_id_lines(self, lines: list[str], file: str, task_id: str) -> list[int]:
+        matches: list[int] = []
+        normalized_file = file.replace("\\", "/")
+        for line_number, line in enumerate(lines):
+            match = self._TASK_LINE.match(line)
+            if match is None:
+                continue
+            body = match.group(5)
+            metadata = list(self._TASK_METADATA.finditer(body))
+            text = body[:metadata[0].start()].strip() if metadata else body.strip()
+            declared = [
+                item.group(2).strip()
+                for item in metadata
+                if item.group(1).strip() == "id"
+            ]
+            valid_declared: list[str] = []
+            for raw_id in declared:
+                try:
+                    valid_declared.append(validate_task_id(raw_id))
+                except InvalidTaskIdentityError:
+                    continue
+            line_ids = set(valid_declared)
+            if not declared:
+                line_ids.add(fallback_task_id(text, normalized_file, line_number))
+            if task_id in line_ids:
+                matches.append(line_number)
+        return matches
+
+    def __publish_confirmed_file(self, file: str, lines: list[str]) -> None:
+        publish = getattr(self.TaskJsonProvider, "publishConfirmedFile", None)
+        if callable(publish):
+            publish(file, lines)
 
     def __validate_prepared_task(self, file: str, lines: list[str], task_id: str) -> ObsidianTaskModel:
         try:
@@ -332,8 +551,9 @@ class ObsidianTaskProvider(ITaskProvider):
             "_description", "_context", "_start", "_due", "_severity",
             "_totalCost", "_investedEffort", "_status", "_file", "_line",
             "_calm", "_raised", "_waited", "_task_id", "_task_provider_baseline",
+            "_provider_snapshot_metadata",
         ):
-            setattr(target, attribute, getattr(source, attribute))
+            setattr(target, attribute, getattr(source, attribute, None))
 
     def _scan_vault_task_identities(self, skip_file: str | None = None) -> list[dict[str, str | int]]:
         identity_snapshot = getattr(self.TaskJsonProvider, "getTaskIdentitySnapshot", None)
@@ -501,7 +721,11 @@ class ObsidianTaskProvider(ITaskProvider):
     def getTaskMetadata(self, task: ITaskModel) -> str:
         if not isinstance(task, ObsidianTaskModel):
             return ""
-        
+
+        snapshot_metadata = getattr(task, "_provider_snapshot_metadata", None)
+        if isinstance(snapshot_metadata, str):
+            return snapshot_metadata
+
         file = task.getFile()
         line = task.getLine()
         fileLines = fileLines = self.fileBroker.getVaultFileLines(VaultRegistry.OBSIDIAN, file)
@@ -514,6 +738,11 @@ class ObsidianTaskProvider(ITaskProvider):
 
     def registerTaskListUpdatedCallback(self, callback: Callable[[], None]) -> None:
         self.onTaskListUpdatedCallbacks.append(callback)
+
+    def registerRefreshCompletedCallback(self, callback: Callable[[], None]) -> None:
+        register = getattr(self.TaskJsonProvider, "registerRefreshCompletedCallback", None)
+        if callable(register):
+            register(callback)
 
     def compare(self, list_a: list[ITaskModel], list_b: list[ITaskModel]) -> bool:
         if len(list_a) != len(list_b):
