@@ -591,12 +591,12 @@ class TaskApplicationService:
             raise DomainCalculationError("Statistics could not be calculated") from error
 
     def read_events(self) -> Any:
-        """Read event counts across open and completed tasks without changing them."""
+        """Read event counts across noncompleted tasks without changing them."""
         try:
             read_events = getattr(self._statistics_service, "getEventStatistics", None)
             if not callable(read_events):
                 raise ResourceReadError("Event statistics are unavailable")
-            return read_events(self._all_tasks(include_completed=True))
+            return read_events(self._all_tasks(include_completed=False))
         except DomainError:
             raise
         except Exception as error:

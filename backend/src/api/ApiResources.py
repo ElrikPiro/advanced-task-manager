@@ -476,7 +476,7 @@ class ApiResources:
         }
 
     def read_events(self) -> dict[str, Any]:
-        """Return event totals and rows, including events on completed tasks."""
+        """Return event totals and rows for noncompleted tasks."""
         content = self.application_service.read_events()
         event_rows = [self._event_representation(item) for item in content.event_statistics]
         return {
@@ -676,7 +676,11 @@ class ApiResources:
             {"kind": "tasks"},
             {
                 "description": {"type": "string", "required": True, "minLength": 1},
-                "context": {"type": "string", "required": False, "requiredWith": "totalCost"},
+                "context": {
+                    "type": "string", "required": False, "requiredWith": "totalCost",
+                    "startsWithAny": list(self.application_service.task_context_prefixes())
+                    if callable(getattr(self.application_service, "task_context_prefixes", None)) else [],
+                },
                 "totalCost": self._pomodoro_object_input(required=False, required_with="context"),
             },
         )

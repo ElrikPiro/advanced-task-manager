@@ -103,6 +103,17 @@ def make_task(task_id: str = "task-1", status: str = " ") -> TaskModel:
 
 
 class ApiResourcesTest(unittest.TestCase):
+    def test_create_and_edit_publish_configured_context_command_prefixes(self) -> None:
+        from unittest.mock import Mock
+        application = FakeApplication(make_task())
+        application.task_context_prefixes = Mock(return_value=("indoor", "outdoor", "alert"))
+        resources = ApiResources(cast(Any, application), "/api/v1")
+        collection = resources.read_tasks(TaskView())
+        create = next(action for action in collection["actions"] if action["name"] == "create-task")
+        edit = next(action for action in resources.task_resource(application.task)["actions"] if action["name"] == "edit-task")
+        self.assertEqual(create["inputs"]["context"]["startsWithAny"], ["indoor", "outdoor", "alert"])
+        self.assertEqual(edit["inputs"]["changes"]["properties"]["context"]["startsWithAny"], ["indoor", "outdoor", "alert"])
+
     def test_root_and_task_links_keep_the_configured_prefix_and_encode_ids(self) -> None:
         task = make_task("opaque/id & one")
         application = FakeApplication(task)

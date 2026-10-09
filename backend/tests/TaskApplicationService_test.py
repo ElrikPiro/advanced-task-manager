@@ -181,6 +181,29 @@ class TaskApplicationServiceTest(unittest.TestCase):
             categories=[{"prefix": "work"}, {"prefix": "home"}],
         )
 
+    def test_event_statistics_exclude_completed_tasks_but_keep_waiting_tasks(self) -> None:
+        from src.StatisticsService import StatisticsService
+        from unittest.mock import Mock
+
+        self.provider.tasks = [
+            make_task(0, "Completed raiser", status="x", raised="old"),
+            make_task(1, "Completed waiter", status="x", waited="current"),
+            make_task(2, "Open raiser", raised="current"),
+            make_task(3, "Waiting task", waited="current"),
+            make_task(4, "Open orphan", waited="orphan"),
+        ]
+        self.statistics.getEventStatistics = Mock(
+            side_effect=lambda tasks: StatisticsService.getEventStatistics(None, tasks)
+        )
+        result = self.application.read_events()
+        self.assertEqual(result.total_events, 2)
+        self.assertEqual(result.total_raising_tasks, 1)
+        self.assertEqual(result.total_waiting_tasks, 2)
+        self.assertEqual(result.orphaned_events_count, 1)
+        current = next(row for row in result.event_statistics if row.event_name == "current")
+        self.assertFalse(current.is_orphaned)
+        self.assertEqual(current.tasks_waiting, 1)
+
     def test_queries_are_isolated_and_keep_current_task_as_a_local_draft(self) -> None:
         selected_before = self.manager.filtered_task_list[0]
         self.manager.selected_task = selected_before
