@@ -668,6 +668,12 @@ class TaskApplicationService:
         except Exception as error:
             raise ResourceReadError("Project capabilities could not be read") from error
 
+    def scheduling_preview_configuration(self) -> Mapping[str, Any] | None:
+        """Read optional scheduling metadata without executing a mutation."""
+        read = getattr(self._scheduling, "preview_configuration", None)
+        result = read() if callable(read) else None
+        return result if isinstance(result, Mapping) else None
+
     def task_context_prefixes(self) -> tuple[str, ...]:
         """Return the accepted context prefixes without changing application state."""
         return tuple(

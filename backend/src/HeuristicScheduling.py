@@ -13,6 +13,10 @@ class HeuristicScheduling(IScheduling):
         self.__dedication = dedication
         self.__task_provider = task_provider
 
+    def preview_configuration(self) -> dict[str, object]:
+        """Expose the calculation version and configured daily dedication."""
+        return {"algorithm": "heuristic-v1", "dailyDedication": self.__dedication.as_pomodoros()}
+
     def schedule(self, task: ITaskModel, param: str) -> List[ITaskModel]:
         d = task.calculateRemainingTime().as_days()
         p = self.__dedication.as_pomodoros()

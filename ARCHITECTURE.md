@@ -253,6 +253,8 @@ Manages the filtered and sorted view of tasks. Handles pagination, task selectio
 
 Implements the scheduling algorithm that can automatically split tasks when the required effort per day would result in severity < 1.
 
+`HeuristicScheduling.preview_configuration()` exposes the calculation version and daily dedication without modifying tasks. `TaskApplicationService.scheduling_preview_configuration()` provides this optional metadata to `ApiResources`, which publishes it as `preview` on the `schedule-task` action. Clients must only calculate previews for versions they recognize. Automatic scheduling preserves the deadline and changes severity; scheduling with daily effort can change the deadline and split tasks. The extension mirrors `heuristic-v1` locally for unsaved-field previews and requires task edits to be saved before submitting scheduling. The server recalculates when executing the operation, so a preview is not a reservation against concurrent changes.
+
 ### StatisticsService
 
 Tracks work done on tasks, calculates productivity metrics, and provides statistics for the agenda view.

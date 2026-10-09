@@ -33,6 +33,11 @@ class TestHeuristicScheduling(unittest.TestCase):
         
         self.mock_task_provider.createDefaultTask.side_effect = create_mock_task
 
+    def test_preview_configuration_reports_dedication_without_mutating_tasks(self):
+        self.assertEqual(self.scheduler.preview_configuration(), {"algorithm": "heuristic-v1", "dailyDedication": 2.0})
+        self.mock_task_provider.createDefaultTask.assert_not_called()
+        self.task.setSeverity.assert_not_called()
+
     def test_initialization_with_task_provider(self):
         # Test initialization with different TimeAmount values and task provider
         dedication1 = TimeAmount("1p")

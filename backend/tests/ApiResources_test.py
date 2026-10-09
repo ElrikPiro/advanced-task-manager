@@ -103,6 +103,17 @@ def make_task(task_id: str = "task-1", status: str = " ") -> TaskModel:
 
 
 class ApiResourcesTest(unittest.TestCase):
+    def test_schedule_action_publishes_optional_versioned_preview_configuration(self) -> None:
+        from unittest.mock import Mock
+        application = FakeApplication(make_task())
+        resources = ApiResources(cast(Any, application))
+        schedule = next(action for action in resources.task_resource(application.task)["actions"] if action["name"] == "schedule-task")
+        self.assertNotIn("preview", schedule)
+        application.scheduling_preview_configuration = Mock(return_value={"algorithm": "heuristic-v1", "dailyDedication": 2.4})
+        schedule = next(action for action in resources.task_resource(application.task)["actions"] if action["name"] == "schedule-task")
+        self.assertEqual(schedule["preview"], {"algorithm": "heuristic-v1", "dailyDedication": 2.4})
+        self.assertEqual(application.operation_executions, 0)
+
     def test_create_and_edit_publish_configured_context_command_prefixes(self) -> None:
         from unittest.mock import Mock
         application = FakeApplication(make_task())

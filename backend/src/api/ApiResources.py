@@ -668,6 +668,13 @@ class ApiResources:
         ]
         if status != "completed":
             actions.insert(1, self._action("complete-task", target, {}))
+        read_scheduling = getattr(self.application_service, "scheduling_preview_configuration", None)
+        configuration = read_scheduling() if callable(read_scheduling) else None
+        if isinstance(configuration, Mapping) and configuration.get("algorithm") == "heuristic-v1":
+            dedication = self._finite_number(configuration.get("dailyDedication"), "daily dedication")
+            for action in actions:
+                if action["name"] == "schedule-task":
+                    action["preview"] = {"algorithm": "heuristic-v1", "dailyDedication": dedication}
         return actions
 
     def _create_task_action(self) -> dict[str, Any]:
