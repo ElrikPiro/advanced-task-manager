@@ -39,6 +39,7 @@ class TaskEntry:
     total_cost: float
     effort_invested: float
     heuristic_value: float
+    originalContext: str | None = None
 
 
 @dataclass

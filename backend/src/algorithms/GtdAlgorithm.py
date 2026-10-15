@@ -1,3 +1,5 @@
+from src.EffectiveContextResolver import EffectiveContextResolver
+from src.filters.ContextPrefixTaskFilter import ContextPrefixTaskFilter
 from datetime import datetime
 from typing import List, Tuple
 
@@ -38,7 +40,7 @@ class GtdAlgorithm(IAlgorithm):
         self.category = "all"
     pass
 
-    def apply(self, taskList: List[ITaskModel]) -> List[ITaskModel]:
+    def apply(self, taskList: List[ITaskModel], contexts: EffectiveContextResolver | None = None) -> List[ITaskModel]:
         """
         Execute the GTD algorithm with the given parameters.
 
@@ -54,7 +56,7 @@ class GtdAlgorithm(IAlgorithm):
         # get all task with due date before now
         nonCalm = self._filterCalmTasks(taskList)
         retval = self._filterUrgents(nonCalm)
-        retval = self._filterOrderedCategories(retval)
+        retval = self._filterOrderedCategories(retval, contexts)
 
         if len(retval) > 0:
             self.description = f"{self.baseDescription} \n    - Urgent tasks ({self.category})"
@@ -63,7 +65,7 @@ class GtdAlgorithm(IAlgorithm):
         # get all task with heuristic value above threshold and NOT calm
         for heuristic, threshold in self.orderedHeuristics:
             retval = self._filterByHeuristic(heuristic, threshold, nonCalm)
-            retval = self._filterOrderedCategories(retval)
+            retval = self._filterOrderedCategories(retval, contexts)
             if len(retval) > 0:
                 self.description = f"{self.baseDescription} \n    - {heuristic.__class__.__name__} >= {threshold} ({self.category})"
                 return retval
@@ -100,10 +102,10 @@ class GtdAlgorithm(IAlgorithm):
                 retval.append(task)
         return retval
 
-    def _filterOrderedCategories(self, tasks: list[ITaskModel]) -> list[ITaskModel]:
+    def _filterOrderedCategories(self, tasks: list[ITaskModel], contexts: EffectiveContextResolver | None = None) -> list[ITaskModel]:
         filteredTasks = []
         for description, category, _ in self.orderedCategories:
-            filteredTasks = category.filter(tasks)
+            filteredTasks = category.filter(tasks, contexts) if type(category) is ContextPrefixTaskFilter else category.filter(tasks)
             if len(filteredTasks) == 0:
                 continue
             else:

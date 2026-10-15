@@ -1,3 +1,6 @@
+from src.EffectiveContextResolver import EffectiveContextResolver
+from src.filters.ContextPrefixTaskFilter import ContextPrefixTaskFilter
+from src.algorithms.GtdAlgorithm import GtdAlgorithm
 import copy
 import datetime
 from typing import List, Tuple
@@ -43,9 +46,12 @@ _PURE_BUILTIN_ALGORITHM_TYPES = (EdfAlgorithm, ShortestJobAlgorithm)
 
 class TelegramTaskListManager(ITaskListManager):
 
-    def __init__(self, taskModelList: List[ITaskModel], algorithms: List[Tuple[str, IAlgorithm]], heuristics: List[Tuple[str, IHeuristic]], filters: List[Tuple[str, IFilter, bool]], statistics_service: IStatisticsService, tasksPerPage: int = 5):
+    def __init__(self, taskModelList: List[ITaskModel], algorithms: List[Tuple[str, IAlgorithm]], heuristics: List[Tuple[str, IHeuristic]], filters: List[Tuple[str, IFilter, bool]], statistics_service: IStatisticsService, tasksPerPage: int = 5, categories: list[dict[str, str]] | None = None):
 
         self.__taskModelList = taskModelList
+
+        self.categories = categories if categories is not None else []
+        self.__context_population: List[ITaskModel] | None = None
 
         self.__selectedTask = None
 
@@ -82,8 +88,17 @@ class TelegramTaskListManager(ITaskListManager):
     def getEventStatistics(self) -> EventsContent:
         return self.__statistics_service.getEventStatistics(self.__taskModelList)
 
+    def context_resolver(self) -> EffectiveContextResolver:
+        return EffectiveContextResolver(
+            self.__taskModelList if self.__context_population is None else self.__context_population,
+            self.categories,
+        )
+
     @property
     def filtered_task_list(self) -> List[ITaskModel]:
+        return self.filter_tasks(self.context_resolver())
+
+    def filter_tasks(self, contexts: EffectiveContextResolver) -> List[ITaskModel]:
 
         newTaskList: List[ITaskModel] = []
         self.__last_sorted_scores = None
@@ -121,7 +136,9 @@ class TelegramTaskListManager(ITaskListManager):
             # singleton input, since extensions may be stateful.
             for task in source_tasks:
                 for filterr in active_filters:
-                    matches = filterr[1].filter([task])
+                    matches = (filterr[1].filter([task], contexts)
+                               if type(filterr[1]) is ContextPrefixTaskFilter
+                               else filterr[1].filter([task]))
                     if filterr[2] and matches and not isinstance(task.getEventWaited(), str):
                         newTaskList.append(task)
                         break
@@ -148,7 +165,9 @@ class TelegramTaskListManager(ITaskListManager):
                 algorithm,
             ):
                 self.__last_sorted_scores = None
-            newTaskList = algorithm.apply(newTaskList)
+            newTaskList = (algorithm.apply(newTaskList, contexts)
+                           if type(algorithm) is GtdAlgorithm
+                           else algorithm.apply(newTaskList))
 
         if self.__last_sorted_scores is not None:
             self.__last_scored_population = newTaskList
@@ -233,15 +252,10 @@ class TelegramTaskListManager(ITaskListManager):
         self.__selectedTask = None
 
     def search_tasks(self, searchTerms: List[str]) -> "ITaskListManager":
-        taskListSearched: list[ITaskModel] = []
-        for task in self.__taskModelList:
-            for term in searchTerms:
-                if term.lower() in task.getDescription().lower() and task.getStatus() != "x":
-                    taskListSearched.append(task)
-                    break
-
-        deactivatedFilters = [(name, filt, True) for name, filt, _ in self.__filterList]
-        return TelegramTaskListManager(taskListSearched, [], [], deactivatedFilters, self.__statistics_service, self.__tasksPerPage)
+        return self.clone_for_view(
+            self.__taskModelList,
+            TaskView(filters=(), algorithm="", heuristic="", page_size=self.__tasksPerPage, search=tuple(searchTerms)),
+        )
 
     def current_view(self) -> TaskView:
         """Return this channel's current view as explicit query parameters."""
@@ -303,7 +317,9 @@ class TelegramTaskListManager(ITaskListManager):
             selected_filters,
             self.__statistics_service,
             view.page_size,
+            self.categories,
         )
+        manager.__context_population = self.__context_population
         manager.__selectedAlgorithm = selected_algorithm
         manager.__selectedHeuristic = selected_heuristic
         manager.__taskListPage = view.page - 1
@@ -421,12 +437,14 @@ class TelegramTaskListManager(ITaskListManager):
         self,
         *,
         selected_tasks: List[ITaskModel] | None = None,
+        contexts: EffectiveContextResolver | None = None,
     ) -> TaskListContent:
         """
         Returns a dictionary with the content needed to render a task list.
         This includes algorithm information, heuristic information, tasks, pagination details, etc.
         """
-        task_list = self.filtered_task_list if selected_tasks is None else selected_tasks
+        contexts = contexts if contexts is not None else self.context_resolver()
+        task_list = self.filter_tasks(contexts) if selected_tasks is None else selected_tasks
         
         # Get task details for the current page
         start_index = self.__taskListPage * self.__tasksPerPage
@@ -453,7 +471,8 @@ class TelegramTaskListManager(ITaskListManager):
             tasks.append(TaskEntry(
                 id=task_id,
                 description=task.getDescription(),
-                context=task.getContext(),
+                context=contexts.context(task),
+                originalContext=task.getContext(),
                 start=str(task.getStart()),
                 due=str(task.getDue()),
                 severity=task.getSeverity(),
@@ -514,12 +533,15 @@ class TelegramTaskListManager(ITaskListManager):
                 current_tasks.append(task)
         return current_tasks
 
-    def __sort_by_categories(self, tasks: List[ITaskModel], categories: list[dict[str, str]]) -> List[ITaskModel]:
+    def __sort_by_categories(self, tasks: List[ITaskModel], categories: list[dict[str, str]], contexts: EffectiveContextResolver | None = None) -> List[ITaskModel]:
+        contexts = contexts if contexts is not None else EffectiveContextResolver(self.__taskModelList, categories)
         sorted_tasks: List[ITaskModel] = []
+        seen: set[int] = set()
         for category in categories:
             for task in tasks:
-                if task.getContext().startswith(category["prefix"]):
+                if contexts.context(task).startswith(category["prefix"]) and id(task) not in seen:
                     sorted_tasks.append(task)
+                    seen.add(id(task))
         return sorted_tasks
 
     def __filter_urgent_tasks(self, date: TimePoint) -> list[ITaskModel]:
@@ -576,13 +598,15 @@ class TelegramTaskListManager(ITaskListManager):
         Returns:
             A dictionary containing the agenda data
         """
+        self.categories = categories
+        contexts = self.context_resolver()
         # Get tasks by different criteria
         urgent_tasks = self.__filter_urgent_tasks(date)
         query_now = TimePoint.now()
         tomorrow_day = query_now.datetime_representation.date() + datetime.timedelta(days=1)
         tomorrow = TimePoint(datetime.datetime.combine(tomorrow_day, datetime.time.min))
         current_urgent_tasks = self.__filter_current_tasks(urgent_tasks, query_now)
-        current_urgents_by_categories = self.__sort_by_categories(current_urgent_tasks, categories)
+        current_urgents_by_categories = self.__sort_by_categories(current_urgent_tasks, categories, contexts)
         urgent_tasks_by_start = self.__filter_and_sort_future_tasks(urgent_tasks, date, query_now)
         other_tasks = self.__filter_high_heuristic_tasks(urgent_tasks, query_now, tomorrow)
         
@@ -595,7 +619,8 @@ class TelegramTaskListManager(ITaskListManager):
                 TaskEntry(
                     id=task_id,
                     description=task.getDescription(),
-                    context=task.getContext(),
+                    context=contexts.context(task),
+                    originalContext=task.getContext(),
                     start=str(task.getStart()),
                     due=str(task.getDue()),
                     severity=task.getSeverity(),
@@ -616,7 +641,8 @@ class TelegramTaskListManager(ITaskListManager):
             task_data = TaskEntry(
                 id=task_id,
                 description=task.getDescription(),
-                context=task.getContext(),
+                context=contexts.context(task),
+                originalContext=task.getContext(),
                 start=str(task.getStart()),
                 due=str(task.getDue()),
                 severity=task.getSeverity(),
@@ -642,7 +668,8 @@ class TelegramTaskListManager(ITaskListManager):
                 TaskEntry(
                     id=task_id,
                     description=task.getDescription(),
-                    context=task.getContext(),
+                    context=contexts.context(task),
+                    originalContext=task.getContext(),
                     start=str(task.getStart()),
                     due=str(task.getDue()),
                     severity=task.getSeverity(),
@@ -661,9 +688,11 @@ class TelegramTaskListManager(ITaskListManager):
                 self.__algorithmList,
                 self.__heuristicList,
                 self.__filterList,
-                self.__statistics_service
+                self.__statistics_service,
+                categories=self.categories,
             )
-            other_task_list_info = other_task_manager.get_task_list_content()
+            other_task_manager.__context_population = self.__taskModelList if self.__context_population is None else self.__context_population
+            other_task_list_info = other_task_manager.get_task_list_content(contexts=contexts)
             other_task_list_info.interactive = False
 
         # Return the complete agenda data structure
@@ -693,6 +722,7 @@ class TelegramTaskListManager(ITaskListManager):
         """
         # Use the same current provider identity as task-list queries and
         # direct reads. These provider identifiers are currently provisional.
+        contexts = self.context_resolver()
         task_id = task.getTaskUID()
         
         # Calculate task costs
@@ -704,7 +734,8 @@ class TelegramTaskListManager(ITaskListManager):
         task_info = TaskEntry(
             id=task_id,
             description=task.getDescription(),
-            context=task.getContext(),
+            context=contexts.context(task),
+            originalContext=task.getContext(),
             start=str(task.getStart()),
             due=str(task.getDue()),
             severity=task.getSeverity(),

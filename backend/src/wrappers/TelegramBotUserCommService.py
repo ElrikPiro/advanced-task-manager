@@ -235,7 +235,7 @@ class TelegramBotUserCommService(IUserCommService):
 
         chat_id = message.destination.id
 
-        text = f"List updated\nMost prioritary task: {most_priority_task.getDescription()} (ID: /task_1, Context: {most_priority_task.getContext()})\nalgorithm: {algorithm_desc}"
+        text = f"List updated\nMost prioritary task: {most_priority_task.getDescription()} (ID: /task_1, Context: {message.content.effectiveContext if message.content.effectiveContext is not None else most_priority_task.getContext()})\nalgorithm: {algorithm_desc}"
         await self.bot.send_message(chat_id, text, parse_mode=None)
 
     async def __renderHeuristicList(self, message: IMessage) -> None:

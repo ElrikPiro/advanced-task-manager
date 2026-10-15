@@ -423,7 +423,7 @@ class TelegramReportingServiceContainer():
         # The channel view starts empty internally. Markdown task discovery is
         # scheduled only after the listener has initialized and readiness gates
         # prevent this placeholder from being presented as a loaded empty vault.
-        self.container.taskListManager = providers.Singleton(TelegramTaskListManager, [], self.container.algorithmList, self.container.heuristicList, self.container.filterList, self.container.statisticsService)
+        self.container.taskListManager = providers.Singleton(TelegramTaskListManager, [], self.container.algorithmList, self.container.heuristicList, self.container.filterList, self.container.statisticsService, categories=self.container.categories)
 
         # Project Manager
         if obsidianMode:

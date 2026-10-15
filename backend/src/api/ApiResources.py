@@ -11,6 +11,7 @@ from typing import Any
 from urllib.parse import quote, urlencode, urlsplit
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
+from src.EffectiveContextResolver import EffectiveContextResolver
 from src.MutationCoordinator import OperationFailure, OperationReceipt
 from src.api.ProblemDetails import safe_detail
 from src.Utils import (
@@ -240,6 +241,7 @@ class ApiResources:
                 self.task_resource(
                     task,
                     extended=False,
+                    effective_context=entry.context,
                     heuristic_name=content.sort_heuristic,
                     heuristic_value=heuristic_value,
                 )
@@ -276,18 +278,15 @@ class ApiResources:
 
     def read_task(self, task_id: str) -> dict[str, Any]:
         """Read a task by opaque ID, including its computed detail fields."""
-        if isinstance(self.application_service, TaskApplicationService):
-            # A detail request needs only the provider's indexed identity lookup.
-            # The returned model carries metadata from that same published
-            # generation, so detail does not materialize every task model.
-            task = self.application_service.read_task(task_id)
-            task_models = None
+        snapshot = self._read_task_projection_snapshot()
+        task_models: list[ITaskModel] | None
+        if snapshot is not None:
+            task_models = self.application_service.task_models_from_snapshot(snapshot)
+            task = self.application_service.read_task_from_snapshot(task_id, snapshot)
         else:
             task_models = self._read_task_projection_models()
-            if task_models is None:
-                task = self.application_service.read_task(task_id)
-            else:
-                task = self.application_service.read_task(task_id, task_models=task_models)
+            task = (self.application_service.read_task(task_id) if task_models is None
+                    else self.application_service.read_task(task_id, task_models=task_models))
         return self.task_resource(task, extended=True, task_models=task_models)
 
     def task_resource(
@@ -295,6 +294,7 @@ class ApiResources:
         task: ITaskModel,
         *,
         extended: bool = True,
+        effective_context: str | None = None,
         heuristic_name: str | None = None,
         heuristic_value: float | None = None,
         task_models: Sequence[ITaskModel] | None = None,
@@ -307,7 +307,19 @@ class ApiResources:
             start = self._point_iso(task.getStart())
             due = self._point_iso(task.getDue())
             raw_description = self._raw_description(task)
-            context = task.getContext()
+            detail = None
+            if extended or effective_context is None:
+                if task_models is None:
+                    detail = self.application_service.read_task_information_for(task, extended=extended)
+                else:
+                    detail = self.application_service.read_task_information_for(
+                        task, extended=extended, task_models=task_models,
+                    )
+            original_context = task.getContext()
+            if effective_context is None:
+                assert detail is not None
+                effective_context = detail.task.context
+            context = effective_context
             if not isinstance(context, str):
                 raise InvalidResourceDataError("Task context is invalid")
             context = context.strip()
@@ -323,6 +335,7 @@ class ApiResources:
                 "timeZone": self._time_zone_name(),
                 "description": raw_description,
                 "context": context,
+                "originalContext": original_context,
                 "start": start,
                 "due": due,
                 "severity": self._finite_number(task.getSeverity(), "severity"),
@@ -354,14 +367,7 @@ class ApiResources:
                     "comment": "",
                 }]
             if extended:
-                if task_models is None:
-                    detail = self.application_service.read_task_information_for(task, extended=True)
-                else:
-                    detail = self.application_service.read_task_information_for(
-                        task,
-                        extended=True,
-                        task_models=task_models,
-                    )
+                assert detail is not None
                 task_document["heuristics"] = [
                     self._heuristic_representation(item)
                     for item in (detail.extended.heuristics if detail.extended is not None else [])
@@ -831,6 +837,7 @@ class ApiResources:
                 self.task_resource(
                     task,
                     extended=False,
+                    effective_context=entry.context,
                     heuristic_value=self._finite_number(entry.heuristic_value, "heuristic value"),
                 )
             )
@@ -1077,14 +1084,26 @@ class ApiResources:
 
     def _operation_result_representation(self, result: OperationResult) -> dict[str, Any]:
         value = result.value
-        if isinstance(value, ITaskModel):
-            value_document: Any = self.task_resource(value, extended=False)
-        elif isinstance(value, ProjectMutationResult):
-            value_document = self.project_resource(value)
-        elif isinstance(value, Sequence) and not isinstance(value, (str, bytes, bytearray)):
-            value_document = [self._operation_value(item) for item in value]
+
+        def contains_task(item: Any) -> bool:
+            if isinstance(item, ITaskModel):
+                return True
+            if isinstance(item, Mapping):
+                return any(contains_task(child) for child in item.values())
+            if isinstance(item, Sequence) and not isinstance(item, (str, bytes, bytearray)):
+                return any(contains_task(child) for child in item)
+            return False
+
+        contexts = None
+        if isinstance(self.application_service, TaskApplicationService) and contains_task(value):
+            snapshot = self.application_service.read_task_snapshot()
+            contexts = self.application_service.resolve_contexts(
+                self.application_service.task_models_from_snapshot(snapshot),
+            )
+        if isinstance(value, Sequence) and not isinstance(value, (str, bytes, bytearray)):
+            value_document: Any = [self._operation_value(item, contexts) for item in value]
         else:
-            value_document = self._operation_value(value)
+            value_document = self._operation_value(value, contexts)
         affected_links: list[dict[str, str]] = []
         for affected_id in result.affected_ids:
             if result.target.kind == "project":
@@ -1101,9 +1120,12 @@ class ApiResources:
             "_links": {"affected": affected_links},
         }
 
-    def _operation_value(self, value: Any) -> Any:
+    def _operation_value(self, value: Any, contexts: EffectiveContextResolver | None = None) -> Any:
         if isinstance(value, ITaskModel):
-            return self.task_resource(value, extended=False)
+            return self.task_resource(
+                value, extended=False,
+                effective_context=contexts.context(value) if contexts is not None else None,
+            )
         if isinstance(value, ProjectMutationResult):
             return self.project_resource(value)
         if isinstance(value, TimeAmount):
@@ -1111,7 +1133,7 @@ class ApiResources:
         if isinstance(value, TimePoint):
             return self._point_iso(value)
         if isinstance(value, Mapping):
-            return {str(key): self._operation_value(item) for key, item in value.items()}
+            return {str(key): self._operation_value(item, contexts) for key, item in value.items()}
         if isinstance(value, (str, int, bool)) or value is None:
             return value
         if isinstance(value, float):

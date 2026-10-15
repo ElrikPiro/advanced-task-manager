@@ -131,7 +131,7 @@ class ShellUserCommService(IUserCommService):
             self.__botPrint("No tasks available")
             return
 
-        self.__botPrint(f"Most priority task: {self.__green(most_priority_task.getDescription())} (ID: /task_1, Context: {most_priority_task.getContext()})")
+        self.__botPrint(f"Most priority task: {self.__green(most_priority_task.getDescription())} (ID: /task_1, Context: {message.content.effectiveContext if message.content.effectiveContext is not None else most_priority_task.getContext()})")
 
     def __renderHeuristicList(self, message: IMessage) -> None:
         self.__botPrint(self.__bold("(Info) Heuristic List Render Mode"))

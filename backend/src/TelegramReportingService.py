@@ -29,6 +29,7 @@ from .domain.errors import DomainError, SnapshotRefreshRequiredError
 from .domain.models import AgendaQuery, OperationTarget, TaskView
 from .MutationCoordinator import MutationCoordinator
 from .SafeDiagnostics import format_safe_exception_diagnostic
+from .TelegramTaskListManager import TelegramTaskListManager
 
 
 class TelegramReportingService(IReportingService):
@@ -300,7 +301,11 @@ class TelegramReportingService(IReportingService):
             message = self.__messageBuilder.createOutboundMessage(
                 source=self.bot.getBotAgent(),
                 destination=self.user,
-                content=MessageContent(text=algorithm_description, task=task),
+                content=MessageContent(
+                    text=algorithm_description, task=task,
+                    effectiveContext=self._taskListManager.context_resolver().context(task)
+                    if isinstance(self._taskListManager, TelegramTaskListManager) else task.getContext(),
+                ),
                 render_mode=RenderMode.LIST_UPDATED
             )
             await self.bot.sendMessage(message)

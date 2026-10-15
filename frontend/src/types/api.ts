@@ -2,6 +2,7 @@ export interface TaskEntry {
   id: string;
   description: string;
   context: string;
+  originalContext?: string;
   start: string;
   due: string;
   severity: number;

@@ -33,6 +33,7 @@ class MessageContent:
     taskInformation: TaskInformation | None = None
     eventsContent: EventsContent | None = None
     requestId: int | None = None
+    effectiveContext: str | None = None
 
 
 class IAgent(ABC):

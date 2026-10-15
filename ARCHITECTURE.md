@@ -76,6 +76,16 @@ graph TB
 | **Event System** | Tasks can wait for and raise events for dependency management |
 | **Notification History** | Authenticated API reads a complete, persistent history without consuming entries |
 
+## Effective context projection
+
+`EffectiveContextResolver` is a pure, query-scoped projection over the complete task snapshot and the ordered categories. It classifies pending receivers by their original context and indexes the two best distinct receivers per exact event. Keeping two candidates allows constant-time self-exclusion for each emitter. Building the index costs O(N × C), with O(N) additional resolution and storage; no recursive traversal or cache survives a query. Detached detail or operation models are matched against candidate identities when object identity differs.
+
+`TaskModel.getContext()` and `setContext()` retain their original persistence semantics. Providers, scheduling copies, and stored work properties continue to use the declared context. `TelegramTaskListManager` passes the resolver explicitly to built-in context filters and GTD category selection and uses it when building `TaskEntry` values. Models retain their concrete types and object identities, preserving built-in filter batching and heuristic score reuse. Custom strategy calls keep their existing signatures. Search and nested agenda views retain the complete population for resolution, even when their visible candidates are a subset.
+
+The application service supplies full populations for detail projections. API task lists and agenda resources reuse the effective context already computed by the corresponding view. Detail reads capture a complete projection snapshot and retain indexed identity validation; task-bearing operation responses share one fresh snapshot across their nested resources. No read saves task files. `MessageContent.effectiveContext` carries the displayed context to shell and Telegram list-change notifications without wrapping or changing the task model.
+
+All task read resources expose effective `context` and declared `originalContext`. Only `context` is writable, and it writes the declared value; clients must use `originalContext` to populate editors. Inheritance examines pending direct receivers, excludes the emitter itself, and uses the first matching configured prefix and stable provider-order ties. Completed emitters use their declared context. Dates, wait eligibility, calmness, and urgency rules remain independent of context resolution.
+
 ## Notification history
 
 The HTTP resource API and internal notification sender use one `NotificationHistoryStore`. It writes sanitized notification text to `notifications.json` through the same atomic persistence path and shared mutation queue used by task changes. The write completes before the sender returns, so a successful send is visible to later reads.

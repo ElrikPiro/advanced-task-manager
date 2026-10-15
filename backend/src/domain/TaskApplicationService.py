@@ -12,6 +12,7 @@ from typing import Any, Literal, Mapping, cast
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from src.AtomicFileStore import AtomicWriteError
+from src.EffectiveContextResolver import EffectiveContextResolver
 from src.Interfaces.ITaskModel import ITaskModel
 from src.Interfaces.ITaskProvider import ITaskProvider
 from src.MutationCoordinator import (
@@ -99,6 +100,8 @@ class TaskApplicationService:
         self._statistics_service = statistics_service
         self._task_list_manager = task_list_manager
         self._categories = categories
+        if isinstance(task_list_manager, TelegramTaskListManager):
+            task_list_manager.categories = categories
         self._project_manager = project_manager
         self._mutation_coordinator = self._resolve_mutation_coordinator(
             mutation_coordinator,
@@ -289,6 +292,10 @@ class TaskApplicationService:
         try:
             if callable(resolver):
                 return cast(ITaskModel, resolver(task_id))
+            # Preserve indexed readiness checks when the provider offers an
+            # index but no generation-bound snapshot lookup.
+            if callable(getattr(self._task_provider, "getTaskById", None)):
+                self.read_task(task_id)
             source_tasks = self.task_models_from_snapshot(snapshot)
             matches = [task for task in source_tasks if self._capture_task_id(task) == task_id]
         except InvalidTaskIdentityError as error:
@@ -420,6 +427,10 @@ class TaskApplicationService:
                 raise
             raise ResourceReadError("Task data could not be read for mutation") from error
 
+    def resolve_contexts(self, task_models: Sequence[ITaskModel]) -> EffectiveContextResolver:
+        """Resolve one complete read population using the current category order."""
+        return EffectiveContextResolver(task_models, self._categories)
+
     def read_task_models(self, *, include_completed: bool = True) -> list[ITaskModel]:
         """Return a fresh, read-only model snapshot for resource projection."""
         return self._all_tasks(include_completed=include_completed)
@@ -484,18 +495,10 @@ class TaskApplicationService:
 
     def read_task_information(self, task_id: str, *, extended: bool = False) -> TaskInformation:
         """Return typed detail data for a task, independent of list selection."""
-        task = self.read_task(task_id)
-        try:
-            return self._task_list_manager.get_task_information(
-                task,
-                self._task_provider,
-                extended,
-            )
-        except DomainError:
-            raise
-        except Exception as error:
-            self._raise_task_identity_error(error)
-            raise ResourceReadError("Task detail could not be read") from error
+        snapshot = self.read_task_snapshot()
+        tasks = self.task_models_from_snapshot(snapshot)
+        task = self.read_task_from_snapshot(task_id, snapshot)
+        return self.read_task_information_for(task, extended=extended, task_models=tasks)
 
     def read_task_information_for(
         self,
@@ -509,7 +512,7 @@ class TaskApplicationService:
             clone_for_view = getattr(self._task_list_manager, "clone_for_view", None)
             if callable(clone_for_view):
                 manager = clone_for_view(
-                    [] if task_models is None else list(task_models),
+                    self._all_tasks() if task_models is None else list(task_models),
                     TaskView(filters=(), algorithm="", heuristic=""),
                 )
             else:
@@ -570,8 +573,9 @@ class TaskApplicationService:
                 else [task for task in task_models if task.getStatus() != "x"]
             )
             manager = self._task_list_manager.clone_for_view(tasks, view)
-            population = manager.filtered_task_list
-            content = manager.get_task_list_content(selected_tasks=population)
+            contexts = manager.context_resolver()
+            population = manager.filter_tasks(contexts)
+            content = manager.get_task_list_content(selected_tasks=population, contexts=contexts)
             read_stats = getattr(self._statistics_service, "readWorkloadStats", None)
             if callable(read_stats):
                 stats = read_stats(population)
